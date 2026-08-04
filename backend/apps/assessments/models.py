@@ -59,19 +59,26 @@ class Measure(models.Model):
         HIGH = "high", "Élevé"
 
     domain = models.ForeignKey(Domain, on_delete=models.CASCADE, related_name="measures")
-    code = models.SlugField(max_length=20, unique=True)
+    # The official ANSSI numbering (1-42), reproduced exactly — not a
+    # product-invented code. See docs/verification_referentiel_anssi.md.
+    number = models.PositiveSmallIntegerField(unique=True)
     order = models.PositiveSmallIntegerField(default=0)
     official_title = models.CharField(max_length=300)
     plain_language = models.TextField()
     level = models.CharField(max_length=20, choices=Level.choices)
     effort = models.CharField(max_length=10, choices=Effort.choices)
     impact = models.CharField(max_length=10, choices=Impact.choices)
+    # effort/impact (above) are a RSSI as a Service product judgment, not
+    # ANSSI data — always True today; kept as a field (rather than a code
+    # constant) so the API/frontend carry the disclaimer even if a future
+    # referential someday ships ANSSI-sourced ratings instead.
+    effort_impact_disclaimer = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["domain_id", "order"]
 
     def __str__(self):
-        return f"{self.code} — {self.official_title}"
+        return f"{self.number} — {self.official_title}"
 
 
 class Assessment(TenantScopedModel):
@@ -126,4 +133,4 @@ class Answer(TenantScopedModel):
         ordering = ["assessment_id", "measure__domain_id", "measure__order"]
 
     def __str__(self):
-        return f"{self.assessment_id} — {self.measure.code}: {self.value}"
+        return f"{self.assessment_id} — {self.measure.number}: {self.value}"

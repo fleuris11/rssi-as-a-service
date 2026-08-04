@@ -25,7 +25,7 @@ def _auth(api_client, user, tenant):
 
 @pytest.fixture
 def completed_assessment_with_gaps(assessment, referential):
-    measures = list(Measure.objects.filter(domain__referential=referential).order_by("code"))
+    measures = list(Measure.objects.filter(domain__referential=referential).order_by("number"))
     for measure, value in zip(measures, ["yes", "no", "no", "yes"], strict=True):
         assessments_services.submit_answer(assessment=assessment, measure=measure, value=value)
     assessments_services.complete_assessment(assessment)

@@ -19,7 +19,7 @@ def referential(db):
 
     Measure.objects.create(
         domain=domain_a,
-        code="M1",
+        number=1,
         order=1,
         official_title="Mesure standard à fort impact, faible effort",
         plain_language="Mesure 1 ?",
@@ -29,7 +29,7 @@ def referential(db):
     )
     Measure.objects.create(
         domain=domain_a,
-        code="M2",
+        number=2,
         order=2,
         official_title="Mesure renforcée à impact moyen, effort moyen",
         plain_language="Mesure 2 ?",
@@ -39,7 +39,7 @@ def referential(db):
     )
     Measure.objects.create(
         domain=domain_b,
-        code="M3",
+        number=3,
         order=1,
         official_title="Mesure standard à faible impact, effort moyen",
         plain_language="Mesure 3 ?",
@@ -49,7 +49,7 @@ def referential(db):
     )
     Measure.objects.create(
         domain=domain_b,
-        code="M4",
+        number=4,
         order=2,
         official_title="Mesure renforcée à fort impact, fort effort",
         plain_language="Mesure 4 ?",

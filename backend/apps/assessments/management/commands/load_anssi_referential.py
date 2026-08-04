@@ -54,17 +54,27 @@ class Command(BaseCommand):
                 )
                 domain_count += 1
 
-                for measure_data in domain_data["measures"]:
+                for position, measure_data in enumerate(domain_data["measures"], start=1):
+                    official = measure_data["official"]
+                    if official["domain"] != domain_data["code"]:
+                        raise CommandError(
+                            f"Mesure {official['number']} : official.domain "
+                            f"({official['domain']!r}) ne correspond pas au domaine "
+                            f"parent ({domain_data['code']!r})."
+                        )
+                    simplified = measure_data["simplified"]
+                    rating = measure_data["product_rating"]
                     Measure.objects.update_or_create(
-                        code=measure_data["code"],
+                        number=official["number"],
                         defaults={
                             "domain": domain,
-                            "order": measure_data["order"],
-                            "official_title": measure_data["official_title"],
-                            "plain_language": measure_data["plain_language"],
-                            "level": measure_data["level"],
-                            "effort": measure_data["effort"],
-                            "impact": measure_data["impact"],
+                            "order": position,
+                            "official_title": official["title"],
+                            "plain_language": simplified["question"],
+                            "level": official["level"],
+                            "effort": rating["effort"],
+                            "impact": rating["impact"],
+                            "effort_impact_disclaimer": rating["disclaimer"],
                         },
                     )
                     measure_count += 1

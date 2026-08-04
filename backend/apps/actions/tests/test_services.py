@@ -11,7 +11,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def measures(referential):
-    return list(Measure.objects.filter(domain__referential=referential).order_by("code"))
+    return list(Measure.objects.filter(domain__referential=referential).order_by("number"))
 
 
 class TestGenerateActionPlan:

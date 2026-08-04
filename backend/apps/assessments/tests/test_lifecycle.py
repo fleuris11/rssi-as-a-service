@@ -62,7 +62,7 @@ class TestSubmitAnswer:
         other_domain = Domain.objects.create(referential=other_referential, code="d", name="D")
         foreign_measure = Measure.objects.create(
             domain=other_domain,
-            code="FOREIGN",
+            number=999,
             official_title="Mesure étrangère",
             plain_language="?",
             level=Measure.Level.STANDARD,
@@ -78,7 +78,7 @@ class TestSubmitAnswer:
 
 class TestProgress:
     def test_counts_answered_measures_by_domain(self, assessment, referential):
-        measures = list(Measure.objects.filter(domain__referential=referential).order_by("code"))
+        measures = list(Measure.objects.filter(domain__referential=referential).order_by("number"))
         services.submit_answer(assessment=assessment, measure=measures[0], value=Answer.Value.YES)
         services.submit_answer(assessment=assessment, measure=measures[2], value=Answer.Value.NO)
 

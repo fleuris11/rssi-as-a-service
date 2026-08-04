@@ -16,9 +16,10 @@ class DomainAdmin(admin.ModelAdmin):
 
 @admin.register(Measure)
 class MeasureAdmin(admin.ModelAdmin):
-    list_display = ["code", "official_title", "domain", "level", "effort", "impact"]
+    list_display = ["number", "official_title", "domain", "level", "effort", "impact"]
     list_filter = ["domain", "level", "effort", "impact"]
-    search_fields = ["code", "official_title", "plain_language"]
+    search_fields = ["number", "official_title", "plain_language"]
+    ordering = ["number"]
 
 
 @admin.register(Assessment)

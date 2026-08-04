@@ -1,94 +1,118 @@
 {
+  "meta": {
+    "source": "ANSSI — Agence nationale de la sécurité des systèmes d'information",
+    "document_title": "Guide d'hygiène informatique — Renforcer la sécurité de son système d'information en 42 mesures",
+    "official_url": "https://cyber.gouv.fr/publications/guide-dhygiene-informatique",
+    "pdf_url": "https://messervices.cyber.gouv.fr/documents-guides/guide_hygiene_informatique_anssi.pdf",
+    "local_copy": "docs/sources/anssi_guide_hygiene_informatique.pdf",
+    "version": "2.0",
+    "publication_date": "2017-09-01",
+    "first_published": "2013-01",
+    "license": "Licence Ouverte / Open Licence (Etalab, version 1)",
+    "verified_on": "2026-08-04",
+    "verification_report": "docs/verification_referentiel_anssi.md",
+    "note": "official.* est reproduit fidèlement depuis le PDF source (voir local_copy). simplified.* et product_rating.* sont une couche produit RSSI as a Service, pas une donnée ANSSI — voir product_rating.disclaimer."
+  },
   "slug": "anssi-hygiene-informatique",
   "name": "Guide d'hygiène informatique (ANSSI)",
   "version": "2.0",
-  "description": "Les 42 mesures du guide d'hygiène informatique de l'ANSSI, reformulées en langage simple pour un dirigeant non technique. Référentiel de base du diagnostic de maturité RSSI as a Service.",
+  "description": "Les 42 mesures du guide d'hygiène informatique de l'ANSSI. Chaque mesure sépare la donnée officielle (numéro, intitulé exact, domaine, niveau) de la reformulation en langage dirigeant et de l'estimation d'effort/impact, qui sont un jugement produit RSSI as a Service.",
   "domains": [
     {
       "code": "sensibiliser-former",
       "order": 1,
       "name": "Sensibiliser et former",
-      "description": "Les personnes sont souvent le premier maillon faible : les préparer réduit une grande partie du risque.",
       "measures": [
         {
-          "code": "H1",
-          "order": 1,
-          "official_title": "Former les équipes opérationnelles à la sécurité des systèmes d'information",
-          "plain_language": "La ou les personnes qui gèrent votre informatique (interne ou prestataire) sont-elles formées à la cybersécurité, pas seulement à l'informatique en général ?",
-          "level": "standard",
-          "effort": "medium",
-          "impact": "medium"
+          "official": {
+            "number": 1,
+            "title": "Former les équipes opérationnelles à la sécurité des systèmes d'information",
+            "domain": "sensibiliser-former",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "La ou les personnes qui gèrent votre informatique (interne ou prestataire) sont-elles formées à la cybersécurité, pas seulement à l'informatique en général ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "medium", "disclaimer": true }
         },
         {
-          "code": "H2",
-          "official_title": "Sensibiliser les utilisateurs aux bonnes pratiques élémentaires de sécurité informatique",
-          "order": 2,
-          "plain_language": "Vos collaborateurs ont-ils déjà reçu une sensibilisation simple sur les pièges courants (emails piégés, mots de passe, clés USB inconnues) ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "high"
+          "official": {
+            "number": 2,
+            "title": "Sensibiliser les utilisateurs aux bonnes pratiques élémentaires de sécurité informatique",
+            "domain": "sensibiliser-former",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Vos collaborateurs ont-ils déjà reçu une sensibilisation simple sur les pièges courants (emails piégés, mots de passe, clés USB inconnues) ?"
+          },
+          "product_rating": { "effort": "low", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H3",
-          "order": 3,
-          "official_title": "Maîtriser les risques de l'infogérance",
-          "plain_language": "Si un prestataire externe gère votre informatique, savez-vous précisément ce qu'il fait, ce à quoi il a accès, et est-ce écrit dans un contrat ?",
-          "level": "standard",
-          "effort": "medium",
-          "impact": "medium"
+          "official": {
+            "number": 3,
+            "title": "Maîtriser les risques de l'infogérance",
+            "domain": "sensibiliser-former",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Si un prestataire externe gère votre informatique, savez-vous précisément ce qu'il fait, ce à quoi il a accès, et est-ce écrit dans un contrat ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "medium", "disclaimer": true }
         }
       ]
     },
     {
       "code": "connaitre-si",
       "order": 2,
-      "name": "Connaître son système d'information",
-      "description": "On ne protège bien que ce que l'on connaît : savoir ce que l'on a, qui y accède, et qui en est responsable.",
+      "name": "Connaître le système d'information",
       "measures": [
         {
-          "code": "H4",
-          "order": 1,
-          "official_title": "Identifier les informations et serveurs les plus sensibles et maintenir un schéma du réseau",
-          "plain_language": "Savez-vous où sont stockées vos données les plus sensibles (clients, comptabilité, RH) et avez-vous un minimum de schéma de votre informatique (ordinateurs, serveurs, box internet...) ?",
-          "level": "standard",
-          "effort": "medium",
-          "impact": "high"
+          "official": {
+            "number": 4,
+            "title": "Identifier les informations et serveurs les plus sensibles et maintenir un schéma du réseau",
+            "domain": "connaitre-si",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Savez-vous où sont stockées vos données les plus sensibles (clients, comptabilité, RH) et avez-vous un minimum de schéma de votre informatique (ordinateurs, serveurs, box internet...) ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H5",
-          "order": 2,
-          "official_title": "Disposer d'un inventaire exhaustif des comptes privilégiés et le maintenir à jour",
-          "plain_language": "Savez-vous précisément qui a un accès \"administrateur\" (droits étendus) sur vos ordinateurs, votre messagerie ou vos logiciels ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "high"
+          "official": {
+            "number": 5,
+            "title": "Disposer d'un inventaire exhaustif des comptes privilégiés et le maintenir à jour",
+            "domain": "connaitre-si",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Savez-vous précisément qui a un accès « administrateur » (droits étendus) sur vos ordinateurs, votre messagerie ou vos logiciels, et cette liste est-elle à jour ?"
+          },
+          "product_rating": { "effort": "low", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H6",
-          "order": 3,
-          "official_title": "Organiser les procédures d'arrivée, de départ et de changement de fonction des utilisateurs",
-          "plain_language": "Quand quelqu'un quitte l'entreprise, avez-vous une procédure pour lui retirer tous ses accès (email, logiciels, locaux) le jour même ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "high"
+          "official": {
+            "number": 6,
+            "title": "Organiser les procédures d'arrivée, de départ et de changement de fonction des utilisateurs",
+            "domain": "connaitre-si",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Quand quelqu'un quitte l'entreprise ou change de poste, avez-vous une procédure pour mettre à jour tous ses accès (comptes, badges, matériel) ?"
+          },
+          "product_rating": { "effort": "low", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H7",
-          "order": 4,
-          "official_title": "Autoriser la connexion au réseau de l'entité aux seuls équipements maîtrisés",
-          "plain_language": "Empêchez-vous les appareils personnels non contrôlés de se connecter librement à votre réseau interne ?",
-          "level": "renforce",
-          "effort": "medium",
-          "impact": "medium"
-        },
-        {
-          "code": "H8",
-          "order": 5,
-          "official_title": "Identifier explicitement les personnes responsables de chaque système d'information",
-          "plain_language": "Pour chaque outil important (comptabilité, messagerie, site web...), sait-on clairement qui est responsable en interne ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "medium"
+          "official": {
+            "number": 7,
+            "title": "Autoriser la connexion au réseau de l'entité aux seuls équipements maîtrisés",
+            "domain": "connaitre-si",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Empêchez-vous les appareils personnels non contrôlés (ordinateurs, tablettes) de se connecter librement à votre réseau interne ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "medium", "disclaimer": true }
         }
       ]
     },
@@ -96,114 +120,145 @@
       "code": "authentifier-controler-acces",
       "order": 3,
       "name": "Authentifier et contrôler les accès",
-      "description": "S'assurer que chaque personne qui accède à vos systèmes est bien celle qu'elle prétend être, avec seulement les droits dont elle a besoin.",
       "measures": [
         {
-          "code": "H9",
-          "order": 1,
-          "official_title": "Identifier nommément chaque personne accédant au système et distinguer les rôles utilisateur/administrateur",
-          "plain_language": "Chaque collaborateur a-t-il son propre compte nominatif (pas de compte partagé \"equipe\" ou \"accueil\"), avec un compte à part pour les tâches d'administration ?",
-          "level": "standard",
-          "effort": "medium",
-          "impact": "high"
+          "official": {
+            "number": 8,
+            "title": "Identifier nommément chaque personne accédant au système et distinguer les rôles utilisateur/administrateur",
+            "domain": "authentifier-controler-acces",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Chaque collaborateur a-t-il son propre compte nominatif (pas de compte partagé « équipe » ou « accueil »), avec un compte à part pour les tâches d'administration ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H10",
-          "order": 2,
-          "official_title": "Attribuer les bons droits sur les ressources sensibles du système d'information",
-          "plain_language": "Chaque personne n'a-t-elle accès qu'aux dossiers et outils dont elle a réellement besoin pour son poste ?",
-          "level": "standard",
-          "effort": "medium",
-          "impact": "high"
+          "official": {
+            "number": 9,
+            "title": "Attribuer les bons droits sur les ressources sensibles du système d'information",
+            "domain": "authentifier-controler-acces",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Chaque personne n'a-t-elle accès qu'aux dossiers et outils dont elle a réellement besoin pour son poste ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H11",
-          "order": 3,
-          "official_title": "Définir et vérifier des règles de choix et de dimensionnement des mots de passe",
-          "plain_language": "Avez-vous une règle claire sur la longueur/qualité des mots de passe, appliquée sur vos outils importants ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "high"
+          "official": {
+            "number": 10,
+            "title": "Définir et vérifier des règles de choix et de dimensionnement des mots de passe",
+            "domain": "authentifier-controler-acces",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Avez-vous une règle claire sur la longueur/qualité des mots de passe, appliquée sur vos outils importants ?"
+          },
+          "product_rating": { "effort": "low", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H12",
-          "order": 4,
-          "official_title": "Protéger les mots de passe stockés sur les systèmes",
-          "plain_language": "Les mots de passe de vos comptes professionnels sont-ils stockés de façon sécurisée (gestionnaire de mots de passe), et jamais en clair sur un post-it ou un fichier partagé ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "medium"
+          "official": {
+            "number": 11,
+            "title": "Protéger les mots de passe stockés sur les systèmes",
+            "domain": "authentifier-controler-acces",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Les mots de passe de vos comptes professionnels sont-ils stockés de façon sécurisée (gestionnaire de mots de passe), et jamais en clair sur un post-it ou un fichier partagé ?"
+          },
+          "product_rating": { "effort": "low", "impact": "medium", "disclaimer": true }
         },
         {
-          "code": "H13",
-          "order": 5,
-          "official_title": "Changer les éléments d'authentification par défaut sur les équipements et services",
-          "plain_language": "Les mots de passe \"par défaut\" (admin/admin, etc.) de vos box, imprimantes et logiciels ont-ils été changés ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "high"
+          "official": {
+            "number": 12,
+            "title": "Changer les éléments d'authentification par défaut sur les équipements et services",
+            "domain": "authentifier-controler-acces",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Les mots de passe « par défaut » (admin/admin, etc.) de vos box, imprimantes et logiciels ont-ils été changés ?"
+          },
+          "product_rating": { "effort": "low", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H14",
-          "order": 6,
-          "official_title": "Privilégier lorsque c'est possible une authentification forte",
-          "plain_language": "La double authentification (code envoyé par SMS ou application, en plus du mot de passe) est-elle activée sur vos comptes les plus sensibles (messagerie, banque, comptabilité) ?",
-          "level": "renforce",
-          "effort": "medium",
-          "impact": "high"
+          "official": {
+            "number": 13,
+            "title": "Privilégier lorsque c'est possible une authentification forte",
+            "domain": "authentifier-controler-acces",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "La double authentification (code envoyé par SMS ou application, en plus du mot de passe) est-elle activée sur vos comptes les plus sensibles (messagerie, banque, comptabilité) ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "high", "disclaimer": true }
         }
       ]
     },
     {
       "code": "securiser-postes",
       "order": 4,
-      "name": "Sécuriser les postes de travail",
-      "description": "Les ordinateurs et téléphones professionnels sont le point de contact quotidien avec les menaces.",
+      "name": "Sécuriser les postes",
       "measures": [
         {
-          "code": "H15",
-          "order": 1,
-          "official_title": "Mettre en place un niveau de sécurité minimal sur l'ensemble du parc informatique",
-          "plain_language": "Tous vos ordinateurs ont-ils un antivirus à jour et un verrouillage automatique de session après quelques minutes d'inactivité ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "high"
+          "official": {
+            "number": 14,
+            "title": "Mettre en place un niveau de sécurité minimal sur l'ensemble du parc informatique",
+            "domain": "securiser-postes",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Tous vos ordinateurs ont-ils un antivirus et un pare-feu à jour, et un verrouillage automatique de session après quelques minutes d'inactivité ?"
+          },
+          "product_rating": { "effort": "low", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H16",
-          "order": 2,
-          "official_title": "Se protéger des menaces relatives à l'utilisation de supports amovibles",
-          "plain_language": "Vos collaborateurs savent-ils qu'il ne faut pas brancher une clé USB trouvée ou d'origine inconnue sur un poste professionnel ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "medium"
+          "official": {
+            "number": 15,
+            "title": "Se protéger des menaces relatives à l'utilisation de supports amovibles",
+            "domain": "securiser-postes",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Vos collaborateurs savent-ils qu'il ne faut pas brancher une clé USB trouvée ou d'origine inconnue sur un poste professionnel ?"
+          },
+          "product_rating": { "effort": "low", "impact": "medium", "disclaimer": true }
         },
         {
-          "code": "H17",
-          "order": 3,
-          "official_title": "Utiliser un outil de gestion centralisée pour maintenir à jour les logiciels",
-          "plain_language": "Les mises à jour de sécurité de vos ordinateurs (système et logiciels) se font-elles automatiquement, sans dépendre de chaque utilisateur ?",
-          "level": "renforce",
-          "effort": "medium",
-          "impact": "high"
+          "official": {
+            "number": 16,
+            "title": "Utiliser un outil de gestion centralisée afin d'homogénéiser les politiques de sécurité",
+            "domain": "securiser-postes",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Utilisez-vous un outil central (par exemple Active Directory) pour appliquer les mêmes règles de sécurité à tous vos ordinateurs, plutôt que de les configurer un par un ?"
+          },
+          "product_rating": { "effort": "high", "impact": "medium", "disclaimer": true }
         },
         {
-          "code": "H18",
-          "order": 4,
-          "official_title": "Activer et configurer le pare-feu local des postes de travail",
-          "plain_language": "Le pare-feu intégré de vos ordinateurs (Windows/Mac) est-il activé sur tous les postes ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "medium"
+          "official": {
+            "number": 17,
+            "title": "Activer et configurer le pare-feu local des postes de travail",
+            "domain": "securiser-postes",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Le pare-feu intégré de vos ordinateurs (Windows/Mac) est-il activé sur tous les postes ?"
+          },
+          "product_rating": { "effort": "low", "impact": "medium", "disclaimer": true }
         },
         {
-          "code": "H19",
-          "order": 5,
-          "official_title": "Chiffrer les données sensibles, en particulier sur les postes nomades et les supports amovibles",
-          "plain_language": "Si un ordinateur portable ou une clé USB professionnelle était volé, les données seraient-elles illisibles pour le voleur (chiffrement) ?",
-          "level": "renforce",
-          "effort": "medium",
-          "impact": "high"
+          "official": {
+            "number": 18,
+            "title": "Chiffrer les données sensibles transmises par voie Internet",
+            "domain": "securiser-postes",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Quand vous envoyez des documents sensibles par email ou via un service en ligne (Cloud), sont-ils chiffrés avant l'envoi ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "medium", "disclaimer": true }
         }
       ]
     },
@@ -211,87 +266,145 @@
       "code": "securiser-reseau",
       "order": 5,
       "name": "Sécuriser le réseau",
-      "description": "Cloisonner et protéger la manière dont vos équipements communiquent entre eux et avec Internet.",
       "measures": [
         {
-          "code": "H20",
-          "order": 1,
-          "official_title": "Segmenter le réseau et mettre en place un cloisonnement entre zones",
-          "plain_language": "Votre réseau Wi-Fi invité (pour les visiteurs) est-il complètement séparé de votre réseau professionnel interne ?",
-          "level": "renforce",
-          "effort": "medium",
-          "impact": "high"
+          "official": {
+            "number": 19,
+            "title": "Segmenter le réseau et mettre en place un cloisonnement entre ces zones",
+            "domain": "securiser-reseau",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Votre réseau est-il découpé en zones séparées (ex. postes utilisateurs, serveurs, Wi-Fi invités) plutôt qu'un seul grand réseau où tout communique librement avec tout ?"
+          },
+          "product_rating": { "effort": "high", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H21",
-          "order": 2,
-          "official_title": "S'assurer de la sécurité des accès Wi-Fi et de leur séparation avec les réseaux professionnels",
-          "plain_language": "Votre Wi-Fi professionnel est-il protégé par un mot de passe robuste et un chiffrement moderne (WPA2/WPA3) ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "medium"
+          "official": {
+            "number": 20,
+            "title": "S'assurer de la sécurité des réseaux d'accès Wi-Fi et de la séparation des usages",
+            "domain": "securiser-reseau",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Votre Wi-Fi professionnel est-il protégé par un chiffrement robuste (WPA2/WPA3), et votre Wi-Fi visiteurs est-il séparé du réseau interne ?"
+          },
+          "product_rating": { "effort": "low", "impact": "medium", "disclaimer": true }
         },
         {
-          "code": "H22",
-          "order": 3,
-          "official_title": "Utiliser des protocoles réseau sécurisés dès qu'ils existent",
-          "plain_language": "Votre site web et vos outils en ligne utilisent-ils systématiquement une connexion chiffrée (HTTPS, cadenas dans le navigateur) ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "medium"
+          "official": {
+            "number": 21,
+            "title": "Utiliser des protocoles réseaux sécurisés dès qu'ils existent",
+            "domain": "securiser-reseau",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Votre site web et vos outils en ligne utilisent-ils systématiquement une connexion chiffrée (HTTPS, cadenas dans le navigateur) ?"
+          },
+          "product_rating": { "effort": "low", "impact": "medium", "disclaimer": true }
         },
         {
-          "code": "H23",
-          "order": 4,
-          "official_title": "Mettre en place une passerelle d'accès sécurisé à Internet",
-          "plain_language": "Votre connexion Internet passe-t-elle par un équipement de sécurité (box/routeur avec pare-feu) correctement configuré ?",
-          "level": "standard",
-          "effort": "medium",
-          "impact": "medium"
+          "official": {
+            "number": 22,
+            "title": "Mettre en place une passerelle d'accès sécurisé à Internet",
+            "domain": "securiser-reseau",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Votre connexion Internet passe-t-elle par un équipement de sécurité (pare-feu/proxy) plutôt que chaque poste n'accédant directement à Internet ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "medium", "disclaimer": true }
+        },
+        {
+          "official": {
+            "number": 23,
+            "title": "Cloisonner les services visibles depuis Internet du reste du système d'information",
+            "domain": "securiser-reseau",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Si vous hébergez un site web ou un serveur accessible depuis Internet, est-il isolé du reste de votre réseau interne (pour qu'une attaque sur le site n'atteigne pas vos données internes) ?"
+          },
+          "product_rating": { "effort": "high", "impact": "high", "disclaimer": true }
+        },
+        {
+          "official": {
+            "number": 24,
+            "title": "Protéger sa messagerie professionnelle",
+            "domain": "securiser-reseau",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Votre messagerie professionnelle dispose-t-elle d'un antivirus et d'un anti-spam, et le chiffrement des échanges entre serveurs est-il activé ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "high", "disclaimer": true }
+        },
+        {
+          "official": {
+            "number": 25,
+            "title": "Sécuriser les interconnexions réseau dédiées avec les partenaires",
+            "domain": "securiser-reseau",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Si un fournisseur ou un client est connecté directement à votre réseau (échange de données, etc.), cette connexion est-elle filtrée et limitée au strict nécessaire ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "medium", "disclaimer": true }
+        },
+        {
+          "official": {
+            "number": 26,
+            "title": "Contrôler et protéger l'accès aux salles serveurs et aux locaux techniques",
+            "domain": "securiser-reseau",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "L'accès à la pièce où se trouvent vos serveurs/équipements réseau est-il limité (porte fermée à clé ou badge), et pas accessible librement ?"
+          },
+          "product_rating": { "effort": "low", "impact": "medium", "disclaimer": true }
         }
       ]
     },
     {
       "code": "securiser-administration",
       "order": 6,
-      "name": "Sécuriser l'administration du système d'information",
-      "description": "Les comptes et postes qui administrent vos systèmes sont les plus critiques à protéger : un accès compromis y donne les pleins pouvoirs.",
+      "name": "Sécuriser l'administration",
       "measures": [
         {
-          "code": "H24",
-          "order": 1,
-          "official_title": "Interdire l'accès à Internet depuis les postes ou serveurs utilisés pour l'administration",
-          "plain_language": "Le poste utilisé pour administrer vos serveurs/comptes sensibles sert-il uniquement à ça (pas de navigation web ou d'email dessus) ?",
-          "level": "renforce",
-          "effort": "high",
-          "impact": "medium"
+          "official": {
+            "number": 27,
+            "title": "Interdire l'accès à Internet depuis les postes ou serveurs utilisés pour l'administration du système d'information",
+            "domain": "securiser-administration",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Le poste utilisé pour administrer vos serveurs/comptes sensibles sert-il uniquement à ça (pas de navigation web ou d'email dessus) ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "medium", "disclaimer": true }
         },
         {
-          "code": "H25",
-          "order": 2,
-          "official_title": "Utiliser un réseau dédié et cloisonné pour l'administration",
-          "plain_language": "L'administration de vos systèmes se fait-elle sur un réseau à part, séparé du réseau bureautique quotidien ?",
-          "level": "renforce",
-          "effort": "high",
-          "impact": "medium"
+          "official": {
+            "number": 28,
+            "title": "Utiliser un réseau dédié et cloisonné pour l'administration du système d'information",
+            "domain": "securiser-administration",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "L'administration de vos systèmes se fait-elle sur un réseau à part, séparé du réseau bureautique quotidien ?"
+          },
+          "product_rating": { "effort": "high", "impact": "medium", "disclaimer": true }
         },
         {
-          "code": "H26",
-          "order": 3,
-          "official_title": "Limiter au strict besoin opérationnel les droits d'administration sur les postes de travail",
-          "plain_language": "Le nombre de personnes ayant des droits \"administrateur\" sur les postes de travail est-il réduit au strict nécessaire ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "high"
-        },
-        {
-          "code": "H27",
-          "order": 4,
-          "official_title": "Gérer le cycle de vie des comptes et des accès des administrateurs",
-          "plain_language": "Les comptes administrateurs sont-ils revus régulièrement (désactivés dès qu'ils ne sont plus utiles) ?",
-          "level": "renforce",
-          "effort": "medium",
-          "impact": "medium"
+          "official": {
+            "number": 29,
+            "title": "Limiter au strict besoin opérationnel les droits d'administration sur les postes de travail",
+            "domain": "securiser-administration",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Le nombre de personnes ayant des droits « administrateur » sur les postes de travail est-il réduit au strict nécessaire (pas de droits admin par défaut) ?"
+          },
+          "product_rating": { "effort": "low", "impact": "high", "disclaimer": true }
         }
       ]
     },
@@ -299,34 +412,54 @@
       "code": "gerer-nomadisme",
       "order": 7,
       "name": "Gérer le nomadisme",
-      "description": "Les usages en dehors des locaux (télétravail, déplacements) élargissent la surface de risque.",
       "measures": [
         {
-          "code": "H28",
-          "order": 1,
-          "official_title": "Prendre des mesures de sécurisation physique des terminaux nomades",
-          "plain_language": "Vos collaborateurs en télétravail ou en déplacement savent-ils comment protéger physiquement leur matériel (ne pas le laisser sans surveillance) ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "medium"
+          "official": {
+            "number": 30,
+            "title": "Prendre des mesures de sécurisation physique des terminaux nomades",
+            "domain": "gerer-nomadisme",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Vos collaborateurs en déplacement savent-ils comment protéger physiquement leur matériel (ne pas le laisser sans surveillance, filtre de confidentialité sur l'écran) ?"
+          },
+          "product_rating": { "effort": "low", "impact": "medium", "disclaimer": true }
         },
         {
-          "code": "H29",
-          "order": 2,
-          "official_title": "Chiffrer les flux réseau de bout en bout lorsque cela est possible, en priorité les Wi-Fi",
-          "plain_language": "Vos collaborateurs utilisent-ils une connexion sécurisée (VPN) pour se connecter aux outils de l'entreprise depuis l'extérieur ?",
-          "level": "renforce",
-          "effort": "medium",
-          "impact": "medium"
+          "official": {
+            "number": 31,
+            "title": "Chiffrer les données sensibles, en particulier sur le matériel potentiellement perdable",
+            "domain": "gerer-nomadisme",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Les ordinateurs portables, clés USB et disques durs externes professionnels sont-ils chiffrés, pour protéger les données en cas de perte ou de vol ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H30",
-          "order": 3,
-          "official_title": "Adopter des politiques de sécurité dédiées aux terminaux mobiles",
-          "plain_language": "Avez-vous des règles minimales pour les smartphones professionnels (code de verrouillage, mise à jour, effacement à distance possible) ?",
-          "level": "standard",
-          "effort": "medium",
-          "impact": "medium"
+          "official": {
+            "number": 32,
+            "title": "Sécuriser la connexion réseau des postes utilisés en situation de nomadisme",
+            "domain": "gerer-nomadisme",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Vos collaborateurs utilisent-ils une connexion sécurisée (VPN) pour se connecter aux outils de l'entreprise depuis l'extérieur ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "medium", "disclaimer": true }
+        },
+        {
+          "official": {
+            "number": 33,
+            "title": "Adopter des politiques de sécurité dédiées aux terminaux mobiles",
+            "domain": "gerer-nomadisme",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Avez-vous des règles minimales pour les smartphones professionnels (code de verrouillage, séparation usage pro/perso, applications validées) ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "medium", "disclaimer": true }
         }
       ]
     },
@@ -334,25 +467,30 @@
       "code": "maintenir-a-jour",
       "order": 8,
       "name": "Maintenir le système d'information à jour",
-      "description": "La grande majorité des attaques exploitent des failles déjà connues et déjà corrigées par un éditeur.",
       "measures": [
         {
-          "code": "H31",
-          "order": 1,
-          "official_title": "Définir une politique de mise à jour des composants du système d'information",
-          "plain_language": "Avez-vous une règle simple (même non écrite) sur la fréquence à laquelle vos logiciels et systèmes sont mis à jour ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "high"
+          "official": {
+            "number": 34,
+            "title": "Définir une politique de mise à jour des composants du système d'information",
+            "domain": "maintenir-a-jour",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Avez-vous une règle claire sur la fréquence à laquelle vos logiciels et systèmes sont mis à jour, avec application des correctifs dans le mois qui suit leur sortie ?"
+          },
+          "product_rating": { "effort": "low", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H32",
-          "order": 2,
-          "official_title": "Anticiper la fin de la maintenance des logiciels et systèmes et limiter les adhérences logicielles",
-          "plain_language": "Savez-vous si certains de vos logiciels ou systèmes (ex. anciens Windows) ne reçoivent plus de mises à jour de sécurité ?",
-          "level": "standard",
-          "effort": "medium",
-          "impact": "high"
+          "official": {
+            "number": 35,
+            "title": "Anticiper la fin de la maintenance des logiciels et systèmes et limiter les adhérences logicielles",
+            "domain": "maintenir-a-jour",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Savez-vous si certains de vos logiciels ou systèmes (ex. anciens Windows) ne reçoivent plus de mises à jour de sécurité ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "high", "disclaimer": true }
         }
       ]
     },
@@ -360,43 +498,66 @@
       "code": "superviser-auditer-reagir",
       "order": 9,
       "name": "Superviser, auditer, réagir",
-      "description": "Détecter un incident tôt, et pouvoir revenir en arrière, limite considérablement les dégâts.",
       "measures": [
         {
-          "code": "H33",
-          "order": 1,
-          "official_title": "Activer et configurer les journaux des composants les plus importants",
-          "plain_language": "Vos outils importants (serveur, box, logiciel de comptabilité) gardent-ils une trace des connexions et actions effectuées ?",
-          "level": "renforce",
-          "effort": "medium",
-          "impact": "medium"
+          "official": {
+            "number": 36,
+            "title": "Activer et configurer les journaux des composants les plus importants",
+            "domain": "superviser-auditer-reagir",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Vos outils importants (serveur, box, logiciel de comptabilité) gardent-ils une trace des connexions et actions effectuées, conservée au moins un an ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "medium", "disclaimer": true }
         },
         {
-          "code": "H34",
-          "order": 2,
-          "official_title": "Définir et appliquer une politique de sauvegarde des composants critiques",
-          "plain_language": "Vos données importantes sont-elles sauvegardées régulièrement, avec une copie qui n'est pas connectée en permanence à votre réseau (protection anti-rançongiciel) ?",
-          "level": "standard",
-          "effort": "medium",
-          "impact": "high"
+          "official": {
+            "number": 37,
+            "title": "Définir et appliquer une politique de sauvegarde des composants critiques",
+            "domain": "superviser-auditer-reagir",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Vos données importantes sont-elles sauvegardées régulièrement, avec une copie déconnectée du réseau, et testez-vous que la restauration fonctionne vraiment ?"
+          },
+          "product_rating": { "effort": "medium", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H35",
-          "order": 3,
-          "official_title": "Superviser les systèmes",
-          "plain_language": "Quelqu'un surveille-t-il, même simplement, que vos systèmes fonctionnent normalement (pas de ralentissement ou comportement inhabituel) ?",
-          "level": "renforce",
-          "effort": "medium",
-          "impact": "medium"
+          "official": {
+            "number": 38,
+            "title": "Procéder à des contrôles et audits de sécurité réguliers puis appliquer les actions correctives associées",
+            "domain": "superviser-auditer-reagir",
+            "level": "renforce"
+          },
+          "simplified": {
+            "question": "Faites-vous vérifier, au moins une fois par an, par une personne ou une société compétente, que vos mesures de sécurité sont réellement efficaces ?"
+          },
+          "product_rating": { "effort": "high", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H36",
-          "order": 4,
-          "official_title": "Prendre en compte l'obtention d'informations publiques sur des vulnérabilités affectant le système d'information",
-          "plain_language": "Recevez-vous, ou consultez-vous, des alertes de sécurité concernant les logiciels que vous utilisez ?",
-          "level": "renforce",
-          "effort": "low",
-          "impact": "medium"
+          "official": {
+            "number": 39,
+            "title": "Désigner un référent en sécurité des systèmes d'information et le faire connaître auprès du personnel",
+            "domain": "superviser-auditer-reagir",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Une personne est-elle clairement identifiée, en interne, comme référente pour les sujets de cybersécurité, et connue de tous ?"
+          },
+          "product_rating": { "effort": "low", "impact": "medium", "disclaimer": true }
+        },
+        {
+          "official": {
+            "number": 40,
+            "title": "Définir une procédure de gestion des incidents de sécurité",
+            "domain": "superviser-auditer-reagir",
+            "level": "standard"
+          },
+          "simplified": {
+            "question": "Savez-vous précisément quoi faire en cas d'incident de sécurité (poste qui se comporte bizarrement, suspicion de piratage) : qui prévenir, quoi débrancher, quoi ne pas faire ?"
+          },
+          "product_rating": { "effort": "low", "impact": "high", "disclaimer": true }
         }
       ]
     },
@@ -404,61 +565,30 @@
       "code": "aller-plus-loin",
       "order": 10,
       "name": "Pour aller plus loin",
-      "description": "Des mesures plus organisationnelles, qui structurent durablement la démarche de sécurité de l'entreprise.",
       "measures": [
         {
-          "code": "H37",
-          "order": 1,
-          "official_title": "Élaborer un plan de reprise et de continuité d'activité",
-          "plain_language": "Avez-vous réfléchi à comment votre entreprise continuerait à fonctionner si votre informatique était totalement bloquée pendant plusieurs jours ?",
-          "level": "renforce",
-          "effort": "high",
-          "impact": "high"
+          "official": {
+            "number": 41,
+            "title": "Mener une analyse de risques formelle",
+            "domain": "aller-plus-loin",
+            "level": "renforce"
+          },
+          "simplified": {
+            "question": "Avez-vous déjà réfléchi, de manière structurée, aux risques spécifiques à votre activité et à ce qui pourrait vraiment vous porter préjudice — pas seulement suivi des bonnes pratiques génériques ?"
+          },
+          "product_rating": { "effort": "high", "impact": "high", "disclaimer": true }
         },
         {
-          "code": "H38",
-          "order": 2,
-          "official_title": "Désigner un référent en sécurité des systèmes d'information et le faire connaître auprès du personnel",
-          "plain_language": "Une personne est-elle clairement identifiée, en interne, comme référente pour les sujets de cybersécurité ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "medium"
-        },
-        {
-          "code": "H39",
-          "order": 3,
-          "official_title": "Définir une politique de sécurité des systèmes d'information (PSSI) et la diffuser",
-          "plain_language": "Avez-vous un document, même court, qui pose les règles de sécurité informatique de l'entreprise ?",
-          "level": "renforce",
-          "effort": "high",
-          "impact": "high"
-        },
-        {
-          "code": "H40",
-          "order": 4,
-          "official_title": "Élaborer des procédures de gestion de crise informatique et effectuer des tests",
-          "plain_language": "Savez-vous précisément qui fait quoi en cas de cyberattaque avérée (qui prévenir, qui décide, dans quel ordre) ?",
-          "level": "renforce",
-          "effort": "high",
-          "impact": "high"
-        },
-        {
-          "code": "H41",
-          "order": 5,
-          "official_title": "Impliquer la direction dans la démarche de sécurité des systèmes d'information",
-          "plain_language": "La direction de l'entreprise suit-elle, même à distance, l'avancement des sujets de cybersécurité ?",
-          "level": "renforce",
-          "effort": "low",
-          "impact": "high"
-        },
-        {
-          "code": "H42",
-          "order": 6,
-          "official_title": "Rédiger, mettre en œuvre et faire connaître une charte informatique",
-          "plain_language": "Vos collaborateurs ont-ils signé un document simple qui rappelle les règles d'usage du matériel et des outils informatiques ?",
-          "level": "standard",
-          "effort": "low",
-          "impact": "medium"
+          "official": {
+            "number": 42,
+            "title": "Privilégier l'usage de produits et de services qualifiés par l'ANSSI",
+            "domain": "aller-plus-loin",
+            "level": "renforce"
+          },
+          "simplified": {
+            "question": "Quand vous choisissez un prestataire de cybersécurité (audit, hébergement, réponse à incident) ou un logiciel de sécurité, vérifiez-vous s'il est qualifié par l'ANSSI ?"
+          },
+          "product_rating": { "effort": "low", "impact": "medium", "disclaimer": true }
         }
       ]
     }

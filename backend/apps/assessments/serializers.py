@@ -8,13 +8,14 @@ class MeasureSerializer(serializers.ModelSerializer):
         model = Measure
         fields = [
             "id",
-            "code",
+            "number",
             "order",
             "official_title",
             "plain_language",
             "level",
             "effort",
             "impact",
+            "effort_impact_disclaimer",
         ]
         read_only_fields = fields
 
@@ -62,12 +63,12 @@ class ScoresSerializer(serializers.Serializer):
 
 
 class AnswerSerializer(serializers.ModelSerializer):
-    measure_code = serializers.CharField(source="measure.code", read_only=True)
+    measure_number = serializers.IntegerField(source="measure.number", read_only=True)
 
     class Meta:
         model = Answer
-        fields = ["id", "measure", "measure_code", "value", "note", "answered_at"]
-        read_only_fields = ["id", "measure_code", "answered_at"]
+        fields = ["id", "measure", "measure_number", "value", "note", "answered_at"]
+        read_only_fields = ["id", "measure_number", "answered_at"]
 
 
 class SubmitAnswerSerializer(serializers.Serializer):
