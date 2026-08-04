@@ -29,6 +29,9 @@ export default [
       ...react.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
       'react/react-in-jsx-scope': 'off',
+      // No PropTypes/TypeScript in this project (CLAUDE.md: JS, no TS "for now") —
+      // this rule would just demand PropTypes annotations we don't otherwise use.
+      'react/prop-types': 'off',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
