@@ -51,3 +51,14 @@ def list_tenant_members(tenant: Tenant):
     """Members of ``tenant``. Relies on TenantScopingMiddleware having
     already set the tenant context for this request."""
     return Membership.objects.select_related("user").filter(tenant=tenant)
+
+
+def list_members(tenant: Tenant):
+    """Members of ``tenant``, independent of ambient tenant context —
+    for Celery tasks and other code with no request/middleware to have set
+    it, where list_tenant_members's request-scoped read isn't available."""
+    return Membership.all_objects.select_related("user").filter(tenant=tenant)
+
+
+def get_tenant(tenant_id):
+    return Tenant.objects.filter(id=tenant_id).first()

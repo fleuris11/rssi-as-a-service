@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="fr">
+  <body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;padding:24px 16px;">
+      <tr>
+        <td>
+          <h1 style="font-size:20px;margin:0 0 4px;">Météo cyber — {{ tenant_name }}</h1>
+          <p style="margin:0 0 20px;color:#64748b;font-size:13px;">{{ date|date:"d/m/Y" }}</p>
+
+          <p style="font-size:28px;margin:0 0 4px;">{{ mood_emoji }}</p>
+          <p style="font-size:16px;font-weight:bold;margin:0 0 20px;">{{ mood_label }}</p>
+
+          <h2 style="font-size:14px;color:#475569;margin:0 0 8px;">Vos actifs surveillés</h2>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+            {% for asset in assets %}
+            <tr>
+              <td style="padding:8px 0;border-top:1px solid #e2e8f0;">
+                <strong style="font-size:13px;">{{ asset.value }}</strong>
+                <span style="font-size:12px;color:#94a3b8;">({{ asset.type_label }})</span>
+                {% if asset.uptime_24h != None %}
+                <div style="font-size:12px;color:#64748b;">Disponibilité 24h : {{ asset.uptime_24h }} %</div>
+                {% endif %}
+                {% for check in asset.checks %}
+                <div style="font-size:12px;color:#64748b;">{{ check.label }} : {{ check.status_label }}</div>
+                {% endfor %}
+              </td>
+            </tr>
+            {% endfor %}
+          </table>
+
+          <h2 style="font-size:14px;color:#475569;margin:0 0 8px;">
+            Alertes ouvertes {% if open_alerts %}({{ open_alerts|length }}){% endif %}
+          </h2>
+          {% if open_alerts %}
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+            {% for alert in open_alerts %}
+            <tr>
+              <td style="padding:6px 0;font-size:13px;">
+                {{ alert.asset_value }} — {{ alert.type_label }} ({{ alert.severity_label }})
+              </td>
+            </tr>
+            {% endfor %}
+          </table>
+          {% else %}
+          <p style="font-size:13px;color:#64748b;margin:0 0 20px;">Aucune alerte ouverte.</p>
+          {% endif %}
+
+          <p style="margin:20px 0 0;">
+            <a href="{{ dashboard_url }}" style="display:inline-block;background:#0f172a;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;font-size:13px;">
+              Voir le tableau de bord
+            </a>
+          </p>
+
+          <p style="margin:24px 0 0;font-size:11px;color:#94a3b8;">RSSI as a Service</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

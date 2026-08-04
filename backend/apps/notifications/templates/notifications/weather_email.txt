@@ -1,0 +1,18 @@
+Météo cyber — {{ tenant_name }} — {{ date|date:"d/m/Y" }}
+
+{{ mood_emoji }} {{ mood_label }}
+
+Vos actifs surveillés :
+{% for asset in assets %}
+- {{ asset.value }} ({{ asset.type_label }}){% if asset.uptime_24h != None %} — disponibilité 24h : {{ asset.uptime_24h }} %{% endif %}
+{% for check in asset.checks %}    {{ check.label }} : {{ check.status_label }}
+{% endfor %}{% endfor %}
+{% if open_alerts %}
+Alertes ouvertes ({{ open_alerts|length }}) :
+{% for alert in open_alerts %}- {{ alert.asset_value }} — {{ alert.type_label }} ({{ alert.severity_label }})
+{% endfor %}{% else %}
+Aucune alerte ouverte.
+{% endif %}
+Tableau de bord complet : {{ dashboard_url }}
+
+— RSSI as a Service

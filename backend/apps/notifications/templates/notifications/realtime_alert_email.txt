@@ -1,0 +1,9 @@
+🔴 Alerte — {{ tenant_name }}
+
+Actif : {{ asset_value }}
+Type : {{ alert_type_label }}
+Sévérité : {{ severity_label }}
+
+Tableau de bord complet : {{ dashboard_url }}
+
+— RSSI as a Service
