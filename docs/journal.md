@@ -510,3 +510,119 @@ officielles réelles (analyse de risques formelle ; produits/services qualifiés
   mesures 38/41/42 sans socle standard) n'est pas modélisée — actuellement documentée comme
   simplification assumée dans `docs/verification_referentiel_anssi.md`. À revisiter si le produit a
   un jour besoin de distinguer les deux paliers dans le score plutôt qu'un système de poids unique.
+
+---
+
+## 2026-08-05 — Phase 3 : surveillance continue et météo cyber
+
+### Contexte
+Mission Phase 3 du cadrage (§3.1 module M5, §4.4, règles de sécurité §4 point 4) : infrastructure
+Celery/Beat, surveillance passive d'actifs (disponibilité, certificat SSL, en-têtes de sécurité,
+SPF/DMARC), moteur d'alertes anti-faux-positifs, et météo cyber quotidienne par email. Consigne
+explicite de cette session : la météo est un template déterministe (texte construit en code),
+aucun appel à l'API Anthropic — l'enrichissement IA est réservé à la Phase 4 via le pipeline de
+pseudonymisation déjà en place (ADR 004/005).
+
+### Réalisé
+
+**Infrastructure asynchrone**
+- Celery 5.6 + Redis (base logique `/1`, séparée du cache Django sur `/0`) ; app Celery dans
+  `config/celery.py`, planification statique (`beat_schedule`) plutôt que le scheduler DB de
+  django-celery-beat — cohérent avec ADR 003 (pas de nouvel ADR nécessaire, décision déjà actée).
+  Files dédiées `monitoring` et `emails` via `CELERY_TASK_ROUTES`, `ACKS_LATE` + prefetch=1 pour
+  la fiabilité des tâches longues (checks réseau).
+- Services `worker` et `beat` ajoutés à `docker-compose.yml`, chacun avec son healthcheck
+  (`celery inspect ping` pour le worker, fraîcheur du fichier de planification pour beat) et un
+  endpoint `GET /healthz/worker` côté Django basé sur un heartbeat en cache Redis.
+- Toutes les tâches sont idempotentes et retryables : `run_single_check` ne relance que sur
+  exception inattendue (les échecs réseau sont capturés *dans* les checks et jamais levés au
+  niveau tâche), `send_weather_email`/`send_realtime_alert_email` s'appuient sur `EmailLog` pour
+  ne jamais renvoyer deux fois le même email le même jour.
+
+**App `monitoring`**
+- Modèles `Asset` (type site web / domaine email, attestation de propriété obligatoire cochée à la
+  création — refusée sinon), `CheckResult` (statut OK/WARNING/CRITICAL mappé 1:1 sur ☀️/⚠️/🔴,
+  détails JSON, latence), `Alert` (type, sévérité, ouverte/résolue, contrainte unique partielle en
+  base empêchant deux alertes ouvertes du même type sur le même actif).
+- Quatre checks passifs, chacun dans son propre module testable sous `checks/` : disponibilité HTTP
+  (GET + timeout), certificat SSL (validité, émetteur, échéance), en-têtes de sécurité (HSTS, CSP,
+  X-Frame-Options, X-Content-Type-Options, avec recommandation française par en-tête manquant),
+  SPF/DMARC (lecture DNS TXT via `dnspython`, DKIM explicitement hors périmètre).
+- **Protection SSRF systématique** (`checks/ssrf.py`, `checks/http_client.py`) : toute résolution
+  DNS est validée contre les plages privées/loopback/link-local/réservées/multicast avant tout
+  appel réseau, y compris à **chaque saut de redirection HTTP** (redirections suivies manuellement,
+  jamais via `allow_redirects=True`, pour pouvoir revalider l'IP cible à chaque étape).
+- Moteur d'alertes : confirmation DOWN après 3 échecs consécutifs (anti faux positifs, cadrage
+  §pièges connus), seuils d'expiration SSL à 30/14/7 jours avec suivi des seuils déjà notifiés
+  (pas de spam de notification), résolution automatique au retour au vert, pas de doublon d'alerte
+  ouverte (garanti au niveau base, pas seulement applicatif).
+- API : CRUD des actifs, historique des checks, tableau de bord agrégé (dernier statut par type de
+  check, disponibilité 24h, alertes ouvertes), liste des alertes ouvertes du tenant.
+
+**App `notifications`**
+- Préférences par tenant (heure d'envoi de la météo, activation temps réel des alertes), journal
+  d'envoi (`EmailLog`) servant de clé d'idempotence quotidienne.
+- Backend email configurable par variable d'environnement (console en développement, SMTP en
+  production), templates texte + HTML légers, sans ressource externe, lisibles en 20 secondes,
+  avec lien vers le tableau de bord.
+- Agrégation météo : mood global (☀️/⚠️/🔴) calculé à partir du pire statut de check et de la
+  sévérité des alertes ouvertes du tenant, envoyée à l'heure choisie (bucket de 15 minutes,
+  correspondant à la fréquence de la tâche planifiée) aux administrateurs du tenant uniquement.
+
+**Frontend**
+- Page Surveillance (`/surveillance`) : formulaire de déclaration d'actif avec case d'attestation
+  de propriété obligatoire (soumission désactivée tant qu'elle n'est pas cochée), cartes par actif
+  avec badges de statut colorés, historique de disponibilité (points colorés), alertes ouvertes en
+  français, actions suspendre/réactiver/supprimer.
+- Page Préférences (`/preferences`) : bascule météo + sélecteur d'heure, bascule alertes temps réel.
+
+**Tests et vérification**
+- 212 tests (108 nouveaux pour `monitoring`/`notifications`), 97 % de couverture globale. Tests
+  réseau entièrement mockés ; tests SSRF explicites et hors ligne (IP littérales privées/loopback/
+  link-local refusées, y compris via redirection) ; moteur de confirmation à 3 échecs ; agrégation
+  météo ; étanchéité multi-tenant sur chaque nouvelle ressource (`Asset`, `CheckResult`, `Alert`,
+  `NotificationPreferences`). `ruff check`/`ruff format --check` verts, `makemigrations --check`
+  vert, lint et build frontend verts.
+- Vérification de bout en bout en conditions réelles (hors CI, réseau réel) : trois actifs créés
+  via l'API (`http://10.0.0.5/` comme cible SSRF, `https://example.com` comme site réel,
+  `example.com` comme domaine email réel), les 4 checks exécutés directement via
+  `apps.monitoring.services.run_check()`. Résultats : cible SSRF refusée avant tout appel réseau
+  (`requests.get` jamais invoqué, check enregistré CRITICAL avec message de refus explicite) ;
+  `example.com` : 200 OK, certificat réel (émetteur « SSL Corporation », ~83 jours de validité),
+  4 en-têtes de sécurité manquants détectés, SPF (`v=spf1 -all`) et DMARC (`v=DMARC1;p=reject...`)
+  lus et parsés correctement. Moteur d'alertes vérifié en direct : alerte `security_headers`
+  ouverte correctement, alerte `down` correctement **retenue** après un seul résultat CRITICAL
+  (règle des 3 échecs consécutifs fonctionnant comme prévu).
+- Stack complète (`web`, `worker`, `beat`, `postgres`, `redis`) démarrée via `docker compose up`,
+  les 5 services confirmés `healthy`. Email météo renvoyé avec succès à l'intérieur du conteneur
+  Linux (voir difficultés ci-dessous pour le contexte de cette vérification ciblée), confirmant
+  l'absence de régression liée à l'encodage.
+
+### Difficultés rencontrées et solutions
+- **`UnicodeEncodeError` sur l'emoji 🔴 lors d'un test manuel de l'email météo via
+  `manage.py shell` en local (hors Docker)** : le backend email console de Django écrit sur
+  `sys.stdout`, encodé en cp1252 dans ce terminal Windows, qui ne sait pas rendre l'emoji. Diagnostic :
+  limitation locale du terminal Windows, pas un bug applicatif — le backend SMTP (utilisé en
+  production) n'écrit jamais sur un terminal, et Linux (environnement Docker/VPS de production) est
+  par défaut en UTF-8. Décision : ne pas modifier `settings.py` pour ce problème d'ergonomie de
+  développement ponctuel ; vérifié explicitement que l'envoi fonctionne sans erreur à l'intérieur du
+  conteneur `web` (Linux) — confirmé, documenté ici comme limitation observée plutôt que corrigée.
+- **Test de confirmation santé Docker interrompu par un `sleep` chaîné bloqué par l'outillage** :
+  contourné avec une boucle d'attente conditionnelle (`until ... ; do sleep 3; done`) plutôt qu'un
+  délai fixe — les 5 services sont passés à `healthy` en environ 3 minutes (le temps que
+  `beat`/`worker` complètent leur première itération de healthcheck).
+- **Volume Postgres local contenant les données du smoke-test manuel** (tenant, actifs, résultats de
+  check créés pendant la vérification) : réinitialisé (`docker compose down -v`) après vérification,
+  suivant le même principe que la session précédente — aucune donnée réelle n'existe encore pour ce
+  module, la réinitialisation est sans risque.
+
+### Reste à faire (sessions suivantes)
+- Les éléments déjà listés en fin de session précédente restent d'actualité (validation experte du
+  référentiel simplifié, champ de désactivation `Membership`, code-splitting frontend — le bundle
+  dépasse toujours 500 kB minifié, écrans de gestion de compte).
+- Phase 4 (IA documentaire + assistant) : enrichissement de la météo cyber par l'IA (formulations
+  plus riches, recommandations priorisées) via le pipeline de pseudonymisation existant — non traité
+  cette session par consigne explicite.
+- La nuance entre « pas encore de donnée » et « check en erreur » n'est pas distinguée dans les
+  badges du tableau de bord frontend (`StatusBadge` affiche simplement « — » dans les deux cas) —
+  suffisant pour cette phase, à revisiter si l'ambiguïté gêne l'usage réel.
