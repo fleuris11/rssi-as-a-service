@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rssiasservice}
+      POSTGRES_USER: ${POSTGRES_USER:-rssiasservice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rssiasservice}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      # Host port 5433 (not 5432) to avoid clashing with any other local
+      # Postgres instance/container.
+      - "5433:5432"
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "6379:6379"
+
+  web:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override the host-oriented values from backend/.env (used when
+      # running manage.py/pytest directly on the host) with the
+      # in-network service hostnames docker-compose provides.
+      DATABASE_URL: postgres://${POSTGRES_USER:-rssiasservice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rssiasservice}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    command: python manage.py runserver 0.0.0.0:8000
+
+volumes:
+  postgres_data:
