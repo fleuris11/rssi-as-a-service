@@ -24,10 +24,16 @@ export default function NavBar() {
             <NavLink to="/plan-action" className={linkClass}>
               Plan d’action
             </NavLink>
+            <NavLink to="/surveillance" className={linkClass}>
+              Surveillance
+            </NavLink>
           </nav>
         </div>
         <div className="flex items-center gap-3 text-sm text-slate-600">
           {currentTenant && <span>{currentTenant.tenant_name}</span>}
+          <NavLink to="/preferences" className="text-slate-500 hover:text-slate-900">
+            Préférences
+          </NavLink>
           <button type="button" onClick={logout} className="text-slate-500 hover:text-slate-900">
             Déconnexion
           </button>

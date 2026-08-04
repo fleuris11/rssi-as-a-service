@@ -46,3 +46,22 @@ export const actionsApi = {
       params: assessmentId ? { assessment: assessmentId } : {},
     }),
 }
+
+export const monitoringApi = {
+  listAssets: () => apiClient.get('/api/v1/monitoring/assets/'),
+  createAsset: (payload) => apiClient.post('/api/v1/monitoring/assets/', payload),
+  updateAsset: (id, payload) => apiClient.patch(`/api/v1/monitoring/assets/${id}/`, payload),
+  deleteAsset: (id) => apiClient.delete(`/api/v1/monitoring/assets/${id}/`),
+  assetCheckHistory: (id, checkType) =>
+    apiClient.get(`/api/v1/monitoring/assets/${id}/checks/`, {
+      params: checkType ? { check_type: checkType } : {},
+    }),
+  dashboard: () => apiClient.get('/api/v1/monitoring/dashboard/'),
+  openAlerts: () => apiClient.get('/api/v1/monitoring/alerts/'),
+}
+
+export const notificationsApi = {
+  getPreferences: () => apiClient.get('/api/v1/notifications/preferences/'),
+  updatePreferences: (payload) =>
+    apiClient.patch('/api/v1/notifications/preferences/', payload),
+}

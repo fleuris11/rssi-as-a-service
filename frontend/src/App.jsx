@@ -4,8 +4,10 @@ import ProtectedRoute from './components/ProtectedRoute'
 import ActionPlanPage from './pages/ActionPlanPage'
 import DiagnosticPage from './pages/DiagnosticPage'
 import LoginPage from './pages/LoginPage'
+import NotificationPreferencesPage from './pages/NotificationPreferencesPage'
 import RegisterPage from './pages/RegisterPage'
 import ResultsPage from './pages/ResultsPage'
+import SurveillancePage from './pages/SurveillancePage'
 
 function App() {
   return (
@@ -19,6 +21,8 @@ function App() {
           <Route path="/resultats" element={<ResultsPage />} />
           <Route path="/resultats/:assessmentId" element={<ResultsPage />} />
           <Route path="/plan-action" element={<ActionPlanPage />} />
+          <Route path="/surveillance" element={<SurveillancePage />} />
+          <Route path="/preferences" element={<NotificationPreferencesPage />} />
         </Route>
       </Route>
 
