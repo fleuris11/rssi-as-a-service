@@ -269,3 +269,139 @@ Le dépôt distant étant repassé de 7 commits « anciens SHA » à 7 commits �
 push, toute référence externe à un ancien SHA (ex. lien direct vers un commit dans une discussion)
 serait cassée. Sans conséquence ici : dépôt encore au stade socle, aucune PR ni référence externe
 connue à ce jour.
+
+---
+
+## 2026-08-04 — Phase 2 : diagnostic de maturité et plan d'action
+
+### Contexte
+Parcours diagnostic complet demandé, de bout en bout : questionnaire ANSSI → score/radar →
+plan d'action priorisé, conformément au cadrage §3.1 (modules M2, M3) et §4. IA, monitoring et
+notifications explicitement exclus de cette session.
+
+### Réalisé
+
+**Référentiel ANSSI (`backend/data/anssi_hygiene.json`)**
+- Les 42 mesures du guide d'hygiène informatique ANSSI, réparties en 10 domaines fidèles à la
+  structure du guide (sensibiliser & former, connaître le SI, authentifier & contrôler les
+  accès, sécuriser les postes/le réseau/l'administration, gérer le nomadisme, maintenir à jour,
+  superviser/auditer/réagir, pour aller plus loin). Pour chaque mesure : intitulé officiel,
+  reformulation en question simple pour un dirigeant non technique, niveau (`standard` /
+  `renforce`), effort estimé et impact estimé (`low`/`medium`/`high`).
+  Intitulés officiels et structure fidèles à ma connaissance du guide ANSSI ; niveau/effort/impact
+  sont un jugement produit assumé (voir pondération plus bas), **à faire valider par un expert
+  métier avant mise en production réelle** — ce n'est pas une donnée réglementaire, c'est une
+  classification interne au produit.
+
+**App `assessments`**
+- Modèles : `Referential` / `Domain` / `Measure` (catalogue partagé, non tenant-scopé — chargé une
+  fois via une commande, lu seul par l'API) ; `Assessment` / `Answer` (`TenantScopedModel`,
+  comme `Membership` en Phase 1).
+- Commande `manage.py load_anssi_referential` : charge/`update_or_create` idempotent depuis le
+  JSON, `--file` pour pointer un fichier alternatif (utile en test).
+- Moteur de scoring (`assessments/services.py`) : score pondéré par mesure — poids 1.0 pour une
+  mesure `standard`, 0.5 pour une mesure `renforce` (désirable mais non bloquante pour un score de
+  maturité visant des TPE/PME) — valeur oui=1/partiel=0.5/non=0, N/A et mesures non répondues
+  exclues du dénominateur (jamais un score de 0 trompeur : `None` si rien n'est calculable — cas
+  « tout N/A » et « évaluation vide » couverts explicitement par les tests). Score global et par
+  domaine ; `compute_scores` accepte un jeu de réponses hypothétique (`measure_values`), c'est le
+  point d'extension utilisé par le plan d'action pour le score projeté.
+- Cycle de vie : `start_or_resume_assessment` (une seule évaluation « en cours » par tenant à la
+  fois), sauvegarde de progression par upsert (`submit_answer`), `complete_assessment` exige que
+  **toutes** les mesures aient une réponse (y compris N/A) avant de clôturer, et fige alors
+  `score_global` (snapshot immuable — l'historique ne doit pas bouger si le référentiel évolue
+  plus tard). Historique = simplement la liste des évaluations du tenant, triée par date.
+
+**App `actions`**
+- Modèle `ActionItem` (`TenantScopedModel`) référence `assessments.Assessment`/`Measure` par
+  chaîne (`"assessments.Assessment"`) plutôt que par import direct — la relation FK est un besoin
+  de schéma, la référence différée de Django est l'outil prévu pour ça sans coupler ce module aux
+  internes de l'app assessments (l'import direct de modèle reste interdit par CLAUDE.md).
+- `generate_action_plan` : un item `à faire` par mesure en écart (non/partiel) à la complétion
+  d'une évaluation — idempotent (`get_or_create`), déclenché par la vue de complétion
+  (orchestration dans la vue, comme le veut CLAUDE.md, pas de dépendance de service
+  assessments → actions).
+- Priorité = ratio impact/effort (`{low:1, medium:2, high:3}` de chaque côté) — un écart à fort
+  impact/faible effort (quick win) remonte en tête de liste, un écart à faible impact/fort effort
+  redescend.
+- Score projeté (`compute_projected_score`) : réponses réelles de l'évaluation, sauf les mesures
+  dont l'action associée est `fait`, comptées à 100 % — recalculé à chaque changement de statut.
+- Assignation validée contre l'appartenance au tenant (réutilise `tenants.services.get_membership`)
+  plutôt que d'accepter n'importe quel utilisateur de la plateforme.
+
+**API REST** (tout sous `/api/v1/`, tenant-scopé, permission `IsTenantMemberReadOnlyForReader`
+ajoutée dans `apps.tenants.permissions` — nouvelle permission partagée, le rôle lecteur est
+maintenant réellement lecture seule sur ces ressources, pas seulement sur la gestion des membres) :
+- `assessments/referential/`, `start/`, `current/`, liste (historique), détail (avec progression
+  et réponses, pour pré-remplir le questionnaire à la reprise), `answers/<measure_id>/` (PUT,
+  upsert), `complete/`, `scores/`.
+- `actions/` (liste kanban, filtrable par `assessment`/`status`), `actions/<id>/` (PATCH statut/
+  assignation/note), `actions/projected-score/`.
+
+**Frontend (React + Vite + Tailwind, Recharts pour le radar)**
+- Pas d'écran d'authentification n'existait avant cette session (Phase 1 = squelette seul) :
+  ajout du strict nécessaire pour dérouler le parcours de bout en bout — connexion, inscription,
+  client API axios (intercepteurs JWT + refresh automatique avec rotation, en-tête `X-Tenant-Id`),
+  contexte d'authentification, routes protégées.
+- Page questionnaire (`/diagnostic`) : domaines/mesures du référentiel actif, reformulation en
+  langage simple affichée, barre de progression globale et par domaine, réponse = sauvegarde
+  automatique (PUT immédiat par mesure), bouton de complétion activé seulement à 100 %.
+- Page résultats (`/resultats`, `/resultats/:id`) : score global, radar Recharts par domaine
+  (un seul hue, pas de dégradé arc-en-ciel, tooltip, table de détail en complément accessible du
+  graphique — conforme au guide interne de dataviz du projet), historique des scores.
+- Page plan d'action (`/plan-action`) : kanban à 3 colonnes par boutons de changement de statut
+  (alternative explicitement acceptée au drag & drop), assignation par menu déroulant (limité aux
+  membres du tenant), score projeté affiché en tête et recalculé à chaque changement de statut.
+
+**Tests (backend)**
+- 90 tests au total (35 nouveaux pour cette session), 97 % de couverture sur `apps/`.
+- Scoring : cas limites explicitement testés — tout N/A, évaluation vide, aucune mesure, pondération
+  standard/renforcé, N/A exclu du dénominateur, override `measure_values` pour le score projeté.
+- Cycle de vie : reprise d'évaluation, upsert de réponse, rejet hors référentiel, complétion
+  incomplète, complétion à deux reprises, historique trié.
+- Commande `load_anssi_referential` : structure attendue (10 domaines/42 mesures), idempotence,
+  fichier manquant.
+- Génération du plan : gaps uniquement, idempotence, absence de gap.
+- Étanchéité tenant sur **toutes** les nouvelles ressources : évaluation d'un autre tenant (404),
+  historique scopé, items du plan d'action d'un autre tenant (404 au PATCH), liste d'actions scopée.
+- Rôle lecteur : lecture seule vérifiée sur le questionnaire et sur le plan d'action.
+
+### Difficultés rencontrées et solutions
+- **Mismatch de mot de passe dans les nouveaux tests API** : les fixtures `user_factory`
+  utilisent par défaut `Str0ng!Passw0rd123` (root `conftest.py`, Phase 1), mes premiers tests
+  d'API assessments/actions utilisaient un autre mot de passe par défaut dans leur propre
+  helper `_login` → 401 partout. Corrigé en alignant le défaut sur celui de `user_factory`.
+- **`update_or_create` sur un manager tenant-scopé fail-closed** : `Answer.objects` (scopé) aurait
+  fait échouer la recherche préalable de `update_or_create` hors contexte de requête (`.none()` →
+  toujours `DoesNotExist` → toujours une création, jamais une mise à jour). Résolu en faisant
+  systématiquement passer `assessments/services.py` et `actions/services.py` par `all_objects` +
+  filtre `tenant=` explicite plutôt que par le manager scopé ambient — plus verbeux mais correct
+  indépendamment du contexte d'appel (documenté en tête de chaque module de services).
+- **`npm audit` signale `react-router-dom` (CVE contournement CSRF en mode RSC)** : la plage
+  vulnérable couvre jusqu'à la dernière version publiée (7.18.2), aucun correctif n'existe encore
+  au-dessus ; la faille concerne le mode RSC/framework, que cette SPA purement client (`BrowserRouter`)
+  n'utilise pas. Choix assumé de garder 7.18.2 plutôt que revenir à 7.11.0, à surveiller via
+  Dependabot/CI (scan prévu, cadrage §10) jusqu'à publication d'un correctif dans la plage utilisée.
+- **Pas d'écran de connexion existant** : le parcours « bout en bout » demandé est impossible à
+  démontrer sans authentification fonctionnelle côté frontend. Ajout du strict nécessaire
+  (connexion/inscription/contexte tenant) plutôt que le périmètre complet de gestion de compte,
+  pour rester concentré sur M2/M3.
+
+### Vérification de bout en bout
+Suite automatisée (90 tests, 97 % de couverture) + parcours HTTP complet rejoué manuellement avec
+`curl` en reproduisant exactement les appels du frontend (inscription → connexion → référentiel →
+démarrage → 42 réponses → progression → complétion → scores → plan généré → changement de statut →
+score projeté → liste des membres pour l'assignation) : chaque réponse JSON vérifiée conforme à ce
+qu'attendent les composants React. Serveur de dev Vite démarré et testé (200 sur `/`) ; `npm run
+build` et `ruff`/`pytest` verts.
+
+### Reste à faire (sessions suivantes)
+- Faire valider par un expert métier la classification niveau/effort/impact des 42 mesures
+  (jugement produit assumé cette session, pas une donnée ANSSI officielle).
+- Champ de désactivation « douce » sur `Membership` (identifié en session précédente, toujours
+  pertinent maintenant que l'assignation d'actions dépend de l'appartenance active à un tenant).
+- Fractionner le bundle frontend (Recharts fait dépasser 500 kB minifié) — budget de performance
+  frontend (cadrage §8, Green IT) à traiter en Phase 5 (durcissement).
+- Écrans de gestion de compte (mot de passe oublié, invitation de collaborateurs) — non couverts,
+  hors périmètre M2/M3 de cette session.
+- Phase 3 (surveillance + météo cyber) à démarrer selon le phasage du cadrage.
