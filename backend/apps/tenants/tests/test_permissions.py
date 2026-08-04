@@ -2,7 +2,7 @@ import pytest
 from django.test import RequestFactory
 
 from apps.tenants.models import Membership
-from apps.tenants.permissions import IsTenantAdmin, IsTenantMember
+from apps.tenants.permissions import IsTenantAdmin, IsTenantMember, IsTenantMemberReadOnlyForReader
 
 pytestmark = pytest.mark.django_db
 
@@ -51,3 +51,34 @@ def test_is_tenant_admin_allows_admin_role(user_factory, tenant_factory):
     request = _request_with_membership(admin_membership)
 
     assert IsTenantAdmin().has_permission(request, view=None) is True
+
+
+def test_reader_can_read_but_not_write(user_factory, tenant_factory):
+    admin = user_factory(email="admin@example.com")
+    tenant = tenant_factory(admin)
+    reader = user_factory(email="reader@example.com")
+    reader_membership = Membership.all_objects.create(
+        tenant=tenant, user=reader, role=Membership.Role.READER
+    )
+
+    get_request = RequestFactory().get("/")
+    get_request.membership = reader_membership
+    post_request = RequestFactory().post("/")
+    post_request.membership = reader_membership
+
+    assert IsTenantMemberReadOnlyForReader().has_permission(get_request, view=None) is True
+    assert IsTenantMemberReadOnlyForReader().has_permission(post_request, view=None) is False
+
+
+def test_contributor_can_write(user_factory, tenant_factory):
+    admin = user_factory(email="admin@example.com")
+    tenant = tenant_factory(admin)
+    contributor = user_factory(email="contributor@example.com")
+    contributor_membership = Membership.all_objects.create(
+        tenant=tenant, user=contributor, role=Membership.Role.CONTRIBUTOR
+    )
+
+    post_request = RequestFactory().post("/")
+    post_request.membership = contributor_membership
+
+    assert IsTenantMemberReadOnlyForReader().has_permission(post_request, view=None) is True
