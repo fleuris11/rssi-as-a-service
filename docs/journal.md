@@ -218,3 +218,54 @@ l'issue de la session.
 - Les éléments déjà listés en fin de session précédente restent d'actualité (2FA TOTP, liste de
   mots de passe compromis, rate limiting, back-office `platform_admin`, invitation de
   collaborateurs, Phase 2).
+
+---
+
+## 2026-08-04 — Nettoyage de l'historique Git (attribution des commits)
+
+### Contexte
+Les commits des deux sessions précédentes portaient tous un footer `Co-Authored-By: Claude Sonnet
+5 <noreply@anthropic.com>` (ajout automatique de l'outil utilisé pour développer). Demande de
+s'assurer que l'historique du dépôt reflète uniquement l'auteur humain du projet.
+
+### Actions effectuées
+1. **`.claude/settings.json`** (nouveau fichier, suivi par Git) : `"includeCoAuthoredBy": false`
+   pour que les futurs commits générés via l'outil n'ajoutent plus ce footer.
+2. **Identité Git** : `git config --local user.name`/`user.email` n'étaient pas positionnés
+   explicitement (seul `user.email` existait dans le `.gitconfig` global) ; les 7 commits déjà
+   créés portaient malgré tout la bonne identité (`Fleuris EGBOOU
+   <fleurismeweegboou5@gmail.com>`, cohérente avec le compte GitHub `fleuris11`), probablement
+   injectée par l'outil au moment du commit. Fixé explicitement en config locale du dépôt pour ne
+   plus dépendre de ce comportement implicite.
+3. **Réécriture de l'historique** : `git filter-repo` n'était pas installé et son installation via
+   pip a échoué dans cet environnement ; utilisé `git filter-branch` à la place (`--env-filter`
+   pour forcer auteur et committeur sur les 7 commits, `--msg-filter` — un petit script Python
+   dédié, `sys.stdout.reconfigure(newline="\n")` nécessaire pour éviter que Python n'introduise des
+   CRLF parasites sur Windows — pour retirer la ligne `Co-Authored-By`). Vérifié après coup que le
+   contenu (arbre des fichiers) de chaque commit est resté strictement identique — seuls les
+   métadonnées (auteur, committeur, message) ont changé — puis nettoyé la référence de sauvegarde
+   `refs/original/` laissée par `filter-branch` et exécuté un `git gc --prune=now`.
+4. **Force-push** : `git push --force-with-lease origin main`. Vérifié après coup par un
+   `git fetch` que `origin/main` correspond exactement à l'historique réécrit et ne contient plus
+   aucune occurrence de « Co-Authored-By ».
+
+### Résultat vérifié
+```
+git log --format='%h %an %ae %s'
+afe6f6a Fleuris EGBOOU fleurismeweegboou5@gmail.com docs: ADR 001-005 and journal entry for the hardening session
+86d04a1 Fleuris EGBOOU fleurismeweegboou5@gmail.com test(tenants): harden tenant-isolation coverage and gitignore
+a951e07 Fleuris EGBOOU fleurismeweegboou5@gmail.com docs: README with local dev instructions and Phase 1 journal entry
+e9b3608 Fleuris EGBOOU fleurismeweegboou5@gmail.com build: docker-compose (web, postgres, redis) and CI pipeline
+fdbf040 Fleuris EGBOOU fleurismeweegboou5@gmail.com feat(frontend): React 18 + Vite + Tailwind scaffold
+f7e2cff Fleuris EGBOOU fleurismeweegboou5@gmail.com feat(backend): Django 5 + DRF skeleton with JWT auth and multi-tenancy
+26f8dca Fleuris EGBOOU fleurismeweegboou5@gmail.com chore: initialize monorepo structure
+```
+Les 7 SHA ont changé (réécriture d'historique attendue) ; tout collaborateur ou clone existant du
+dépôt devra re-cloner ou réaligner sa branche locale (`git fetch && git reset --hard origin/main`)
+après cette opération.
+
+### Point de vigilance
+Le dépôt distant étant repassé de 7 commits « anciens SHA » à 7 commits « nouveaux SHA » par force
+push, toute référence externe à un ancien SHA (ex. lien direct vers un commit dans une discussion)
+serait cassée. Sans conséquence ici : dépôt encore au stade socle, aucune PR ni référence externe
+connue à ce jour.
