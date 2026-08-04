@@ -405,3 +405,108 @@ build` et `ruff`/`pytest` verts.
 - Écrans de gestion de compte (mot de passe oublié, invitation de collaborateurs) — non couverts,
   hors périmètre M2/M3 de cette session.
 - Phase 3 (surveillance + météo cyber) à démarrer selon le phasage du cadrage.
+
+---
+
+## 2026-08-04 — Alignement du référentiel ANSSI sur la source officielle
+
+### Contexte
+Vérification demandée du contenu de `backend/data/anssi_hygiene.json` face au texte réel du guide
+ANSSI, avant toute utilisation du référentiel comme pièce de certification. Le constat est sévère :
+**le JSON produit en Phase 2 avait été reconstitué de mémoire, pas depuis le document source**, et
+comportait des écarts massifs (mesures inventées, mesures officielles omises, mauvais domaines,
+mauvaise numérotation). Détail complet dans le nouveau rapport
+`docs/verification_referentiel_anssi.md` — cette entrée en résume les grandes lignes.
+
+### Réalisé
+
+**Récupération de la source**
+- Téléchargement du PDF officiel depuis `messervices.cyber.gouv.fr/documents-guides/
+  guide_hygiene_informatique_anssi.pdf` (trouvé via recherche web, l'URL n'était pas connue à
+  l'avance) — confirmé PDF valide (en-tête `%PDF-1.4`, 72 pages) et cohérent avec la page officielle
+  `cyber.gouv.fr/publications/guide-dhygiene-informatique`. Sauvegardé dans
+  `docs/sources/anssi_guide_hygiene_informatique.pdf` (4,8 Mo, suivi par Git).
+- Métadonnées confirmées : version 2.0, septembre 2017 (première édition janvier 2013), Licence
+  Ouverte/Open Licence (Etalab v1).
+- `pypdf` (absent de l'environnement) installé pour extraire le texte page par page — `pdftoppm`/
+  poppler, normalement utilisé par l'outil de lecture de PDF, n'était pas disponible non plus.
+
+**Comparaison mesure par mesure**
+- La source la plus fiable s'est révélée être l'annexe « Outil de suivi » du guide (pages 62-67) :
+  un tableau récapitulatif propre des 42 mesures, numéro par numéro, domaine par domaine — utilisé
+  comme référence canonique pour la numérotation et les intitulés exacts, recoupé avec le corps du
+  texte de chaque mesure (une par page).
+- Écarts trouvés (détail dans le rapport) : 9 mesures inventées (dont un domaine entier
+  « Pour aller plus loin » quasi totalement fabriqué — 6 mesures inventées contre 2 mesures
+  officielles réelles), plusieurs mesures officielles complètement absentes (notamment 4 des 8
+  mesures du domaine « Sécuriser le réseau »), des mesures rattachées au mauvais domaine (le
+  référent SSI classé en « Pour aller plus loin » au lieu de « Superviser, auditer, réagir »), et
+  des intitulés déformés (une mesure de chiffrement de mesure 31 confondue avec la mesure 18).
+- Classification standard/renforcé entièrement refaite : la session précédente avait classé environ
+  22 mesures « renforcé » par jugement produit non vérifié. Le texte réel montre que la plupart des
+  mesures ont un socle standard *et* un complément renforcé optionnel (pas un choix binaire), et que
+  seules **3 mesures (38, 41, 42)** sont présentées sans aucun socle standard. `official.level` du
+  référentiel a été corrigé en conséquence ; la nuance « complément renforcé optionnel » pour les
+  mesures qui en ont un n'est pas capturée par le modèle actuel (une seule question par mesure) —
+  documenté comme simplification assumée plutôt que passé sous silence.
+
+**Restructuration du schéma**
+- Chaque mesure du JSON sépare maintenant trois couches : `official` (numéro, intitulé exact,
+  domaine, niveau — reproduit du PDF), `simplified` (`question`, reformulation dirigeant — couche
+  produit), `product_rating` (`effort`, `impact`, `disclaimer: true` — jugement produit explicitement
+  marqué comme non issu de l'ANSSI).
+- Bloc `meta` ajouté (source, URL officielle, URL du PDF, copie locale, version, date de
+  publication, licence, date de vérification, référence du rapport).
+- Modèle `Measure` : `code` (« H1 »…) remplacé par `number` (entier, unique, 1-42 — la numérotation
+  officielle elle-même) ; ajout de `effort_impact_disclaimer` (booléen, remonté par l'API) pour que
+  le caractère « jugement produit, pas donnée ANSSI » des estimations d'effort/impact reste visible
+  jusqu'au frontend. Migration `assessments/0002_...` : le défaut à vide sur le nouveau champ unique
+  ne fonctionne que sur une table `measure` vide — sans conséquence ici, aucune donnée réelle
+  n'existe encore pour ce référentiel (les enregistrements de test de la session précédente ont été
+  supprimés en réinitialisant la base de développement locale, `docker compose down -v`).
+- `load_anssi_referential` mis à jour pour le nouveau schéma, avec une vérification supplémentaire :
+  la commande rejette maintenant explicitement (au lieu de charger silencieusement) toute mesure
+  dont `official.domain` ne correspond pas au domaine JSON dans lequel elle est imbriquée.
+
+**Tests**
+- Nouveau fichier `apps/assessments/tests/test_referential_integrity.py` (13 tests) : 42 mesures,
+  numéros uniques et continus de 1 à 42, 10 domaines, présence des trois couches et de leurs champs
+  obligatoires, cohérence domaine ↔ mesure, bloc `meta` complet (y compris l'existence effective du
+  PDF référencé), et un test de non-régression verrouillant `{38, 41, 42}` comme seules mesures sans
+  socle standard — plus une vérification miroir après chargement en base (détecte un bug du loader,
+  pas seulement une erreur du JSON).
+- Test ajouté sur `load_anssi_referential` pour le rejet en cas d'incohérence domaine/mesure.
+- Tous les tests existants mis à jour (`code=` → `number=`, `order_by("code")` →
+  `order_by("number")`) dans les fixtures partagées et les suites assessments/actions.
+- 104 tests au total (13 nouveaux), 97 % de couverture. `ruff check`/`ruff format --check` verts,
+  `makemigrations --check` vert, build et lint frontend verts (aucun changement frontend requis :
+  les champs renommés n'étaient pas consommés côté React).
+
+### Difficultés rencontrées et solutions
+- **Outils de lecture de PDF absents** (`pdftoppm`/poppler-utils pour le rendu image, aucune
+  bibliothèque Python d'extraction de texte) : `pypdf` installé à la volée ; suffisant pour de
+  l'extraction de texte simple sur ce document (pas de mise en page complexe nécessitant l'OCR).
+- **Repérer quelles mesures ont un palier « renforcé »** : le texte extrait ne contient le marqueur
+  qu'une vingtaine de fois sur 42 mesures, avec un artefact d'extraction (« RENFOR cé » avec un
+  espace parasite) qui a nécessité une recherche par préfixe plutôt qu'une correspondance exacte.
+  La numérotation précise mesure-par-mesure a été confirmée en lisant le contenu de chaque page
+  dans l'ordre plutôt qu'en se fiant à un comptage global.
+- **Base de développement locale contenant déjà des données du référentiel incorrect** (créées lors
+  des tests de bout en bout de la session Phase 2) : plutôt que d'écrire une migration complexe de
+  préservation de données pour un contenu qu'on sait faux, la base locale a été réinitialisée
+  (`docker compose down -v`). Choix documenté dans le commentaire de la migration : n'est sûr que
+  tant qu'aucune donnée réelle n'existe pour ce référentiel.
+
+### Vérification de bout en bout
+Après rechargement du référentiel corrigé, `GET /api/v1/assessments/referential/` revérifié
+manuellement : 10 domaines, 42 mesures, domaine « Pour aller plus loin » ramené à ses 2 mesures
+officielles réelles (analyse de risques formelle ; produits/services qualifiés ANSSI).
+
+### Reste à faire (sessions suivantes)
+- Les éléments déjà listés en fin de session Phase 2 restent d'actualité (validation experte de
+  `simplified`/`product_rating`, champ de désactivation `Membership`, code-splitting frontend,
+  écrans de gestion de compte, Phase 3).
+- La nuance « complément renforcé optionnel » pour les 19 mesures qui en ont un (au-delà des 3
+  mesures 38/41/42 sans socle standard) n'est pas modélisée — actuellement documentée comme
+  simplification assumée dans `docs/verification_referentiel_anssi.md`. À revisiter si le produit a
+  un jour besoin de distinguer les deux paliers dans le score plutôt qu'un système de poids unique.
