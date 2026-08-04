@@ -125,3 +125,96 @@ documentation), sans toucher à l'IA ni à la surveillance (phases suivantes).
   `IsTenantAdmin` sont prêts, il manque le flux d'invitation par email (dépend de l'app
   `notifications`, Phase 3).
 - Phase 2 (diagnostic ANSSI, scoring, plan d'action) à démarrer selon le phasage du cadrage.
+
+---
+
+## 2026-08-04 — Vérification et durcissement du socle avant revue externe
+
+### Contexte
+Session de vérification/durcissement demandée avant une revue externe du socle livré en Phase 1 —
+aucune nouvelle fonctionnalité, uniquement audit, tests supplémentaires et documentation. Le
+travail de la session précédente a d'abord été poussé sur `origin/main` (`git push -u origin
+main`), le dépôt distant était vide jusque-là.
+
+### Vérifications effectuées
+
+**Sécurité du multi-tenancy (priorité absolue)**
+Audit de `TenantScopingMiddleware` : le flux implémenté en Phase 1 était déjà conforme à
+l'exigence — JWT → utilisateur authentifié (`JWTAuthentication().authenticate()`) → recherche
+d'une `Membership` entre cet utilisateur et le `tenant_id` demandé (`Membership.all_objects`,
+seul point autorisé à interroger sans filtre tenant puisqu'il sert justement à le résoudre) →
+403 et **aucun** contexte de tenant positionné si cette `Membership` n'existe pas. L'en-tête
+`X-Tenant-Id` n'est donc jamais fait confiance seul : un en-tête sans JWT valide, ou un JWT valide
+sans `Membership` correspondante, ne débloque jamais l'accès. Aucune correction de code n'a donc
+été nécessaire sur ce point ; l'effort a porté sur le **renforcement des tests** pour le prouver
+explicitement, scénario par scénario, dans `apps/tenants/tests/test_isolation.py` (nouvelle
+classe `TestTenantScopingMiddlewareAttackScenarios`, testée contre `GET /api/v1/auth/me/` — un
+endpoint qui n'a *pas* sa propre permission `IsTenantMember` — spécifiquement pour prouver que le
+403 vient bien du middleware et non d'une vérification de vue) :
+- **(a)** en-tête pointant vers un tenant dont l'utilisateur n'est pas membre → 403 ;
+- **(b)** en-tête absent → la requête passe (le middleware n'exige pas de tenant par lui-même)
+  mais sans contexte de tenant, donc toute ressource tenant-scopée reste vide (couvert par
+  ailleurs par `TestTenantScopedManagerFailsClosed` et
+  `TestTenantMemberListAPI.test_requires_tenant_header`) ;
+- **(c)** en-tête syntaxiquement valide (UUID) mais pointant vers un tenant inexistant → 403 ;
+  ajout d'un test bonus (en-tête malformé, pas un UUID) confirmant un 403 propre plutôt qu'une
+  erreur 500 ;
+- **(d)** `Membership` révoquée (supprimée) entre l'émission du JWT et la requête → 403, même si
+  le token reste valide. *Point de vigilance documenté* : le modèle `Membership` ne porte pas
+  aujourd'hui de champ de désactivation « douce » (`is_active`) distinct de la suppression — seule
+  la suppression de la ligne est testée, car ajouter un tel champ constituerait une nouvelle
+  fonctionnalité hors du périmètre strict de cette session. À évaluer pour une session dédiée si le
+  besoin de révoquer un accès sans perdre l'historique (qui a été membre, quand) se confirme.
+
+Suite complète : 30 tests passent (contre 25 avant cette session), couverture inchangée à 97 % sur
+`apps/`.
+
+**Cohérence CI/prod**
+Vérifié : `.github/workflows/ci.yml` épingle déjà `python-version: "3.12"` via
+`actions/setup-python@v5` pour le job `backend`, cohérent avec `backend/Dockerfile`
+(`FROM python:3.12-slim`). La CI ne dépend jamais de la version de Python installée sur un poste
+de développeur. Aucune correction nécessaire.
+
+**Hygiène du dépôt**
+- Recherche sur l'historique Git complet (`git log --all`, noms de fichiers et contenu des diffs)
+  : aucun fichier `.env` réel, clé privée, ou secret n'a jamais été commité — seuls
+  `.env.example` et `backend/.env.example` (valeurs placeholder uniquement, ex. `change-me`)
+  apparaissent dans l'historique.
+- `.gitignore` renforcé : plusieurs règles étaient limitées à `backend/` ou `frontend/` alors
+  qu'une couverture globale est plus sûre en défense en profondeur (`backend/venv/` →  `venv/` et
+  `.venv/` sans préfixe de chemin, `frontend/node_modules/` → `node_modules/` global,
+  `db.sqlite3`/`db.sqlite3-journal` littéraux → `*.sqlite3`/`*.sqlite3-journal` en motif). Vérifié
+  qu'aucun fichier suivi par Git n'était affecté par ce changement (`git status` vide après
+  modification).
+- `.env.example` (racine et `backend/`) confirmés présents, documentés en commentaires, sans
+  valeur réelle.
+
+### Documentation produite
+Rédaction des ADR 001 à 005 en version complète (`docs/adr/`), au format Contexte → Options
+étudiées → Décision → Conséquences, conformément au registre résumé du cadrage §5 :
+- **001** — Monolithe modulaire Django (vs microservices / monolithe non structuré).
+- **002** — Multi-tenancy par schéma partagé + `tenant_id` (vs base par tenant / schéma par
+  tenant), documentant l'implémentation réelle de `TenantScopedManager` et
+  `TenantScopingMiddleware` livrée en Phase 1.
+- **003** — Celery + Redis pour l'asynchrone (vs cron/scripts / appels synchrones / RQ).
+- **004** — API Claude, routage Haiku/Sonnet par cas d'usage (vs modèle unique haut de gamme / LLM
+  auto-hébergé).
+- **005** — Pseudonymisation réversible avant tout appel IA (vs contexte brut / anonymisation
+  irréversible).
+
+### Difficultés rencontrées et solutions
+Aucune anomalie de sécurité trouvée dans le middleware existant — la principale difficulté de la
+session a été de choisir comment traiter l'écart entre le scénario demandé « membership
+supprimée/désactivée » et l'absence de champ de désactivation dans le modèle actuel : plutôt que
+d'ajouter ce champ (ce qu'interdisait le périmètre de la session) ou d'ignorer silencieusement une
+partie du scénario demandé, le choix a été de tester ce qui est réellement modélisé aujourd'hui (la
+suppression) et de documenter explicitement l'écart ci-dessus et dans le résumé transmis à
+l'issue de la session.
+
+### Reste à faire (sessions suivantes)
+- Évaluer l'ajout d'un champ de désactivation « douce » sur `Membership` (révoquer l'accès à un
+  tenant sans perdre l'historique d'appartenance) si le besoin se confirme — actuellement, seule la
+  suppression de la ligne retire l'accès.
+- Les éléments déjà listés en fin de session précédente restent d'actualité (2FA TOTP, liste de
+  mots de passe compromis, rate limiting, back-office `platform_admin`, invitation de
+  collaborateurs, Phase 2).
