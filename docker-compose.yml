@@ -37,6 +37,8 @@ services:
       # in-network service hostnames docker-compose provides.
       DATABASE_URL: postgres://${POSTGRES_USER:-rssiasservice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rssiasservice}
       REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,6 +49,62 @@ services:
     volumes:
       - ./backend:/app
     command: python manage.py runserver 0.0.0.0:8000
+
+  worker:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-rssiasservice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rssiasservice}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    # Files séparées (cadrage §4.4) : ce worker ne consomme que monitoring
+    # et emails — "ai" arrive en Phase 4 avec son propre worker/routage.
+    command: celery -A config worker --loglevel=info -Q monitoring,emails
+    healthcheck:
+      # Process-level liveness (a worker answers a broker-routed ping to
+      # itself). The end-to-end proof that Beat -> this worker -> Redis
+      # actually work together is GET /healthz/worker on the web service.
+      test: ["CMD-SHELL", "celery -A config inspect ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  beat:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-rssiasservice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rssiasservice}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: celery -A config beat --loglevel=info --schedule=/tmp/celerybeat-schedule --pidfile=
+    healthcheck:
+      # Beat has no "inspect ping" equivalent (it doesn't consume tasks) —
+      # a recently-touched schedule file is the standard proxy for "still
+      # ticking". Same caveat as worker: the deep proof is /healthz/worker.
+      test: ["CMD-SHELL", "find /tmp/celerybeat-schedule* -mmin -2 2>/dev/null | grep -q ."]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
 
 volumes:
   postgres_data:

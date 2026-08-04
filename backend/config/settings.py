@@ -38,6 +38,8 @@ INSTALLED_APPS = [
     "apps.tenants",
     "apps.assessments",
     "apps.actions",
+    "apps.monitoring",
+    "apps.notifications",
     "apps.platform_admin",
 ]
 
@@ -140,3 +142,49 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
 }
+
+# --- Celery : jamais d'appel réseau (IA, checks, emails) dans le cycle
+# requête/réponse HTTP (CLAUDE.md). Broker/backend sur un index Redis
+# distinct du cache pour éviter toute collision de clés.
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/1")
+CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://localhost:6379/1")
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_DEFAULT_QUEUE = "default"
+# Files séparées par domaine de charge (cadrage §4.4) : un fournisseur IA en
+# incident (Phase 4) ne doit pas retarder l'envoi d'une alerte, et
+# inversement un pic de checks ne doit pas retarder les emails.
+CELERY_TASK_ROUTES = {
+    "apps.monitoring.tasks.*": {"queue": "monitoring"},
+    "apps.notifications.tasks.*": {"queue": "emails"},
+}
+# Un worker tué en cours de tâche doit la relivrer plutôt que la perdre —
+# les tasks sont conçues pour être idempotentes (voir apps.monitoring.tasks
+# et apps.notifications.tasks) précisément pour rendre ceci sûr.
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+
+# --- Email : backend console en dev, SMTP configurable par variables
+# d'environnement en préproduction/production.
+EMAIL_BACKEND = env(
+    "DJANGO_EMAIL_BACKEND",
+    default=(
+        "django.core.mail.backends.console.EmailBackend"
+        if DEBUG
+        else "django.core.mail.backends.smtp.EmailBackend"
+    ),
+)
+EMAIL_HOST = env("EMAIL_HOST", default="")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+DEFAULT_FROM_EMAIL = env(
+    "DEFAULT_FROM_EMAIL", default="RSSI as a Service <no-reply@rssiasservice.online>"
+)
+
+# Base URL used to build links in emails (dashboard link in the weather
+# email) — the frontend's own origin, not the API's.
+FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:5173")
