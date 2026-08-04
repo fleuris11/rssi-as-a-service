@@ -1,0 +1,6 @@
+-r requirements.in
+pytest~=8.3
+pytest-django~=4.9
+pytest-cov~=6.0
+factory-boy~=3.3
+ruff~=0.7
