@@ -4,8 +4,8 @@ __pycache__/
 *$py.class
 *.so
 .Python
-backend/venv/
-backend/.venv/
+venv/
+.venv/
 *.egg-info/
 .eggs/
 build/
@@ -18,11 +18,11 @@ htmlcov/
 .ruff_cache/
 staticfiles/
 media/
-db.sqlite3
-db.sqlite3-journal
+*.sqlite3
+*.sqlite3-journal
 
 # --- Node / React / Vite ---
-frontend/node_modules/
+node_modules/
 frontend/dist/
 frontend/.vite/
 npm-debug.log*
