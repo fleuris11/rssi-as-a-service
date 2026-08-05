@@ -73,3 +73,35 @@ personnelles dans les logs ni les envoyer à Sentry »).
   sensibles chiffrées au repos (clés API, cadrage §6).
 - Légère latence additionnelle liée au pré/post-traitement, négligeable au regard du temps d'appel
   API lui-même (30 à 60 secondes selon le cas d'usage, ADR-003).
+
+## Complément d'implémentation (Phase 4)
+
+Précisions apportées par l'implémentation, sans remettre en cause la décision ci-dessus :
+
+- **Schéma des placeholders** : `{{COMPANY}}` (raison sociale, un seul par tenant) et
+  `{{KIND_n}}` pour les valeurs répétables (`{{MEMBER_1}}`, `{{EMAIL_1}}`, `{{DOMAIN_1}}`,
+  `{{URL_1}}`, ...). Construits uniquement à partir de données identifiantes réelles — raison
+  sociale, nom/email des membres, domaines et URLs des actifs surveillés déclarés par le tenant —
+  jamais à partir des champs agrégés (secteur, effectif, scores), qui ne sont pas des données
+  personnelles et sont transmis tels quels (cadrage §4.5, « contexte minimal »).
+- **Remplacement par correspondance exacte, pas par regex métier** : chaque valeur sensible est
+  échappée (`re.escape`) avant d'être compilée dans un motif unique, trié par longueur décroissante
+  pour qu'une valeur plus longue (« Acme Corp ») soit substituée avant une valeur plus courte qui en
+  est un sous-ensemble (« Acme ») — évite les remplacements partiels sur des raisons sociales
+  composées.
+- **Stabilité des placeholders dans une conversation** (assistant contextuel, US-4.2) : la table de
+  correspondance est créée à la première question et réutilisée aux tours suivants
+  (`Conversation.pseudonymization_mapping`), complétée si de nouvelles valeurs sensibles apparaissent
+  entre-temps (nouvel actif déclaré, par exemple) sans jamais changer un placeholder déjà attribué.
+  Sa durée de vie (TTL, `AI_PSEUDONYMIZATION_TTL_HOURS`, 24 h par défaut) est prolongée à chaque
+  réutilisation plutôt que fixée une fois pour toutes — elle borne ainsi l'inactivité tolérée d'une
+  conversation, pas sa durée totale. Pour la génération de document (US-4.1, un seul aller-retour),
+  une table dédiée est créée à chaque génération et n'est jamais réutilisée.
+- **Chiffrement** : `cryptography.fernet.Fernet` avec une clé dédiée (`AI_PSEUDONYMIZATION_KEY`,
+  jamais commitée, distincte de `DJANGO_SECRET_KEY`) — cohérent avec cadrage §6 (chiffrement au
+  repos des données sensibles).
+- **Test de propriété (ADR-005 point de vigilance)** : implémenté dans
+  `apps/ai_assistant/tests/test_pseudonymization.py` — construit le payload exact envoyé à l'API
+  (SDK Anthropic mocké) pour les trois cas d'usage, sur plusieurs raisons sociales/noms/emails
+  contenant des caractères spéciaux (accents, apostrophes, parenthèses, caractères regex `. * + ( )
+  [ ]`), et vérifie qu'aucune des valeurs réelles n'apparaît dans ce payload.

@@ -626,3 +626,166 @@ pseudonymisation déjà en place (ADR 004/005).
 - La nuance entre « pas encore de donnée » et « check en erreur » n'est pas distinguée dans les
   badges du tableau de bord frontend (`StatusBadge` affiche simplement « — » dans les deux cas) —
   suffisant pour cette phase, à revisiter si l'ambiguïté gêne l'usage réel.
+
+---
+
+## 2026-08-05 — Phase 4 : IA documentaire et assistant contextuel
+
+### Contexte
+Session consacrée au module différenciant du produit (cadrage §3.1 M4) : pipeline IA centralisé
+avec pseudonymisation systématique (CLAUDE.md règle d'architecture n°3, ADR-004/005), génération de
+la charte informatique (US-4.1), assistant contextuel (US-4.2), transparence et contrôle utilisateur
+(US-4.3), et intégration optionnelle à la météo cyber (cas d'usage 3, laissé de côté en Phase 3).
+La rigueur privacy passait avant tout, conformément à la consigne de mission.
+
+### Réalisé
+
+**Nouvelle app `ai_assistant` — pipeline central**
+- `services.py` : point d'entrée unique vers l'API Anthropic (aucun autre module n'importe le SDK).
+  Pipeline en cinq étapes pour chaque cas d'usage : construction du contexte minimal (jamais de PII
+  brute — secteur, effectif, scores agrégés) → pseudonymisation (placeholders stables `{{COMPANY}}`,
+  `{{MEMBER_n}}`, `{{EMAIL_n}}`, `{{DOMAIN_n}}`, `{{URL_n}}`, table de correspondance chiffrée Fernet,
+  TTL glissant) → appel `call_claude()` (seul point d'appel SDK du projet) → ré-injection des valeurs
+  réelles dans la réponse → journalisation (`AIUsageLog` : tenant, cas d'usage, modèle, tokens,
+  coût estimé, durée).
+- Routage modèle (ADR-004, précisé pour l'assistant — nouveau cas d'usage, décision documentée dans
+  le code du point d'entrée comme demandé par l'ADR) : `claude-sonnet-5` pour la génération
+  documentaire longue (charte), `claude-haiku-4-5` pour l'assistant (réponses courtes ancrées sur un
+  contexte déjà calculé) et la météo enrichie — cohérent avec la sobriété Green IT du cadrage §8.
+- Quotas mensuels (`AIUsageQuota`, un enregistrement par tenant et par mois, limite configurable via
+  `AI_DEFAULT_MONTHLY_TOKEN_LIMIT`) vérifiés avant tout déclenchement de job, consommation
+  incrémentée après chaque appel réel (pas une simple estimation a priori).
+- `ai_enabled` (nouveau champ sur `Tenant`) : coupe-circuit vérifié par la permission DRF
+  `IsAIEnabled` sur tous les endpoints IA sauf le réglage lui-même (qui doit rester joignable pour
+  réactiver) ; réglable par un administrateur d'entreprise uniquement.
+- Prompts système versionnés en français (`prompts.py`, suffixe `_V1`), un par cas d'usage, avec
+  consigne explicite pour l'assistant de recommander un professionnel (juridique, réponse à
+  incident) pour ce qui dépasse le périmètre de l'outil.
+
+**Pattern job asynchrone (US US-4.1/4.2, CLAUDE.md règle n°3)** — voir ADR-011 pour le détail des
+options écartées : `POST` crée immédiatement la ressource (`GeneratedDocument` ou `Message`
+utilisateur) et un `AIJob` (statut `pending`), déclenche la tâche Celery correspondante sur la
+**nouvelle file `ai`**, répond `202`. `GET /api/v1/ai/jobs/{id}/` permet au frontend de sonder le
+statut. Aucun appel IA ne s'exécute dans le cycle requête/réponse HTTP. La météo enrichie (cas
+d'usage 3) déroge délibérément à ce pattern — appel direct synchrone dans la tâche Celery existante
+`send_weather_email_for_tenant` (file `emails`), toujours via `ai_assistant/services.py` mais sans
+job dédié : arbitrage documenté dans l'ADR-011, dicté par l'exigence « la météo part toujours ».
+
+**Cas d'usage 1 — Charte informatique (US-4.1)**
+- `GeneratedDocument` (type, statut `generating`/`draft`/`validated`/`failed`, contenu markdown,
+  version incrémentée à chaque régénération). Parcours complet : génération → relecture/édition
+  (`PATCH`, bloqué une fois validé) → validation (`POST .../validate/`) → export markdown
+  (`GET .../export/`, téléchargement `.md`). **Export PDF non traité cette session** (voir reste à
+  faire) — le markdown suffit pour ce jalon.
+
+**Cas d'usage 2 — Assistant contextuel (US-4.2)**
+- `Conversation` / `Message` (rôles `user`/`assistant`), fenêtre d'historique transmise à l'API
+  limitée à 20 messages. Contexte (scores, écarts principaux, alertes ouvertes) pseudonymisé et
+  injecté dans le prompt système à chaque tour plutôt qu'en tours de conversation factices — plus
+  simple et évite toute ambiguïté sur ce qui est « conversation réelle ». Streaming non implémenté
+  (explicitement non requis par le cadrage pour cette phase).
+
+**Transparence et contrôle (US-4.3)**
+- `GET /api/v1/ai/preview/charter/` et `/preview/assistant/` : renvoient exactement le contexte
+  pseudonymisé qui serait transmis, sans appel API ni persistance de table de correspondance —
+  vérifié manuellement en conditions réelles (voir Tests ci-dessous).
+- `GET/PATCH /api/v1/ai/settings/` : état `ai_enabled` + quota courant visible.
+
+**Météo enrichie (cas d'usage 3)**
+- `NotificationPreferences.weather_enrichment_enabled` (nouveau champ, défaut `false`). Si activé :
+  `apps.notifications.services._maybe_enrich_weather_summary` appelle
+  `ai_assistant.services.enrich_weather_summary`, qui capture **toute** exception (IA désactivée,
+  quota dépassé, erreur réseau/API) et renvoie `None` — le template déterministe de la Phase 3 reste
+  alors le contenu envoyé. Templates email (texte + HTML) mis à jour pour afficher le résumé enrichi
+  s'il existe.
+
+**Frontend**
+- Page Documents (`/documents`) : bandeau réglages IA (activer/désactiver, quota), encart de
+  prévisualisation, génération, liste de documents, éditeur (édition/validation/export).
+- Page Assistant (`/assistant`) : encart de prévisualisation, fil de conversation, saisie, sondage
+  du job pendant la réflexion de l'assistant.
+- Sondage de job factorisé (`usePolling`, intervalle 2 s, arrêt sur statut terminal) — dupliqué à
+  l'identique entre les deux pages plutôt que d'introduire un module partagé pour deux usages très
+  proches mais non identiques (pas d'over-engineering pour ce volume de code).
+- Case à cocher « météo enrichie » ajoutée à la page Préférences.
+- Export : blob téléchargé via `apiClient` (pas un lien `<a href>` brut) car l'endpoint exige le
+  JWT porté par l'intercepteur axios.
+
+**Infrastructure**
+- `docker-compose.yml` : le worker consomme désormais aussi la file `ai`.
+- `requirements.txt` : `anthropic==0.120.2`, `cryptography==50.0.0`.
+- Variables d'environnement (`.env.example`) : `ANTHROPIC_API_KEY`, `AI_PSEUDONYMIZATION_KEY`,
+  `AI_PSEUDONYMIZATION_TTL_HOURS`, `AI_DEFAULT_MONTHLY_TOKEN_LIMIT`.
+
+**Documentation**
+- ADR-011 (nouveau) : pattern job asynchrone, options écartées (blocage HTTP, WebSocket/SSE),
+  arbitrage météo enrichie.
+- ADR-005 complété : schéma des placeholders, stabilité par conversation, chiffrement Fernet,
+  emplacement du test de propriété — sans remettre en cause la décision d'origine.
+
+### Tests et vérification
+- 288 tests backend (72 nouveaux pour `ai_assistant`, dont 2 tests de régression ajoutés après le
+  correctif décrit ci-dessous, +4 pour `notifications`), 95 % de couverture sur
+  `ai_assistant`/`notifications` (`tasks.py` moins couvert — chemins
+  d'épuisement des tentatives Celery non testés unitairement, cohérent avec la profondeur de test
+  déjà acceptée pour `apps.monitoring.tasks`, compensé par la vérification en conditions réelles
+  ci-dessous). SDK Anthropic entièrement mocké dans les tests unitaires/API. `ruff check`/
+  `ruff format --check` et `makemigrations --check` verts ; build et lint frontend verts.
+- **Test de propriété de non-fuite** (ADR-005) : `test_pseudonymization.py`, quatre scénarios de
+  raison sociale/noms/emails avec caractères spéciaux (accents, apostrophes, parenthèses, `. * + [ ]`),
+  pour les trois cas d'usage — construit le payload exact envoyé au SDK mocké et vérifie l'absence de
+  toute valeur réelle.
+- Étanchéité multi-tenant vérifiée sur chaque nouvelle ressource (`GeneratedDocument`, `Conversation`,
+  `Message`, `AIJob`) ; `ai_enabled=false` → 403 sur tous les endpoints IA sauf le réglage lui-même ;
+  quota dépassé → refus propre (`429`) sans effet de bord ; fallback météo vérifié explicitement
+  (désactivé, IA désactivée, quota dépassé, erreur API → `None`, email envoyé quand même).
+- **Vérification de bout en bout en conditions réelles** (hors CI, stack complète : Postgres, Redis,
+  `runserver`, worker Celery sur la file `ai`) : inscription + création de tenant réelles, appel des
+  endpoints de prévisualisation — la réponse HTTP réelle contient bien `{{COMPANY}}` à la place de la
+  raison sociale, confirmant la pseudonymisation en dehors du cadre mocké des tests. Génération de
+  document déclenchée via l'API réelle sans `ANTHROPIC_API_KEY`/`AI_PSEUDONYMIZATION_KEY` configurées
+  (aucune clé réelle disponible dans cet environnement) : le job progresse correctement `pending` →
+  `running`, retente sur échec, puis atteint un statut terminal — ce test a mis en évidence un bug
+  réel (voir ci-dessous), corrigé et re-vérifié avec succès après correction.
+
+### Difficultés rencontrées et solutions
+- **Bug réel découvert par le test en conditions réelles, absent des tests unitaires/mockés** : le
+  garde-fou d'idempotence des tâches Celery (`generate_document_task` / `generate_assistant_reply_task`)
+  rejetait tout job dont le statut n'était pas `pending`. Or la première tentative appelle
+  `mark_job_running` (statut → `running`) *avant* l'échec qui déclenche la nouvelle tentative Celery ;
+  la tentative suivante voyait donc un statut `running`, était traitée comme « déjà géré » par le
+  garde-fou, et s'arrêtait silencieusement sans jamais appeler `mark_job_failed` — le job restait
+  bloqué indéfiniment en `running`, un job zombie invisible pour l'utilisateur (le frontend aurait
+  sondé sans fin). Racine : le garde-fou visait à empêcher un double traitement d'un job déjà
+  *terminé* (`done`/`failed`), mais excluait à tort `running`, qui est précisément l'état normal
+  d'une tentative retentée. Corrigé (`job.status in (DONE, FAILED)` au lieu de
+  `job.status != PENDING`) ; deux tests de régression ajoutés (statut `running` simulé manuellement,
+  job correctement repris jusqu'à un statut terminal) ; re-vérifié en conditions réelles après
+  correction — le job atteint désormais `failed` avec `error_message` renseigné et `finished_at`
+  horodaté, comme attendu. Ce bug n'aurait pas été détecté par la suite pytest seule (qui appelle
+  chaque tâche une seule fois, sans simuler l'état intermédiaire d'une vraie redélivraison Celery) —
+  confirme l'intérêt de la vérification en conditions réelles au-delà des tests mockés pour ce type
+  de logique d'orchestration asynchrone.
+- **Choix de routage modèle pour l'assistant conversationnel** : ni CLAUDE.md ni le cadrage ne
+  tranchent explicitement Haiku/Sonnet pour ce cas d'usage (introduit en Phase 4) ; ADR-004 anticipe
+  ce point (« décision de routage ... à documenter dans le code du point d'entrée »). Arbitrage :
+  Haiku par défaut, conforme à la sobriété Green IT et à la nature des réponses (synthèses courtes
+  ancrées sur un contexte déjà calculé côté serveur, pas de génération longue), documenté dans
+  `services.py` et l'ADR-005 complété — révisable si la qualité perçue en usage réel le justifie.
+- **Numérotation des ADR** : seuls les ADR 001 à 005 existent en fichiers complets (006 à 010 restent
+  résumés uniquement dans le tableau du cadrage §5, jamais rédigés en version longue). L'ADR créé
+  cette session porte le numéro 011 conformément à la consigne de mission, créant un écart de
+  numérotation (006-010 absents du dossier `docs/adr/`) — signalé ici plutôt que « corrigé »
+  silencieusement en renumérotant.
+
+### Reste à faire (sessions suivantes)
+- Export PDF de la charte informatique (actuellement markdown uniquement — noté comme reste à faire
+  dans la mission elle-même).
+- Vérification de bout en bout du chemin de succès complet (appel réel à l'API Anthropic) : non
+  réalisable dans cet environnement sans clé API réelle ; à faire en préproduction avant mise en
+  production, avec un budget de tokens de test limité (Green IT).
+- Éléments déjà listés en fin de session précédente toujours d'actualité (validation experte du
+  référentiel simplifié, champ de désactivation `Membership`, code-splitting frontend, écrans de
+  gestion de compte).
+- Rédaction en version complète des ADR 006 à 010 (actuellement seulement résumés dans le tableau du
+  cadrage) — pas traité cette session, hors périmètre de la mission Phase 4.
