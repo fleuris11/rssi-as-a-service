@@ -51,6 +51,21 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
 
+      # WeasyPrint (export PDF de la charte, US-4.1) a besoin de Pango/Cairo/
+      # GDK-Pixbuf au niveau système — voir backend/Dockerfile pour le même
+      # jeu de paquets côté image de production.
+      - name: Install WeasyPrint system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libpango-1.0-0 \
+            libpangocairo-1.0-0 \
+            libgdk-pixbuf-2.0-0 \
+            libcairo2 \
+            libffi8 \
+            shared-mime-info \
+            fonts-liberation
+
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
@@ -64,6 +79,9 @@ jobs:
 
       - name: Tests (pytest)
         run: pytest --cov=apps --cov-report=term-missing
+
+      - name: Dependency audit (pip-audit)
+        run: pip-audit -r requirements.txt --strict
 
   frontend:
     runs-on: ubuntu-latest
@@ -87,3 +105,94 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Dependency audit (npm audit)
+        run: npm run audit
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      # Not committed (never commit secrets, CLAUDE.md) — generated fresh for
+      # this ephemeral CI run only, same shape as backend/.env.example.
+      - name: Write env files for the docker-compose stack
+        run: |
+          cat > .env <<EOF
+          POSTGRES_DB=rssiasservice
+          POSTGRES_USER=rssiasservice
+          POSTGRES_PASSWORD=ci-postgres-password
+          EOF
+          cat > backend/.env <<EOF
+          DJANGO_SECRET_KEY=ci-e2e-secret-key-not-for-production
+          DJANGO_DEBUG=True
+          DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+          CORS_ALLOWED_ORIGINS=http://localhost:5173
+          FRONTEND_BASE_URL=http://localhost:5173
+          AI_PSEUDONYMIZATION_KEY=$(python3 -c "import secrets,base64; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())")
+          TOTP_ENCRYPTION_KEY=$(python3 -c "import secrets,base64; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())")
+          EOF
+
+      - name: Start the docker-compose stack
+        run: docker compose up -d --build postgres redis web worker beat
+
+      - name: Wait for the backend to be ready
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/healthz >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          echo "Backend not ready after 120s" >&2
+          docker compose logs web
+          exit 1
+
+      - name: Run Playwright E2E tests
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
+      - name: Docker compose logs (on failure)
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down the stack
+        if: always()
+        run: docker compose down -v
+
+  container-scan:
+    runs-on: ubuntu-latest
+    needs: [backend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t rssi-backend:ci -f backend/Dockerfile backend
+
+      - name: Scan image (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: rssi-backend:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
