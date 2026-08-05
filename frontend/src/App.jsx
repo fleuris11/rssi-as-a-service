@@ -10,6 +10,7 @@ import NotificationPreferencesPage from './pages/NotificationPreferencesPage'
 import RegisterPage from './pages/RegisterPage'
 import ResultsPage from './pages/ResultsPage'
 import SurveillancePage from './pages/SurveillancePage'
+import TwoFactorSettingsPage from './pages/TwoFactorSettingsPage'
 
 function App() {
   return (
@@ -27,6 +28,7 @@ function App() {
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/assistant" element={<AssistantPage />} />
           <Route path="/preferences" element={<NotificationPreferencesPage />} />
+          <Route path="/securite" element={<TwoFactorSettingsPage />} />
         </Route>
       </Route>
 

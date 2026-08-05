@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { monitoringApi } from '../api/endpoints'
 
+// -600/-700 shades, not the lighter Tailwind default badge tone: white text
+// on -500 fails the WCAG AA 4.5:1 contrast minimum (e.g. amber-500 ~2.15:1)
+// — same fix as DocumentsPage.jsx's STATUS_COLOR, caught by axe-core.
 const STATUS_COLOR = {
-  ok: 'bg-emerald-500',
-  warning: 'bg-amber-500',
-  critical: 'bg-red-500',
+  ok: 'bg-emerald-700',
+  warning: 'bg-amber-700',
+  critical: 'bg-red-600',
 }
 const STATUS_LABEL = { ok: 'OK', warning: 'Avertissement', critical: 'Critique' }
 
@@ -29,7 +32,7 @@ const ALERT_TYPE_LABELS = {
 
 function StatusBadge({ status }) {
   if (!status) {
-    return <span className="text-xs text-slate-400">—</span>
+    return <span className="text-xs text-slate-500">—</span>
   }
   return (
     <span
@@ -42,7 +45,7 @@ function StatusBadge({ status }) {
 
 function UptimeHistory({ history }) {
   if (!history || history.length === 0) {
-    return <p className="text-xs text-slate-400">Pas encore de données.</p>
+    return <p className="text-xs text-slate-500">Pas encore de données.</p>
   }
   const ordered = [...history].reverse()
   return (
@@ -234,7 +237,7 @@ export default function SurveillancePage() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-slate-800">{row.asset.value}</p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500">
                     {row.asset.type === 'website' ? 'Site web' : 'Domaine email'}
                     {row.uptime_24h != null && ` — disponibilité 24h : ${row.uptime_24h} %`}
                   </p>

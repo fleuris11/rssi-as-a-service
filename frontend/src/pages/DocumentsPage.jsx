@@ -8,11 +8,15 @@ const STATUS_LABELS = {
   failed: 'Échec',
 }
 
+// -600/-700 shades (not the lighter -400/-500 Tailwind default badge tone):
+// white text on the lighter shades falls under the WCAG AA 4.5:1 contrast
+// minimum (e.g. amber-500 on white text is ~2.15:1) — caught by the axe-core
+// scan in frontend/e2e/c-charter-generation-review-validation.spec.js.
 const STATUS_COLOR = {
-  generating: 'bg-slate-400',
-  draft: 'bg-amber-500',
-  validated: 'bg-emerald-500',
-  failed: 'bg-red-500',
+  generating: 'bg-slate-600',
+  draft: 'bg-amber-700',
+  validated: 'bg-emerald-700',
+  failed: 'bg-red-600',
 }
 
 const DOCUMENT_TYPE_LABELS = { it_charter: 'Charte informatique' }
@@ -103,13 +107,13 @@ function PreviewPanel() {
       >
         {open ? 'Masquer' : 'Voir'} les données qui seraient transmises à l’IA
       </button>
-      <p className="mt-1 text-xs text-slate-400">
+      <p className="mt-1 text-xs text-slate-500">
         Transparence (US-4.3) : ces données sont pseudonymisées avant tout appel — aucun nom
         d’entreprise, de personne, d’email ou de domaine réel n’est envoyé.
       </p>
       {open && (
         <div className="mt-2">
-          {loading && <p className="text-xs text-slate-400">Chargement…</p>}
+          {loading && <p className="text-xs text-slate-500">Chargement…</p>}
           {error && <p className="text-xs text-red-600">{error}</p>}
           {preview && (
             <pre className="max-h-64 overflow-auto rounded bg-slate-50 p-3 text-xs text-slate-700">
@@ -179,6 +183,21 @@ function DocumentEditor({ document: doc, onUpdated }) {
     }
   }
 
+  async function handleExportPdf() {
+    setError('')
+    try {
+      const response = await aiApi.exportDocumentPdf(doc.id)
+      const url = URL.createObjectURL(response.data)
+      const link = window.document.createElement('a')
+      link.href = url
+      link.download = `${doc.type}-v${doc.version}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      setError('Impossible d’exporter ce document en PDF.')
+    }
+  }
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -200,6 +219,14 @@ function DocumentEditor({ document: doc, onUpdated }) {
             className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:border-slate-400 disabled:opacity-50"
           >
             Exporter (.md)
+          </button>
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            disabled={isGenerating || !content}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:border-slate-400 disabled:opacity-50"
+          >
+            Exporter (.pdf)
           </button>
           {!isValidated && !isGenerating && (
             <>
@@ -230,6 +257,7 @@ function DocumentEditor({ document: doc, onUpdated }) {
         </p>
       ) : (
         <textarea
+          aria-label={`Contenu de ${DOCUMENT_TYPE_LABELS[doc.type] || doc.type} v${doc.version}`}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           readOnly={isValidated}

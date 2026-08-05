@@ -145,7 +145,7 @@ export default function DiagnosticPage() {
               {domain.measures.map((measure) => (
                 <li key={measure.id} className="py-4 first:pt-0 last:pb-0">
                   <p className="text-sm font-medium text-slate-800">{measure.plain_language}</p>
-                  <p className="mt-0.5 text-xs text-slate-400">{measure.official_title}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{measure.official_title}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {VALUE_OPTIONS.map((option) => {
                       const selected = answers[measure.id] === option.value

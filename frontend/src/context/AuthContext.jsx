@@ -36,6 +36,22 @@ export function AuthProvider({ children }) {
   const login = useCallback(
     async (email, password) => {
       const response = await authApi.login(email, password)
+      if (response.data.mfa_required) {
+        // Second factor required (US-1.3) — no tokens issued yet. The
+        // caller (LoginPage) shows the code-entry step and finishes the
+        // flow via completeTwoFactorLogin.
+        return { mfaRequired: true, challengeToken: response.data.challenge_token }
+      }
+      tokenStorage.setTokens(response.data.access, response.data.refresh)
+      await loadMe()
+      return { mfaRequired: false }
+    },
+    [loadMe]
+  )
+
+  const completeTwoFactorLogin = useCallback(
+    async (challengeToken, credentials) => {
+      const response = await authApi.verifyTwoFactor(challengeToken, credentials)
       tokenStorage.setTokens(response.data.access, response.data.refresh)
       await loadMe()
     },
@@ -76,11 +92,23 @@ export function AuthProvider({ children }) {
       loading,
       isAuthenticated: Boolean(user),
       login,
+      completeTwoFactorLogin,
       register,
       logout,
       selectTenant,
     }),
-    [user, tenants, currentTenantId, currentTenant, loading, login, register, logout, selectTenant]
+    [
+      user,
+      tenants,
+      currentTenantId,
+      currentTenant,
+      loading,
+      login,
+      completeTwoFactorLogin,
+      register,
+      logout,
+      selectTenant,
+    ]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

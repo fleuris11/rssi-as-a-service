@@ -86,7 +86,7 @@ export default function NotificationPreferencesPage() {
             value={weatherTime}
             onChange={(e) => setWeatherTime(e.target.value)}
             disabled={!weatherEnabled}
-            className="mt-1 rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+            className="mt-1 rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
           />
         </div>
 

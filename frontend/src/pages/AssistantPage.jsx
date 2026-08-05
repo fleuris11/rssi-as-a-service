@@ -58,7 +58,7 @@ function PreviewPanel() {
       </button>
       {open && (
         <div className="mt-2">
-          {loading && <p className="text-xs text-slate-400">Chargement…</p>}
+          {loading && <p className="text-xs text-slate-500">Chargement…</p>}
           {error && <p className="text-xs text-red-600">{error}</p>}
           {preview && (
             <pre className="max-h-64 overflow-auto rounded bg-slate-50 p-3 text-xs text-slate-700">
@@ -188,17 +188,18 @@ export default function AssistantPage() {
       <div className="flex min-h-[400px] flex-col rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
           {messages.length === 0 ? (
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-500">
               Posez votre première question, par exemple « Suis-je en conformité RGPD ? ».
             </p>
           ) : (
             messages.map((m) => <MessageBubble key={m.id} message={m} />)
           )}
-          {sending && <p className="text-xs text-slate-400">L’assistant réfléchit…</p>}
+          {sending && <p className="text-xs text-slate-500">L’assistant réfléchit…</p>}
         </div>
 
         <form onSubmit={handleSend} className="flex gap-2 border-t border-slate-200 p-3">
           <input
+            aria-label="Votre question pour l’assistant"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={sending}

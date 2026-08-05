@@ -126,8 +126,11 @@ export default function ActionPlanPage() {
                     <p className="text-sm font-medium text-slate-800">
                       {item.measure.official_title}
                     </p>
-                    <p className="mt-0.5 text-xs text-slate-400">{item.domain_name}</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                    <p className="mt-0.5 text-xs text-slate-500">{item.domain_name}</p>
+                    {/* text-slate-600, not -500: -500 on bg-slate-100 is ~4.34:1,
+                        just under the WCAG AA 4.5:1 minimum — caught by axe-core
+                        (frontend/e2e/a-signup-diagnostic-action-plan.spec.js). */}
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
                       <span className="rounded bg-slate-100 px-1.5 py-0.5">
                         Priorité {item.priority}
                       </span>

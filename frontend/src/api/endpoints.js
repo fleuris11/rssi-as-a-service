@@ -3,7 +3,20 @@ import { apiClient } from './client'
 export const authApi = {
   register: (payload) => apiClient.post('/api/v1/auth/register/', payload),
   login: (email, password) => apiClient.post('/api/v1/auth/token/', { email, password }),
+  verifyTwoFactor: (challengeToken, { code = '', recoveryCode = '' } = {}) =>
+    apiClient.post('/api/v1/auth/token/verify-2fa/', {
+      challenge_token: challengeToken,
+      code,
+      recovery_code: recoveryCode,
+    }),
   me: () => apiClient.get('/api/v1/auth/me/'),
+}
+
+export const twoFactorApi = {
+  status: () => apiClient.get('/api/v1/auth/2fa/status/'),
+  setup: () => apiClient.post('/api/v1/auth/2fa/setup/'),
+  confirm: (code) => apiClient.post('/api/v1/auth/2fa/confirm/', { code }),
+  disable: (password) => apiClient.post('/api/v1/auth/2fa/disable/', { password }),
 }
 
 export const tenantsApi = {
@@ -82,6 +95,8 @@ export const aiApi = {
   // apiClient interceptor attaches, so it can't be a bare <a href>.
   exportDocument: (id) =>
     apiClient.get(`/api/v1/ai/documents/${id}/export/`, { responseType: 'blob' }),
+  exportDocumentPdf: (id) =>
+    apiClient.get(`/api/v1/ai/documents/${id}/export/pdf/`, { responseType: 'blob' }),
 
   listConversations: () => apiClient.get('/api/v1/ai/conversations/'),
   createConversation: () => apiClient.post('/api/v1/ai/conversations/'),

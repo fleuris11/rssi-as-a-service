@@ -40,6 +40,9 @@ export default function NavBar() {
           <NavLink to="/preferences" className="text-slate-500 hover:text-slate-900">
             Préférences
           </NavLink>
+          <NavLink to="/securite" className="text-slate-500 hover:text-slate-900">
+            Sécurité
+          </NavLink>
           <button type="button" onClick={logout} className="text-slate-500 hover:text-slate-900">
             Déconnexion
           </button>
