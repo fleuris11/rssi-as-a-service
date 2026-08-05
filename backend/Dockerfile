@@ -6,6 +6,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# WeasyPrint (export PDF de la charte informatique, US-4.1) a besoin de
+# Pango/Cairo/GDK-Pixbuf au niveau système — non fournis par l'image Python
+# slim. Voir aussi .github/workflows/ci.yml, qui installe les mêmes paquets
+# pour que les tests d'export PDF s'exécutent en CI.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libgdk-pixbuf-2.0-0 \
+        libcairo2 \
+        libffi8 \
+        shared-mime-info \
+        fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

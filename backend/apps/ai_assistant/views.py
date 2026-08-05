@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.tenants.permissions import IsTenantAdmin, IsTenantMember, IsTenantMemberReadOnlyForReader
+from apps.tenants.throttling import TenantAIRateThrottle
 
 from . import services
 from .permissions import IsAIEnabled
@@ -71,6 +72,7 @@ def _get_document_or_404(request, document_id):
 
 class GeneratedDocumentListCreateView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader, IsAIEnabled]
+    throttle_classes = [TenantAIRateThrottle]
     serializer_class = GeneratedDocumentSerializer
 
     def get_queryset(self):
@@ -100,6 +102,7 @@ class GeneratedDocumentListCreateView(generics.ListAPIView):
 
 class GeneratedDocumentDetailView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader, IsAIEnabled]
+    throttle_classes = [TenantAIRateThrottle]
 
     def get(self, request, document_id):
         return Response(
@@ -121,6 +124,7 @@ class GeneratedDocumentDetailView(APIView):
 
 class GeneratedDocumentValidateView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader, IsAIEnabled]
+    throttle_classes = [TenantAIRateThrottle]
 
     def post(self, request, document_id):
         document = _get_document_or_404(request, document_id)
@@ -129,11 +133,10 @@ class GeneratedDocumentValidateView(APIView):
 
 
 class GeneratedDocumentExportView(APIView):
-    """Markdown export (US-4.1). PDF export was scoped out as non-trivial to
-    integrate cleanly in this phase — documented as reste-à-faire in
-    docs/journal.md."""
+    """Markdown export (US-4.1)."""
 
     permission_classes = [permissions.IsAuthenticated, IsTenantMember, IsAIEnabled]
+    throttle_classes = [TenantAIRateThrottle]
 
     def get(self, request, document_id):
         document = _get_document_or_404(request, document_id)
@@ -146,8 +149,25 @@ class GeneratedDocumentExportView(APIView):
         return response
 
 
+class GeneratedDocumentExportPdfView(APIView):
+    """PDF export (US-4.1, ADR-012)."""
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember, IsAIEnabled]
+    throttle_classes = [TenantAIRateThrottle]
+
+    def get(self, request, document_id):
+        document = _get_document_or_404(request, document_id)
+        pdf_bytes = services.render_document_pdf(document)
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="{document.type}-v{document.version}.pdf"'
+        )
+        return response
+
+
 class ConversationListCreateView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader, IsAIEnabled]
+    throttle_classes = [TenantAIRateThrottle]
     serializer_class = ConversationSerializer
 
     def get_queryset(self):
@@ -167,6 +187,7 @@ def _get_conversation_or_404(request, conversation_id):
 
 class MessageListCreateView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader, IsAIEnabled]
+    throttle_classes = [TenantAIRateThrottle]
     serializer_class = MessageSerializer
 
     def get_queryset(self):

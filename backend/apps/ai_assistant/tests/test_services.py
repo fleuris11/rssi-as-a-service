@@ -173,6 +173,37 @@ class TestDocumentLifecycle:
         assert document.validated_at is not None
 
 
+class TestRenderDocumentPdf:
+    """WeasyPrint needs system libraries (Pango/Cairo/GDK-Pixbuf) not
+    present on every dev machine (notably plain Windows) — this only runs
+    where they're installed (Docker image, CI backend job; see
+    docs/adr/012-export-pdf-weasyprint.md)."""
+
+    def test_produces_a_pdf_document(self, tenant):
+        document = GeneratedDocument.all_objects.create(
+            tenant=tenant,
+            type=GeneratedDocument.DocumentType.IT_CHARTER,
+            version=1,
+            content_markdown=(
+                "# Charte informatique\n\nBienvenue chez {{COMPANY}}.\n\n"
+                "## Mots de passe\n\n- Au moins 12 caractères\n- Pas de réutilisation"
+            ),
+        )
+
+        pdf_bytes = services.render_document_pdf(document)
+
+        assert pdf_bytes.startswith(b"%PDF")
+
+    def test_empty_document_still_produces_a_valid_pdf(self, tenant):
+        document = GeneratedDocument.all_objects.create(
+            tenant=tenant, type=GeneratedDocument.DocumentType.IT_CHARTER, version=1
+        )
+
+        pdf_bytes = services.render_document_pdf(document)
+
+        assert pdf_bytes.startswith(b"%PDF")
+
+
 class TestCreateAssistantJob:
     def test_raises_when_ai_disabled(self, tenant, tenant_owner):
         conversation = services.create_conversation(tenant=tenant, user=tenant_owner)

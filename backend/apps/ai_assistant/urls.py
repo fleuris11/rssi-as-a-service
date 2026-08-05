@@ -7,6 +7,7 @@ from .views import (
     CharterPreviewView,
     ConversationListCreateView,
     GeneratedDocumentDetailView,
+    GeneratedDocumentExportPdfView,
     GeneratedDocumentExportView,
     GeneratedDocumentListCreateView,
     GeneratedDocumentValidateView,
@@ -32,6 +33,11 @@ urlpatterns = [
         "documents/<int:document_id>/export/",
         GeneratedDocumentExportView.as_view(),
         name="ai-document-export",
+    ),
+    path(
+        "documents/<int:document_id>/export/pdf/",
+        GeneratedDocumentExportPdfView.as_view(),
+        name="ai-document-export-pdf",
     ),
     path("conversations/", ConversationListCreateView.as_view(), name="ai-conversation-list"),
     path(

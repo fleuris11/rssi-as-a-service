@@ -178,6 +178,24 @@ class TestDocumentLifecycleApi:
         assert response["Content-Type"].startswith("text/markdown")
         assert response.content.decode() == "# Charte"
 
+    def test_export_pdf_returns_a_pdf_attachment(self, api_client, tenant, tenant_owner):
+        headers = _auth(api_client, tenant_owner, tenant)
+        document, _job = services.create_document_job(
+            tenant=tenant,
+            user=tenant_owner,
+            document_type=GeneratedDocument.DocumentType.IT_CHARTER,
+        )
+        document.content_markdown = "# Charte\n\nBienvenue."
+        document.save(update_fields=["content_markdown"])
+
+        response = api_client.get(
+            reverse("ai-document-export-pdf", kwargs={"document_id": document.id}), **headers
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response["Content-Type"] == "application/pdf"
+        assert response.content.startswith(b"%PDF")
+
 
 class TestAssistantJobCreation:
     def test_creates_conversation_message_and_dispatches_job(

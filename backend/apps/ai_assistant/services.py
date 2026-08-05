@@ -466,6 +466,42 @@ def validate_document(document: GeneratedDocument) -> GeneratedDocument:
     return document
 
 
+_PDF_STYLESHEET = """
+@page { size: A4; margin: 2.5cm 2cm; }
+body {
+  font-family: "Liberation Sans", Arial, sans-serif;
+  font-size: 11pt;
+  color: #1e293b;
+  line-height: 1.5;
+}
+h1, h2, h3 { color: #0f172a; }
+h1 { font-size: 20pt; margin-bottom: 0.3em; }
+h2 {
+  font-size: 14pt;
+  margin-top: 1.4em;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.2em;
+}
+code { background: #f1f5f9; padding: 0.1em 0.3em; border-radius: 3px; }
+"""
+
+
+def render_document_pdf(document: GeneratedDocument) -> bytes:
+    """PDF export (US-4.1 reste-à-faire de Phase 4, traité en Phase 5) via
+    WeasyPrint : le markdown validé est converti en HTML minimal puis rendu
+    en PDF. Système de rendu (Pango/Cairo) installé au niveau du Dockerfile
+    et de la CI — voir docs/adr/012-export-pdf-weasyprint.md."""
+    import markdown as markdown_lib
+    import weasyprint
+
+    body_html = markdown_lib.markdown(document.content_markdown, extensions=["extra", "sane_lists"])
+    full_html = (
+        "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
+        f"<style>{_PDF_STYLESHEET}</style></head><body>{body_html}</body></html>"
+    )
+    return weasyprint.HTML(string=full_html).write_pdf()
+
+
 # --- Cas d'usage 2 : assistant contextuel (US-4.2) --------------------------
 
 
