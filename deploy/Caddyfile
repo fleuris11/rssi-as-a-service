@@ -1,0 +1,57 @@
+# Reverse proxy de production (ADR-007) : TLS automatique (Let's Encrypt),
+# en-têtes de sécurité (cadrage §6), API proxifiée vers le service "web"
+# (Gunicorn/Django), SPA React servie en statique avec repli sur index.html
+# pour le routage côté client.
+#
+# Déployé via deploy/docker-compose.prod.yml — l'image Caddy y est construite
+# à partir de deploy/Dockerfile.caddy, qui copie ce fichier et le build de
+# production du frontend.
+{
+	# Email de contact ACME (Let's Encrypt) — à adapter en production.
+	email admin@rssiasservice.online
+}
+
+rssiasservice.online, www.rssiasservice.online {
+	encode gzip zstd
+
+	# En-têtes de sécurité (cadrage §6 / docs/security_review.md A05) —
+	# appliqués à toute réponse, statique ou proxifiée.
+	header {
+		# HSTS : navigateurs forcés en HTTPS pendant 1 an, sous-domaines inclus.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		# CSP raisonnable pour une SPA React/Vite servie en statique :
+		# - script-src 'self' uniquement (pas de inline/eval) — le build Vite
+		#   ne produit pas de <script> inline ;
+		# - style-src autorise 'unsafe-inline' car Tailwind (JIT) peut injecter
+		#   des styles via des balises <style> selon la config de build ;
+		# - img-src autorise data: — le QR code d'enrôlement 2FA (US-1.3) est
+		#   affiché comme une image data:image/png;base64,... ;
+		# - connect-src 'self' : le frontend appelle l'API sur la même origine
+		#   (proxifiée ci-dessous), pas de tiers.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# N'annonce pas la version du serveur.
+		-Server
+	}
+
+	# API Django/DRF, admin Django, fichiers statiques Django (admin CSS/JS),
+	# healthchecks — tout le reste sert la SPA.
+	@backend path /api/* /admin/* /healthz /healthz/* /static/*
+	handle @backend {
+		reverse_proxy web:8000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

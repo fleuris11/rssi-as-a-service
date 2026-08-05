@@ -9,6 +9,11 @@ select = ["E", "F", "I", "UP", "B", "DJ", "C4"]
 [tool.ruff.lint.isort]
 known-first-party = ["apps", "config"]
 
+[tool.ruff.lint.per-file-ignores]
+# "dev settings + hardening" star import (see file docstring) — every name
+# used from config.settings is deliberately undeclared here, not a mistake.
+"config/settings_production.py" = ["F405"]
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = ["test_*.py"]

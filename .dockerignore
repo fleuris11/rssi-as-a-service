@@ -1,0 +1,17 @@
+# Repo-root build context (deploy/Dockerfile.caddy only — backend/Dockerfile
+# and frontend builds use their own directory as context and don't read this
+# file; see backend/.dockerignore for that one).
+.git
+.github
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+backend/venv
+backend/.venv
+backend/staticfiles
+**/node_modules
+**/dist
+.env
+**/.env
+!**/.env.example

@@ -1,6 +1,11 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// ?? (not ||): an explicitly empty VITE_API_URL ('' — set at Docker build
+// time in production, see deploy/Dockerfile.caddy) must mean "same origin"
+// (axios treats an empty baseURL as relative-to-current-origin, which is
+// correct behind Caddy's reverse proxy) — || would treat '' as unset and
+// wrongly fall back to the localhost dev default.
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
 const STORAGE_KEYS = {
   access: 'rssi.access',

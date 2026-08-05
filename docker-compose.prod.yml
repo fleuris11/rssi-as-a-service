@@ -1,0 +1,106 @@
+# Stack de production (ADR-007) : mêmes images backend que docker-compose.yml
+# (dev), mais Gunicorn au lieu de runserver, DJANGO_SETTINGS_MODULE pointé
+# sur les réglages durcis (config/settings_production.py), Postgres/Redis
+# non exposés à l'hôte, et Caddy en frontal (TLS automatique, en-têtes de
+# sécurité — deploy/Caddyfile) au lieu d'un accès direct au port 8000.
+#
+# Utilisation : `docker compose -f docker-compose.prod.yml up --build -d`
+# depuis la racine du dépôt, avec backend/.env rempli pour la production
+# (DJANGO_ALLOWED_HOSTS=rssiasservice.online,www.rssiasservice.online,
+# ANTHROPIC_API_KEY, AI_PSEUDONYMIZATION_KEY, TOTP_ENCRYPTION_KEY, etc.).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rssiasservice}
+      POSTGRES_USER: ${POSTGRES_USER:-rssiasservice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rssiasservice}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  web:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings_production
+      DATABASE_URL: postgres://${POSTGRES_USER:-rssiasservice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rssiasservice}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # Pas de "command" : le CMD de l'image (gunicorn) est utilisé tel quel,
+    # contrairement au docker-compose.yml de dev qui lance runserver.
+
+  worker:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings_production
+      DATABASE_URL: postgres://${POSTGRES_USER:-rssiasservice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rssiasservice}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A config worker --loglevel=info -Q monitoring,emails,ai
+    restart: unless-stopped
+
+  beat:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings_production
+      DATABASE_URL: postgres://${POSTGRES_USER:-rssiasservice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rssiasservice}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A config beat --loglevel=info --schedule=/tmp/celerybeat-schedule --pidfile=
+    restart: unless-stopped
+
+  caddy:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
