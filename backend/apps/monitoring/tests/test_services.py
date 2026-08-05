@@ -96,6 +96,32 @@ class TestListDueAssets:
         assert website_asset not in due
 
 
+class TestSimulateCheckResult:
+    """Used by the `simulate_check_failure` management command (E2E tests) —
+    must go through the same alert engine as a real check (run_check)."""
+
+    def test_records_a_check_result_without_a_live_network_call(self, website_asset):
+        result, _alert = services.simulate_check_result(
+            website_asset,
+            check_type=CheckResult.CheckType.HTTP_UPTIME,
+            status=CheckResult.Status.CRITICAL,
+        )
+        assert result.status == CheckResult.Status.CRITICAL
+        assert result.details == {}
+
+    def test_three_calls_open_a_down_alert_like_a_real_outage_would(self, website_asset):
+        alert = None
+        for _ in range(3):
+            _result, alert = services.simulate_check_result(
+                website_asset,
+                check_type=CheckResult.CheckType.HTTP_UPTIME,
+                status=CheckResult.Status.CRITICAL,
+            )
+        assert alert is not None
+        assert alert.alert_type == Alert.AlertType.DOWN
+        assert alert.is_open is True
+
+
 class TestDownAlertConfirmation:
     """CLAUDE.md: "confirmer un DOWN par 3 échecs consécutifs"."""
 

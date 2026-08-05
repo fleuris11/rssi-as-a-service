@@ -148,6 +148,25 @@ def run_check(asset: Asset, check_type: str) -> tuple[CheckResult, Alert | None]
     return check_result, notify_alert
 
 
+def simulate_check_result(
+    asset: Asset, *, check_type: str, status: str, details: dict | None = None
+) -> tuple[CheckResult, Alert | None]:
+    """Injects a CheckResult without performing a live network check, then
+    runs it through the same alert engine as ``run_check``. Used by the
+    ``simulate_check_failure`` management command (E2E tests, demos) to
+    exercise the alerting pipeline without depending on a real external
+    target being actually down."""
+    check_result = CheckResult.all_objects.create(
+        tenant=asset.tenant,
+        asset=asset,
+        check_type=check_type,
+        status=status,
+        details=details or {},
+    )
+    alert = evaluate_alerts(asset=asset, check_type=check_type, latest_result=check_result)
+    return check_result, alert
+
+
 # --- Alert engine ----------------------------------------------------------
 
 
