@@ -1,4 +1,5 @@
 from datetime import time
+from unittest.mock import patch
 
 import pytest
 from django.core import mail
@@ -114,6 +115,54 @@ class TestBuildWeatherContext:
         context = services.build_weather_context(tenant)
 
         assert context["mood_emoji"] == "⚠️"
+
+
+class TestWeatherEnrichment:
+    """Cas d'usage 3 (Phase 4) : la météo enrichie est un best-effort — le
+    template déterministe (déjà couvert par TestBuildWeatherContext) reste
+    systématiquement le contenu envoyé si l'enrichissement échoue ou est
+    désactivé (CLAUDE.md : "la météo part toujours")."""
+
+    _TEST_FERNET_KEY = "wdnStF9mSlY1ADOjw5Tc_M8-nLQw_ay8TUFePY6rNpo="
+
+    def test_disabled_by_default_leaves_enriched_summary_none(self, tenant, website_asset):
+        context = services.build_weather_context(tenant)
+        assert context["enriched_summary"] is None
+
+    def test_enabled_but_ai_disabled_on_tenant_falls_back_to_none(
+        self, tenant, website_asset, settings
+    ):
+        settings.AI_PSEUDONYMIZATION_KEY = self._TEST_FERNET_KEY
+        services.update_preferences(tenant, weather_enrichment_enabled=True)
+        tenant.ai_enabled = False
+        tenant.save(update_fields=["ai_enabled"])
+
+        context = services.build_weather_context(tenant)
+
+        assert context["enriched_summary"] is None
+
+    def test_enabled_calls_ai_pipeline_and_uses_result(self, tenant, website_asset, settings):
+        settings.AI_PSEUDONYMIZATION_KEY = self._TEST_FERNET_KEY
+        services.update_preferences(tenant, weather_enrichment_enabled=True)
+
+        with patch(
+            "apps.ai_assistant.services.call_claude", return_value="Tout est sous contrôle."
+        ):
+            context = services.build_weather_context(tenant)
+
+        assert context["enriched_summary"] == "Tout est sous contrôle."
+
+    def test_ai_failure_falls_back_to_none_and_email_still_sends(
+        self, tenant, tenant_owner, website_asset, settings
+    ):
+        settings.AI_PSEUDONYMIZATION_KEY = self._TEST_FERNET_KEY
+        services.update_preferences(tenant, weather_enrichment_enabled=True)
+
+        with patch("apps.ai_assistant.services.call_claude", side_effect=RuntimeError("panne API")):
+            message = services.send_weather_email(tenant)
+
+        assert message is not None
+        assert len(mail.outbox) == 1
 
 
 class TestSendWeatherEmail:

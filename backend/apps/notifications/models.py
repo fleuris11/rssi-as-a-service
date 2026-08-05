@@ -13,6 +13,13 @@ class NotificationPreferences(TenantScopedModel):
     # timezone support yet, documented simplification for the MVP.
     weather_time = models.TimeField(default=time(8, 0))
     realtime_alerts_enabled = models.BooleanField(default=True)
+    # Phase 4 (cas d'usage 3, cadrage US-5.5 note IA) : reformulation du
+    # résumé météo par Haiku via le pipeline de pseudonymisation. Optionnelle
+    # par tenant ; le template déterministe reste le fallback (voir
+    # apps.notifications.services.build_weather_context) si désactivée, si
+    # ai_enabled=false sur le tenant, si le quota est dépassé ou si l'appel
+    # échoue — la météo part toujours.
+    weather_enrichment_enabled = models.BooleanField(default=False)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

@@ -9,6 +9,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from apps.ai_assistant import services as ai_assistant_services
 from apps.monitoring import services as monitoring_services
 from apps.monitoring.models import Alert, CheckResult
 from apps.tenants import services as tenants_services
@@ -153,7 +154,7 @@ def build_weather_context(tenant) -> dict:
         for alert in open_alerts
     ]
 
-    return {
+    context = {
         "tenant_name": tenant.name,
         "date": timezone.localdate(),
         "mood_emoji": _MOOD_EMOJI[worst],
@@ -162,6 +163,38 @@ def build_weather_context(tenant) -> dict:
         "open_alerts": alert_rows,
         "dashboard_url": f"{settings.FRONTEND_BASE_URL}/surveillance",
     }
+    context["enriched_summary"] = _maybe_enrich_weather_summary(tenant, context)
+    return context
+
+
+def _maybe_enrich_weather_summary(tenant, context: dict) -> str | None:
+    """Cas d'usage 3 (optionnel par tenant) : reformulation Haiku du résumé
+    déterministe via le pipeline de pseudonymisation d'ai_assistant. Renvoie
+    toujours ``None`` proprement (jamais d'exception) si désactivé, si le
+    tenant n'a pas activé l'IA, si le quota est dépassé ou si l'appel
+    échoue — apps.notifications.services.enrich_weather_summary garantit
+    déjà ce comportement, mais le template déterministe (déjà construit
+    dans ``context``) reste dans tous les cas le contenu envoyé si ce champ
+    est vide : la météo part toujours (CLAUDE.md)."""
+    prefs = get_or_create_preferences(tenant)
+    if not prefs.weather_enrichment_enabled:
+        return None
+    deterministic_context = {
+        "synthese": context["mood_label"],
+        "actifs": [
+            {
+                "type": asset["type_label"],
+                "valeur": asset["value"],
+                "disponibilite_24h": asset["uptime_24h"],
+                "checks": asset["checks"],
+            }
+            for asset in context["assets"]
+        ],
+        "alertes_ouvertes": context["open_alerts"],
+    }
+    return ai_assistant_services.enrich_weather_summary(
+        tenant=tenant, deterministic_context=deterministic_context
+    )
 
 
 def send_weather_email(tenant):
@@ -183,7 +216,7 @@ def send_weather_email(tenant):
         subject=subject,
         text_body=text_body,
         html_body=html_body,
-        details={"mood": context["mood_label"]},
+        details={"mood": context["mood_label"], "ai_enriched": bool(context["enriched_summary"])},
     )
 
 
