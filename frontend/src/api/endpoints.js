@@ -65,3 +65,30 @@ export const notificationsApi = {
   updatePreferences: (payload) =>
     apiClient.patch('/api/v1/notifications/preferences/', payload),
 }
+
+export const aiApi = {
+  getSettings: () => apiClient.get('/api/v1/ai/settings/'),
+  updateSettings: (payload) => apiClient.patch('/api/v1/ai/settings/', payload),
+  previewCharter: () => apiClient.get('/api/v1/ai/preview/charter/'),
+  previewAssistant: () => apiClient.get('/api/v1/ai/preview/assistant/'),
+
+  listDocuments: () => apiClient.get('/api/v1/ai/documents/'),
+  generateDocument: (type) => apiClient.post('/api/v1/ai/documents/', { type }),
+  getDocument: (id) => apiClient.get(`/api/v1/ai/documents/${id}/`),
+  updateDocument: (id, contentMarkdown) =>
+    apiClient.patch(`/api/v1/ai/documents/${id}/`, { content_markdown: contentMarkdown }),
+  validateDocument: (id) => apiClient.post(`/api/v1/ai/documents/${id}/validate/`),
+  // blob (not a plain URL): the export endpoint requires the JWT the
+  // apiClient interceptor attaches, so it can't be a bare <a href>.
+  exportDocument: (id) =>
+    apiClient.get(`/api/v1/ai/documents/${id}/export/`, { responseType: 'blob' }),
+
+  listConversations: () => apiClient.get('/api/v1/ai/conversations/'),
+  createConversation: () => apiClient.post('/api/v1/ai/conversations/'),
+  listMessages: (conversationId) =>
+    apiClient.get(`/api/v1/ai/conversations/${conversationId}/messages/`),
+  sendMessage: (conversationId, content) =>
+    apiClient.post(`/api/v1/ai/conversations/${conversationId}/messages/`, { content }),
+
+  getJob: (jobId) => apiClient.get(`/api/v1/ai/jobs/${jobId}/`),
+}

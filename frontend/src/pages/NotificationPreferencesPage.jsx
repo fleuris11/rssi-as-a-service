@@ -5,6 +5,7 @@ export default function NotificationPreferencesPage() {
   const [weatherEnabled, setWeatherEnabled] = useState(true)
   const [weatherTime, setWeatherTime] = useState('08:00')
   const [realtimeAlertsEnabled, setRealtimeAlertsEnabled] = useState(true)
+  const [weatherEnrichmentEnabled, setWeatherEnrichmentEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -18,6 +19,7 @@ export default function NotificationPreferencesPage() {
         setWeatherEnabled(response.data.weather_enabled)
         setWeatherTime(response.data.weather_time.slice(0, 5))
         setRealtimeAlertsEnabled(response.data.realtime_alerts_enabled)
+        setWeatherEnrichmentEnabled(response.data.weather_enrichment_enabled)
       } catch {
         setError('Impossible de charger vos préférences.')
       } finally {
@@ -37,6 +39,7 @@ export default function NotificationPreferencesPage() {
         weather_enabled: weatherEnabled,
         weather_time: `${weatherTime}:00`,
         realtime_alerts_enabled: realtimeAlertsEnabled,
+        weather_enrichment_enabled: weatherEnrichmentEnabled,
       })
       setSaved(true)
     } catch {
@@ -86,6 +89,18 @@ export default function NotificationPreferencesPage() {
             className="mt-1 rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400"
           />
         </div>
+
+        <label className="flex items-start gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={weatherEnrichmentEnabled}
+            onChange={(e) => setWeatherEnrichmentEnabled(e.target.checked)}
+            disabled={!weatherEnabled}
+            className="mt-0.5"
+          />
+          Enrichir la météo par IA (reformulation plus lisible du résumé — nécessite l’IA activée
+          pour l’entreprise ; le résumé standard reste envoyé en cas d’indisponibilité)
+        </label>
 
         <label className="flex items-start gap-2 text-sm text-slate-700">
           <input

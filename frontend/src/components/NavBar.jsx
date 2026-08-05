@@ -27,6 +27,12 @@ export default function NavBar() {
             <NavLink to="/surveillance" className={linkClass}>
               Surveillance
             </NavLink>
+            <NavLink to="/documents" className={linkClass}>
+              Documents
+            </NavLink>
+            <NavLink to="/assistant" className={linkClass}>
+              Assistant
+            </NavLink>
           </nav>
         </div>
         <div className="flex items-center gap-3 text-sm text-slate-600">
