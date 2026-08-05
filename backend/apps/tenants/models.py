@@ -15,6 +15,10 @@ class Tenant(models.Model):
     sector = models.CharField(max_length=120, blank=True)
     headcount = models.PositiveIntegerField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    # US-4.3: kill switch for every AI feature (documents, assistant, météo
+    # enrichie) — checked by apps.ai_assistant.services before any call;
+    # false makes every AI endpoint return 403 and the frontend hides them.
+    ai_enabled = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

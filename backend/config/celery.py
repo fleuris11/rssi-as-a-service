@@ -3,8 +3,7 @@
 Workers never run AI calls or network checks inside the HTTP
 request/response cycle (CLAUDE.md) — this is the entry point for
 everything that does, split into dedicated queues (``monitoring``,
-``emails``; ``ai`` arrives in Phase 4) so a slow/failing queue doesn't
-starve the others.
+``emails``, ``ai``) so a slow/failing queue doesn't starve the others.
 """
 
 import os

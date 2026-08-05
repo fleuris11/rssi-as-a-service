@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "apps.actions",
     "apps.monitoring",
     "apps.notifications",
+    "apps.ai_assistant",
     "apps.platform_admin",
 ]
 
@@ -159,6 +160,7 @@ CELERY_TASK_DEFAULT_QUEUE = "default"
 CELERY_TASK_ROUTES = {
     "apps.monitoring.tasks.*": {"queue": "monitoring"},
     "apps.notifications.tasks.*": {"queue": "emails"},
+    "apps.ai_assistant.tasks.*": {"queue": "ai"},
 }
 # Un worker tué en cours de tâche doit la relivrer plutôt que la perdre —
 # les tasks sont conçues pour être idempotentes (voir apps.monitoring.tasks
@@ -188,3 +190,20 @@ DEFAULT_FROM_EMAIL = env(
 # Base URL used to build links in emails (dashboard link in the weather
 # email) — the frontend's own origin, not the API's.
 FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:5173")
+
+# --- IA (Phase 4, CLAUDE.md règle d'architecture n°3) : tout appel passe
+# exclusivement par apps.ai_assistant.services, jamais dans le cycle
+# requête/réponse HTTP (toujours via Celery, file "ai").
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
+# Clé Fernet (32 octets urlsafe-base64) chiffrant la table de correspondance
+# de pseudonymisation (ADR-005) ; générer avec
+# `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+# Jamais commitée en clair — voir backend/.env.example.
+AI_PSEUDONYMIZATION_KEY = env("AI_PSEUDONYMIZATION_KEY", default="")
+# Durée de vie courte (cadrage §7) : la table de correspondance est
+# rafraîchie à chaque réutilisation (conversation en cours), donc cette
+# valeur borne l'inactivité tolérée, pas la durée totale d'une conversation.
+AI_PSEUDONYMIZATION_TTL_HOURS = env.int("AI_PSEUDONYMIZATION_TTL_HOURS", default=24)
+# Quota mensuel de tokens par défaut, par tenant (Green IT, cadrage §8) —
+# override possible par tenant via AIUsageQuota.monthly_token_limit.
+AI_DEFAULT_MONTHLY_TOKEN_LIMIT = env.int("AI_DEFAULT_MONTHLY_TOKEN_LIMIT", default=200_000)

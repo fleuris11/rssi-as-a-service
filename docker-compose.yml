@@ -66,9 +66,9 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-    # Files séparées (cadrage §4.4) : ce worker ne consomme que monitoring
-    # et emails — "ai" arrive en Phase 4 avec son propre worker/routage.
-    command: celery -A config worker --loglevel=info -Q monitoring,emails
+    # Files séparées (cadrage §4.4) : un fournisseur IA en incident ne doit
+    # jamais retarder l'envoi d'une alerte, et inversement.
+    command: celery -A config worker --loglevel=info -Q monitoring,emails,ai
     healthcheck:
       # Process-level liveness (a worker answers a broker-routed ping to
       # itself). The end-to-end proof that Beat -> this worker -> Redis
