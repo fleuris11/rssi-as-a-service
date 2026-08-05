@@ -789,3 +789,168 @@ job dédié : arbitrage documenté dans l'ADR-011, dicté par l'exigence « la m
   gestion de compte).
 - Rédaction en version complète des ADR 006 à 010 (actuellement seulement résumés dans le tableau du
   cadrage) — pas traité cette session, hors périmètre de la mission Phase 4.
+
+## 2026-08-05 — Phase 5 : durcissement sécurité, qualité et accessibilité
+
+### Contexte
+Mission Phase 5 (cadrage §6, §9, phase 5 du §11) : consolidation pure, aucune nouvelle
+fonctionnalité produit. Dix chantiers demandés : revue OWASP Top 10 documentée, rate limiting,
+2FA TOTP (US-1.3), durcissement de l'authentification (verrouillage progressif, politique de mot
+de passe, messages non énumérants), en-têtes/configuration de production (Caddy, settings Django
+séparés), chaîne d'approvisionnement (pip-audit/npm audit/Trivy en CI), tests end-to-end
+Playwright sur les 3 parcours critiques, accessibilité RGAA de base avec axe-core, export PDF de
+la charte (reste-à-faire de Phase 4), et rédaction complète des ADR 006 à 010 (dette documentaire
+identifiée en fin de Phase 4).
+
+### Réalisé
+
+**Authentification et rate limiting**
+- 2FA TOTP complète (`apps/accounts/services.py`, `apps/accounts/models.py`) : enrôlement par QR
+  code (`pyotp`+`qrcode`), secret chiffré au repos avec une clé Fernet dédiée
+  (`TOTP_ENCRYPTION_KEY`, distincte de `AI_PSEUDONYMIZATION_KEY` — une compromission de l'une ne
+  compromet pas l'autre), codes de récupération à usage unique hashés, vérification au login via
+  un jeton de challenge opaque (`secrets.token_urlsafe`, TTL 5 minutes, usage unique — jamais un
+  JWT), désactivation nécessitant confirmation du mot de passe. Frontend :
+  `TwoFactorSettingsPage.jsx` (enrôlement/désactivation), `LoginPage.jsx` réécrit en flux à deux
+  étapes.
+- Verrouillage progressif par compte **et** IP (`_LOCKOUT_LADDER`, Redis via le cache Django, clés
+  hashées SHA-256 — email/IP jamais en clair dans Redis), messages d'erreur non énumérants
+  (identiques pour mot de passe incorrect et email inconnu, message générique à l'inscription en
+  doublon).
+- Throttling DRF : `AuthRateThrottle` (10/min par IP, register/login/refresh),
+  `TenantRateThrottle` (300/min par tenant, API générale), `TenantAIRateThrottle` (20/min,
+  endpoints IA — alignée sur les quotas). Réponses 429 propres, testées.
+- Politique de mot de passe : longueur ≥ 12 (privilégiée à la complexité imposée, cadrage §6) +
+  `CommonPasswordValidator` (liste de mots de passe compromis courants) +
+  `NumericPasswordValidator`.
+
+**Infrastructure de production**
+- `backend/config/settings_production.py` (nouveau) : overlay séparé de `settings.py`
+  (`DEBUG=False`, `ALLOWED_HOSTS` sans défaut permissif, cookies sécurisés, HSTS, en-têtes
+  restants gérés côté Caddy).
+- `deploy/Caddyfile` : reverse proxy avec TLS automatique (Let's Encrypt), HSTS,
+  `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, CSP, `Permissions-Policy`.
+- `deploy/Dockerfile.caddy` (build multi-étage : `node:22-alpine` pour le frontend puis
+  `caddy:2-alpine` final — l'image de production ne contient jamais les sources/`node_modules`),
+  `docker-compose.prod.yml` (postgres/redis sans port hôte exposé, service `caddy` ajouté).
+- `.dockerignore` (racine et `backend/`).
+
+**Chaîne d'approvisionnement (CI)**
+- `pip-audit -r requirements.txt --strict` (job `backend`) : 0 vulnérabilité actuellement.
+- `npm run audit` → `frontend/scripts/check-npm-audit.mjs`, liste blanche documentée pour
+  `GHSA-qwww-vcr4-c8h2` (react-router, CWE-352 — chemin de code non utilisé par cette application,
+  aucun correctif disponible autre qu'un downgrade cassant vers une version différemment
+  vulnérable).
+- Scan Trivy de l'image backend (job `container-scan`, `severity: HIGH,CRITICAL`,
+  `ignore-unfixed: true`) : 0 vulnérabilité actuellement, vérifié localement avant intégration CI.
+
+**Tests end-to-end Playwright**
+- `frontend/e2e/` : 3 specs pour les parcours critiques (inscription→diagnostic complet→plan
+  d'action ; déclaration d'actif→check simulé→alerte visible ; génération de charte IA (API
+  mockée)→relecture→validation) contre la vraie stack `docker-compose`, plus un balayage
+  d'accessibilité (`@axe-core/playwright`) sur les pages principales non couvertes par les 3
+  parcours (Résultats à vide, Assistant, Préférences, Sécurité, pages publiques).
+- Le check simulé du parcours (b) passe par une nouvelle commande de gestion Django
+  (`simulate_check_failure`) qui réutilise le vrai moteur d'alerte
+  (`apps.monitoring.services.simulate_check_result`, nouvelle fonction de service) plutôt que de
+  contourner la logique métier.
+- Job CI dédié (`e2e`) : monte la stack `docker-compose` complète (env générés à la volée, jamais
+  committés), attend `/healthz`, exécute la suite Playwright, publie le rapport HTML en artefact.
+
+**Accessibilité**
+- Correction de deux violations `color-contrast` réelles détectées par axe-core (pas visibles à
+  l'œil sans mesure) : badges de statut à texte blanc sur fond `-500` (ratio ~2.1-2.5:1, sous le
+  seuil AA 4.5:1) remontés en `-600`/`-700` dans `DocumentsPage.jsx` et `SurveillancePage.jsx` ;
+  texte secondaire `text-slate-400` (ratio ~2.56:1 sur blanc) remonté en `text-slate-500` sur 6
+  pages ; badges `ActionPlanPage.jsx` sur fond `slate-100` remontés de `slate-500` (4.34:1, sous le
+  seuil) à `slate-600`.
+- Une violation `label` critique corrigée : le `<textarea>` de relecture de document
+  (`DocumentsPage.jsx`) et le champ de saisie de l'assistant (`AssistantPage.jsx`) n'avaient pas de
+  nom accessible — `aria-label` ajouté aux deux.
+- Vérification : tous les `onClick` de l'application sont portés par de vrais éléments `<button>`
+  (aucun pattern `<div onClick>` trouvé) — navigation clavier native garantie sans JavaScript
+  supplémentaire.
+
+**Export PDF de la charte (US-4.1, reste-à-faire de Phase 4)**
+- `render_document_pdf()` (`apps/ai_assistant/services.py`) : markdown validé → HTML minimal
+  (`markdown` avec extensions `extra`/`sane_lists`) → PDF via WeasyPrint, feuille de style dédiée.
+  Endpoint `GET /api/v1/ai/documents/<id>/export/pdf/`, mêmes permissions/quota que le reste du
+  module. ADR-012 (nouveau) documente la décision et son alternative écartée (service tiers de
+  conversion).
+- Dépendance système (Pango/Cairo/GDK-Pixbuf) ajoutée à `backend/Dockerfile` et à
+  `.github/workflows/ci.yml` — absente de `python:3.12-slim`, ne peut pas être testée sur un poste
+  Windows nu (voir Difficultés).
+
+**Revue de sécurité et documentation**
+- `docs/security_review.md` (nouveau) : revue complète des 10 catégories OWASP Top 10 (2021), avec
+  référence de fichier pour chaque mesure en place, ce qui a été ajouté cette session, et les
+  risques résiduels sciemment acceptés.
+- ADR 006 à 012 rédigés en version complète (`docs/adr/`) : 006 (PostgreSQL seul, pgvector V2),
+  007 (Docker Compose + Caddy), 008 (pipeline GitHub Actions), 009 (JWT/RBAC/2FA), 010
+  (vérifications passives sur actifs déclarés), 012 (export PDF WeasyPrint) — comblant la dette
+  documentaire identifiée en fin de Phase 4 (seuls 001-005 et 011 existaient).
+- README mis à jour : état du projet (Phase 5), structure du dépôt complète (toutes les apps),
+  instructions Celery/référentiel ANSSI, section Tests étendue (audits, E2E), nouvelle section
+  Sécurité résumant les mesures en place avec liens vers `security_review.md` et les ADR.
+
+### Tests et vérification
+- Suite backend complète : 323 tests passent (4 désélectionnés localement — export PDF, qui
+  nécessite les bibliothèques système WeasyPrint absentes de Windows ; vérifiés séparément dans le
+  conteneur Docker : 2/2 passent). `ruff check`/`ruff format --check` verts.
+- `pip-audit`, `npm run audit`, scan Trivy de l'image backend : exécutés localement pendant cette
+  session, tous verts (0 vulnérabilité HIGH/CRITICAL non acceptée).
+- Suite Playwright complète (5 specs, `frontend/e2e/`) : verte contre la stack `docker-compose`
+  réelle après correction du bug CORS (voir Difficultés) et des deux violations d'accessibilité.
+- `npm run lint` et `npm run build` (frontend) verts.
+
+### Difficultés rencontrées et solutions
+- **Bug CORS réel découvert par les tests E2E, invisible aux tests unitaires Django** : l'en-tête
+  personnalisé `X-Tenant-Id` (envoyé par `frontend/src/api/client.js` sur toute requête
+  tenant-scopée) n'était pas dans la liste blanche `CORS_ALLOW_HEADERS` de `django-cors-headers`.
+  Conséquence : le navigateur bloquait silencieusement côté client toute requête tenant-scopée dès
+  qu'un tenant était résolu (aucune trace côté serveur, la requête ne quittait jamais le
+  navigateur) — seules les routes ne nécessitant pas cet en-tête (register/login/me) continuaient
+  de fonctionner. Le client de test Django n'applique jamais les règles CORS d'un vrai navigateur,
+  donc ce bug ne pouvait être détecté que par un test s'exécutant dans un vrai Chromium — exactement
+  ce que ce chantier E2E a permis. Corrigé (`CORS_ALLOW_HEADERS = [*default_headers,
+  "x-tenant-id"]`, `backend/config/settings.py`) avec un test de non-régression dédié.
+- **Gap de journalisation identifié par la revue OWASP (A09) et corrigé dans la foulée** : aucun
+  `LOGGING` Django explicite n'existait (config par défaut, sortie console non structurée, aucun
+  logger de sécurité actif) — la mission demande explicitement de corriger ce que la revue révèle,
+  pas seulement de le documenter. Ajout d'un `LOGGING` dict minimal (console uniquement, pas de
+  service tiers — cohérent avec la sobriété du projet et l'interdiction CLAUDE.md d'envoyer des
+  données personnelles à un service externe) activant les loggers `django.security` et
+  `django.request`, et un événement explicite journalisé à chaque déclenchement de verrouillage
+  progressif (identifiant haché uniquement, jamais l'email/IP en clair — même règle que les clés de
+  cache Redis).
+- **Clé API Anthropic trouvée en clair dans `backend/.env.example`** (modification locale non
+  committée, découverte en éditant ce fichier pour y ajouter `TOTP_ENCRYPTION_KEY`) : retirée
+  immédiatement et remplacée par un placeholder vide avant tout commit ; vérifié via `git
+  diff`/`git show` qu'aucune fuite n'avait eu lieu côté dépôt. Développeur alerté pour rotation de
+  la clé côté fournisseur par précaution, l'origine exacte de cette valeur en clair localement
+  restant inconnue. Documenté dans `docs/security_review.md` (A02) comme point de vigilance
+  opérationnel plutôt que comme faille de conception.
+- **Bug Docker découvert lors de la vérification de l'export PDF** : `libgdk-pixbuf2.0-0` (nom de
+  paquet utilisé initialement dans `backend/Dockerfile`) n'existe plus sous ce nom — Debian
+  "trixie" (base actuelle de `python:3.12-slim`) l'a renommé `libgdk-pixbuf-2.0-0` (tiret
+  supplémentaire). Diagnostiqué via `apt-cache search` dans un conteneur `python:3.12-slim` propre,
+  corrigé, rebuild vérifié.
+- **Piège DRF sur le throttling en tests** : `SimpleRateThrottle.THROTTLE_RATES` est un attribut de
+  classe capturé une fois à l'import depuis `api_settings.DEFAULT_THROTTLE_RATES` — les surcharges
+  via le fixture `settings` de pytest-django ne s'y répercutent pas (le signal `setting_changed` ne
+  fait que vider le cache de `api_settings`, sans réassigner l'attribut déjà lié). Résolu par un
+  fixture dédié mutant directement le dict partagé en place, avec restauration en teardown.
+
+### Reste à faire (sessions suivantes)
+- Journalisation de production : le `LOGGING` dict ajouté cette session reste minimal (console
+  uniquement) ; `docs/security_review.md` (A09) recommande, pour la Phase 6, une destination
+  persistante pour les échecs d'authentification répétés et les erreurs serveur 5xx, et l'évaluation
+  d'un outil de suivi d'erreurs (en respectant l'interdiction d'y envoyer des données personnelles).
+- Déploiement effectif sur `rssiasservice.online` (Phase 6) : la stack de production
+  (`docker-compose.prod.yml`, Caddy, settings durcis) est prête mais n'a pas encore été déployée
+  sur le VPS cible ; runbook de déploiement et de sauvegarde restant à rédiger.
+- Politique de 2FA imposée au niveau tenant (actuellement optionnelle par utilisateur) — hors
+  périmètre de l'US-1.3 telle que cadrée, notée dans ADR-009 comme évolution possible.
+- Rotation automatisée des clés Fernet (`AI_PSEUDONYMIZATION_KEY`, `TOTP_ENCRYPTION_KEY`) —
+  actuellement manuelle, acceptable au volume actuel de secrets stockés (voir
+  `docs/security_review.md`, A02).
