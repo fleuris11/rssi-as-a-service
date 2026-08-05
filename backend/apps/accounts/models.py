@@ -1,5 +1,6 @@
 import uuid
 
+from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.db import models
@@ -60,3 +61,42 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def get_short_name(self):
         return self.first_name or self.email
+
+
+class TwoFactorCredential(models.Model):
+    """US-1.3 (2FA TOTP). One per user, platform-wide (not tenant-scoped —
+    login happens before any tenant is selected). ``encrypted_secret`` is
+    the base32 TOTP secret, Fernet-encrypted at rest (cadrage §6) with a
+    key dedicated to this app (``TOTP_ENCRYPTION_KEY``, distinct from
+    ``AI_PSEUDONYMIZATION_KEY`` — compromising one must not compromise the
+    other). ``confirmed=False`` rows are enrollments in progress: a user
+    who starts setup but never confirms is not yet 2FA-protected."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="two_factor"
+    )
+    encrypted_secret = models.BinaryField()
+    confirmed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        state = "confirmé" if self.confirmed else "en attente de confirmation"
+        return f"2FA — {self.user_id} ({state})"
+
+
+class RecoveryCode(models.Model):
+    """One-time-use fallback codes issued when 2FA is confirmed (US-1.3).
+    Stored hashed (Django's password hasher) exactly like a password —
+    never recoverable in plaintext once issued."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="recovery_codes"
+    )
+    code_hash = models.CharField(max_length=128)
+    created_at = models.DateTimeField(auto_now_add=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        state = "utilisé" if self.used_at else "disponible"
+        return f"Code de récupération — {self.user_id} ({state})"

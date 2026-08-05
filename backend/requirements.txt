@@ -12,3 +12,6 @@ requests==2.34.2
 dnspython==2.8.0
 anthropic==0.120.2
 cryptography==50.0.0
+pyotp==2.10.0
+qrcode==8.2
+pillow==12.3.0

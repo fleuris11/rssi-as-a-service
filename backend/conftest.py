@@ -1,5 +1,6 @@
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from rest_framework.test import APIClient
 
 from apps.tenants.services import create_tenant_with_owner
@@ -12,6 +13,18 @@ def _fast_password_hashing(settings):
     # PBKDF2 (the production default) is deliberately slow; tests create
     # many users and don't need that cost.
     settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    # DRF throttling (apps.accounts/apps.tenants throttling.py) and the
+    # account+IP lockout (apps.accounts.services) both key off the shared
+    # Django cache (Redis) — without this, one test's failed-login or
+    # throttle counters would bleed into the next (every test client shares
+    # the same "127.0.0.1" remote address).
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture

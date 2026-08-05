@@ -10,6 +10,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
+from corsheaders.defaults import default_headers
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -110,6 +111,14 @@ CACHES = {
 }
 
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:5173"])
+# X-Tenant-Id (frontend/src/api/client.js) isn't in django-cors-headers'
+# default allow-list — without this, the browser's CORS preflight silently
+# blocks every tenant-scoped request client-side (no server-side trace at
+# all, since the request never leaves the browser), while auth endpoints
+# that don't send the header keep working. Found via real-browser E2E
+# testing (Playwright), not by any Django-test-client-based test, because
+# the Django test client never enforces CORS.
+CORS_ALLOW_HEADERS = [*default_headers, "x-tenant-id"]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -121,6 +130,19 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Registered globally, but both silently no-op without a resolved tenant
+    # (see apps.tenants.throttling) — pre-tenant endpoints (register/login/
+    # refresh/2FA) opt into apps.accounts.throttling.AuthRateThrottle
+    # explicitly instead (cadrage §6 : rate limiting Redis par IP et par
+    # tenant).
+    "DEFAULT_THROTTLE_CLASSES": [
+        "apps.tenants.throttling.TenantRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "auth": "10/min",
+        "tenant": "300/min",
+        "tenant_ai": "20/min",
+    },
 }
 
 # Accès courts + rotation des refresh tokens (CLAUDE.md §"Sécurité").
@@ -207,3 +229,36 @@ AI_PSEUDONYMIZATION_TTL_HOURS = env.int("AI_PSEUDONYMIZATION_TTL_HOURS", default
 # Quota mensuel de tokens par défaut, par tenant (Green IT, cadrage §8) —
 # override possible par tenant via AIUsageQuota.monthly_token_limit.
 AI_DEFAULT_MONTHLY_TOKEN_LIMIT = env.int("AI_DEFAULT_MONTHLY_TOKEN_LIMIT", default=200_000)
+
+# --- 2FA TOTP (Phase 5, US-1.3, cadrage §6) : clé Fernet chiffrant le
+# secret TOTP au repos — dédiée, distincte de AI_PSEUDONYMIZATION_KEY
+# (compromettre l'une ne doit pas compromettre l'autre). Générer avec
+# `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+TOTP_ENCRYPTION_KEY = env("TOTP_ENCRYPTION_KEY", default="")
+
+# --- Journalisation (Phase 5, docs/security_review.md A09) ------------------
+#
+# Sans cette config, Django ne journalise rien de façon actionnable en
+# production : ni les 5xx serveur, ni les événements "django.security"
+# (hôte non autorisé, verrouillage de compte déclenché — voir
+# apps.accounts.services.security_logger). Sortie console uniquement (pas
+# de fichier/rotation, pas de service tiers) : cohérent avec la sobriété du
+# projet et avec l'interdiction CLAUDE.md d'envoyer des données
+# personnelles à un service de suivi d'erreurs externe — seuls des
+# identifiants internes ou des empreintes hashées sont journalisés par le
+# code applicatif (voir apps.accounts.services._hashed_ident).
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "structured": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "structured"},
+    },
+    "root": {"handlers": ["console"], "level": "INFO"},
+    "loggers": {
+        "django.security": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False},
+    },
+}
