@@ -35,4 +35,17 @@ export default [
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
+  {
+    // Playwright config/specs and the npm-audit script run under Node, not
+    // in the browser — separate globals from the React app source above.
+    files: ['playwright.config.js', 'e2e/**/*.js', 'scripts/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: globals.node,
+    },
+    rules: {
+      ...js.configs.recommended.rules,
+    },
+  },
 ]
