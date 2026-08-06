@@ -1,1 +1,153 @@
 @import "tailwindcss";
+
+/* UI typeface: Inter — neutral, highly legible at small sizes (dense
+   dashboards, form labels). Weights kept to what the interface actually
+   uses (no 300/800/900), and subsets limited to latin/latin-ext (this is a
+   French-only UI — no need to ship cyrillic/greek/vietnamese glyphs) to
+   keep the font payload lean (Green IT). */
+@import "@fontsource/inter/latin-400.css";
+@import "@fontsource/inter/latin-ext-400.css";
+@import "@fontsource/inter/latin-500.css";
+@import "@fontsource/inter/latin-ext-500.css";
+@import "@fontsource/inter/latin-600.css";
+@import "@fontsource/inter/latin-ext-600.css";
+@import "@fontsource/inter/latin-700.css";
+@import "@fontsource/inter/latin-ext-700.css";
+
+/* Display typeface: Fraunces — a warm, slightly editorial serif used only
+   for page titles and hero numbers. This is what keeps the interface from
+   reading as a generic admin template: a serious, non-technical audience
+   (dirigeants de PME) reads a serif headline as considered, not cold. */
+@import "@fontsource/fraunces/latin-500-italic.css";
+@import "@fontsource/fraunces/latin-ext-500-italic.css";
+@import "@fontsource/fraunces/latin-600.css";
+@import "@fontsource/fraunces/latin-ext-600.css";
+@import "@fontsource/fraunces/latin-700.css";
+@import "@fontsource/fraunces/latin-ext-700.css";
+
+/* ---------------------------------------------------------------------
+ * Design tokens (Tailwind v4 @theme — each custom property below (color,
+ * font, radius, shadow) becomes a utility class, e.g. --color-brand-600
+ * generates bg-brand-600, text-brand-600 and border-brand-600).
+ *
+ * Palette rationale (docs/journal.md has the full writeup):
+ * - brand: deep navy-blue (H215), the sidebar/wordmark/primary-action color.
+ *   Signature over generic — not the stock Tailwind slate/blue.
+ * - accent: warm amber/gold (H36), used ONLY for the single primary CTA per
+ *   screen and active/selected states — never for large surfaces.
+ * - ink: a low-saturation neutral tinted with the same H215 hue as brand,
+ *   so grays/borders/body text feel like one coherent palette instead of
+ *   brand colors dropped onto stock Tailwind gray.
+ * - canvas: the app background — a barely-there brand-tinted off-white,
+ *   not pure #fff/#f9fafb.
+ * - ok/warning/critical: semantic status colors. Every "-strong" shade
+ *   below is verified >=4.5:1 against white (badges with white text) and
+ *   every "-subtle" background is verified >=4.5:1 against its matching
+ *   "-strong" text color (soft badges) — see docs/journal.md for the
+ *   computed ratios, carried over from the Phase 5 accessibility pass.
+ * ------------------------------------------------------------------- */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+
+  --color-canvas: #f6f8fa;
+  --color-surface: #ffffff;
+
+  --color-brand-50: #f3f7fb;
+  --color-brand-100: #e4ecf6;
+  --color-brand-200: #c5d5ed;
+  --color-brand-300: #9ab7df;
+  --color-brand-400: #5c8bcc;
+  --color-brand-500: #3666ab;
+  --color-brand-600: #2a4f84;
+  --color-brand-700: #203d65;
+  --color-brand-800: #162a46;
+  --color-brand-900: #0f1c2f;
+  --color-brand-950: #09101b;
+
+  --color-accent-50: #fef9f1;
+  --color-accent-100: #fdeed9;
+  --color-accent-200: #f9d9a9;
+  --color-accent-300: #f5bc66;
+  --color-accent-400: #f2a736;
+  --color-accent-500: #f0960f;
+  --color-accent-600: #c97e0d;
+  --color-accent-700: #a3660a;
+  --color-accent-800: #7d4e08;
+  --color-accent-900: #5b3906;
+  --color-accent-950: #3a2404;
+
+  --color-ink-50: #fbfbfc;
+  --color-ink-100: #f3f4f6;
+  --color-ink-200: #e1e5ea;
+  --color-ink-300: #c4cad4;
+  --color-ink-400: #95a0b2;
+  --color-ink-500: #6b7b94;
+  --color-ink-600: #566276;
+  --color-ink-700: #404a59;
+  --color-ink-800: #2b313b;
+  --color-ink-900: #1c2026;
+  --color-ink-950: #111418;
+
+  --color-ok-strong: #22775b;
+  --color-ok-subtle: #ebf9f5;
+  --color-warning-strong: #8e5e0b;
+  --color-warning-subtle: #fdf5e7;
+  --color-critical-strong: #bc242c;
+  --color-critical-subtle: #fceeef;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+
+  /* Two elevation levels only (mission constraint) — a barely-there resting
+     shadow, and a slightly stronger one for popovers/modals/dropdowns. Both
+     tinted with the brand hue instead of pure black, so shadows read as
+     "depth" rather than "smudge" on the tinted canvas. */
+  --shadow-soft: 0 1px 2px 0 rgb(15 28 47 / 0.06), 0 1px 1px 0 rgb(15 28 47 / 0.04);
+  --shadow-elevated: 0 12px 24px -8px rgb(15 28 47 / 0.18), 0 4px 8px -4px rgb(15 28 47 / 0.08);
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink-800);
+  font-family: var(--font-sans);
+}
+
+/* Consistent, calm 180ms transition for interactive state changes
+   (hover/focus/active) — the mission asks for "discrete" motion, not
+   spring/bounce effects. Opt-in via this utility rather than a global
+   transition on every element (which would also animate layout thrash). */
+.transition-smooth {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transition-smooth {
+    transition-duration: 0.01ms;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-toast-in {
+  animation: toast-in 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-toast-in {
+    animation: none;
+  }
+}

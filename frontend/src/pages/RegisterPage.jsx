@@ -35,7 +35,7 @@ export default function RegisterPage() {
     setSubmitting(true)
     try {
       await register(form)
-      navigate('/diagnostic')
+      navigate('/tableau-de-bord')
     } catch (error) {
       setErrors(extractErrorMessages(error.response?.data))
     } finally {

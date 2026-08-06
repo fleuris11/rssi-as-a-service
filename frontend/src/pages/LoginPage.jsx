@@ -89,7 +89,7 @@ function TwoFactorStep({ challengeToken, onBack }) {
         challengeToken,
         useRecoveryCode ? { recoveryCode: code } : { code }
       )
-      navigate('/diagnostic')
+      navigate('/tableau-de-bord')
     } catch {
       setError('Code invalide.')
     } finally {
@@ -156,7 +156,7 @@ export default function LoginPage() {
     if (result.mfaRequired) {
       setChallenge(result.challengeToken)
     } else {
-      navigate('/diagnostic')
+      navigate('/tableau-de-bord')
     }
   }
 
