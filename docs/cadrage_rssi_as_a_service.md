@@ -119,9 +119,21 @@ Le modèle n'a pas vocation à être exécuté commercialement dans le cadre de 
 | US-5.4 | En tant que client, la configuration email de mon domaine (SPF, DKIM, DMARC) et les en-têtes de sécurité HTTP de mes sites sont analysés avec recommandations. | Must |
 | US-5.5 | En tant que client, je reçois chaque matin à l'heure de mon choix une « météo cyber » par email : synthèse ☀️/⚠️/🔴 générée par IA, lisible en 20 secondes. | Must |
 | US-5.6 | En tant que client, je reçois une alerte temps réel (email) si un événement critique survient (site down, certificat expiré), selon mes préférences horaires. | Should |
+| US-5.7 | En tant que client, mes actifs déclarés sont vérifiés contre des sources de renseignement sur la menace (identifiants volés, fuites de données) et je suis alerté en langage simple en cas de compromission détectée. | Must (Phase 7) |
+
+#### M6 — Renseignement sur la menace (Breachsense) — Phase 7, intégré
+US-5.7 ci-dessus est développée via un module dédié (`apps.threat_intelligence`, ADR-013/ADR-014) :
+scan de diagnostic ponctuel (quota partagé, palier Essentials : 1000 requêtes/mois) déclenché à la
+déclaration d'un actif ou manuellement (garde-fous quota + cooldown), et monitoring continu par
+webhook (hors quota, limité à 15 actifs sur la licence partagée). **Remplace** la ligne « Fuites de
+comptes (API Have I Been Pwned) » qui figurait en roadmap V2 non développée — voir ADR-013 pour la
+justification de ce changement de fournisseur, documentée plutôt que tranchée silencieusement.
 
 ### 3.2 Roadmap V2 (architecturée, non développée dans le MVP)
-- **Fuites de comptes** : vérification périodique des emails du domaine contre les bases de fuites (API Have I Been Pwned) + alertes.
+- **Extension Breachsense palier supérieur (« premium-marketplace »)** : le client HTTP
+  (`threat_intelligence/providers/breachsense/client.py`) n'implémente que les endpoints du palier
+  Essentials actuellement souscrit ; le palier supérieur ajoute un accès marketplace non couvert par
+  cette intégration — extension future si le palier de licence évolue.
 - **Veille vulnérabilités personnalisée** : croisement du stack déclaré avec les flux CERT-FR/CVE, traduction des alertes en consignes actionnables par IA (RAG).
 - **Référentiels additionnels** : NIS2 détaillé, ISO 27001 simplifié, questionnaire RGPD.
 - **Routines de conformité** : tâches récurrentes (revue des accès trimestrielle, test de restauration mensuel) avec rappels.
@@ -159,7 +171,8 @@ Architecture **monolithe modulaire** Django + DRF, frontend React découplé, Po
 - `monitoring` : actifs, checks, résultats, historique uptime, moteur d'alertes.
 - `ai_assistant` : orchestration des appels IA, pseudonymisation, conversations, génération documentaire, suivi des tokens.
 - `notifications` : préférences, météo quotidienne, emails transactionnels.
-- `platform_admin` : back-office superviseur.
+- `threat_intelligence` (Phase 7) : renseignement sur la menace (Breachsense) — provider abstrait, scan de diagnostic, monitoring webhook, quota/pool partagés par la plateforme.
+- `platform_admin` : back-office superviseur (scaffold — le back-office CTI de la Phase 7 est exposé directement par `threat_intelligence`, gardé par `IsAdminUser`, en attendant la construction complète de ce module).
 
 Chaque app expose une interface claire (services) ; les dépendances croisées passent par ces services, jamais par les modèles internes d'une autre app — condition d'une extraction future en service autonome si le besoin de scaling apparaît.
 
@@ -179,7 +192,7 @@ Celery + Redis :
 5. Journalisation : cas d'usage, volume de tokens, coût — par tenant (quotas + Green IT).
 
 ### 4.6 Modèle de données (entités principales)
-`Tenant` (1—N) `Membership` (N—1) `User` · `Tenant` (1—N) `Assessment` (1—N) `Answer` (N—1) `Measure` (N—1) `Referential` · `Tenant` (1—N) `ActionItem` · `Tenant` (1—N) `Asset` (1—N) `CheckResult` · `Asset` (1—N) `Alert` · `Tenant` (1—N) `AIJob` / `Document` / `Conversation` · `Tenant` (1—1) `NotificationPreferences`.
+`Tenant` (1—N) `Membership` (N—1) `User` · `Tenant` (1—N) `Assessment` (1—N) `Answer` (N—1) `Measure` (N—1) `Referential` · `Tenant` (1—N) `ActionItem` · `Tenant` (1—N) `Asset` (1—N) `CheckResult` · `Asset` (1—N) `Alert` · `Tenant` (1—N) `AIJob` / `Document` / `Conversation` · `Tenant` (1—1) `NotificationPreferences` · `Asset` (0—1) `MonitoredAsset` (pool Breachsense, 15 slots partagés) · `Asset` (1—N) `BreachFinding` (Phase 7, jamais de secret en clair) · `Tenant` (1—N) `BreachIntelligenceUsage` / `BreachScanJob`.
 Les résultats de checks (séries temporelles) sont partitionnés par mois et agrégés (rollups quotidiens) pour maîtriser la volumétrie.
 
 ---
@@ -200,6 +213,8 @@ Chaque décision majeure fait l'objet d'un ADR complet dans le dépôt (`docs/ad
 | 008 | GitHub Actions : lint → tests → build → scan (Trivy) → deploy | GitLab CI ; Jenkins | Intégré au dépôt GitHub existant ; scan de vulnérabilités cohérent avec le produit ; déploiement SSH simple et auditable. |
 | 009 | JWT courts + refresh rotation, RBAC 3 rôles, 2FA TOTP | Sessions serveur ; OAuth externe seul | SPA découplée ; révocation par rotation ; exigence d'exemplarité d'un produit cyber. |
 | 010 | Vérifications passives uniquement sur actifs déclarés | Scans actifs de vulnérabilités | Cadre légal (pas de mandat d'intrusion), éthique, positionnement produit ; limite documentée dans les CGU. |
+| 013 | Intégration Breachsense (CTI) derrière une interface de provider abstraite | Appel direct depuis les services métier ; polling périodique plutôt que webhook | Inversion de dépendance (changement de fournisseur futur isolé) ; webhook privilégié pour le monitoring continu (hors quota, contrairement au polling qui l'épuiserait). |
+| 014 | Non-persistance des secrets renvoyés par Breachsense | Stockage chiffré (comme la pseudonymisation IA ou le TOTP) | Ces secrets appartiennent à des tiers, pas à la plateforme — masquage non réversible dès la normalisation plutôt qu'un chiffrement au repos, quel qu'il soit. |
 
 ---
 
@@ -272,6 +287,11 @@ Les checks réseau et l'API Claude sont mockés en CI (déterminisme, coût, sob
 | 4. IA documentaire | S11 | Pipeline pseudonymisation, génération charte, assistant contextuel, quotas | Démo : charte générée + Q/R |
 | 5. Durcissement | S12 | Revue OWASP, rate limiting, e2e complets, performance, accessibilité (RGAA de base) | Audit interne documenté |
 | 6. Production | S13-S14 | Déploiement rssiasservice.online, monitoring, sauvegardes, runbook, page d'accueil publique | **Plateforme en production** |
+| 7. Renseignement sur la menace | S15 | Intégration Breachsense (CTI) : scan de diagnostic, monitoring webhook, back-office quota/pool, enrichissement IA pseudonymisé, section Compromissions | Démo : détection de compromission simulée → alerte → météo/assistant enrichis |
+
+Phase ajoutée après la Phase 6 initialement prévue (extension du périmètre MVP, cadrage §14) — le
+phasage à 6 phases restait la trajectoire de certification ; cette 7ᵉ phase documente une évolution
+réelle du produit post-MVP, dans le même esprit de traçabilité continue.
 
 La rédaction des dossiers de certification est **continue** : chaque phase alimente directement les pièces (ADR, benchmarks, captures, incidents, métriques). Une revue « dossier » de 1 h est planifiée à la fin de chaque phase.
 

@@ -5,19 +5,22 @@ françaises. Voir [`docs/cadrage_rssi_as_a_service.md`](docs/cadrage_rssi_as_a_s
 cadrage complet du projet et [`CLAUDE.md`](CLAUDE.md) pour les règles d'architecture et de
 conventions.
 
-**État actuel (Phase 5 — durcissement)** : socle (auth JWT + 2FA TOTP, multi-tenancy, RBAC),
-diagnostic de maturité ANSSI et plan d'action, surveillance d'actifs avec météo cyber quotidienne,
-génération documentaire et assistant par IA, et durcissement sécurité/qualité/accessibilité
+**État actuel (Phase 7 — renseignement sur la menace)** : socle (auth JWT + 2FA TOTP, multi-tenancy,
+RBAC), diagnostic de maturité ANSSI et plan d'action, surveillance d'actifs avec météo cyber
+quotidienne, génération documentaire et assistant par IA, durcissement sécurité/qualité/accessibilité
 (rate limiting, verrouillage progressif, en-têtes de sécurité, chaîne d'approvisionnement, tests
-E2E). Reste à faire avant la Phase 6 (production) : déploiement effectif sur
-`rssiasservice.online`. Voir §11 du cadrage pour le détail des phases et
+E2E), et détection de compromissions (fuites de données/identifiants) via Breachsense (scan +
+monitoring webhook, section « Compromissions »). Reste à faire avant la Phase 6/production :
+déploiement effectif sur `rssiasservice.online` (le webhook Breachsense en particulier n'est
+testable en conditions réelles qu'une fois une URL publique disponible — voir la section dédiée
+ci-dessous). Voir §11 du cadrage pour le détail des phases et
 [`docs/security_review.md`](docs/security_review.md) pour la revue de sécurité complète.
 
 ## Structure du dépôt
 
 ```
 backend/     Django 5 + DRF (apps : accounts, tenants, assessments, actions, monitoring,
-             ai_assistant, notifications, platform_admin)
+             ai_assistant, notifications, threat_intelligence, platform_admin)
 frontend/    React 18 + Vite + Tailwind CSS
 frontend/e2e/  Tests de bout en bout Playwright (parcours critiques + accessibilité)
 deploy/      Caddyfile (reverse proxy + TLS + en-têtes de sécurité) et Dockerfile de production
@@ -155,6 +158,31 @@ qui résout le tenant depuis l'en-tête `X-Tenant-Id` et l'appartenance de l'uti
 un manager (`TenantScopedManager`) qui échoue fermé : sans tenant résolu dans le contexte de la
 requête, aucune ligne n'est renvoyée.
 
+## Renseignement sur la menace (Breachsense)
+
+Détection de compromissions (fuites de données/identifiants) sur les actifs déclarés, via une
+licence Breachsense unique et **partagée par toute la plateforme** (palier Essentials : 1000
+requêtes « query »/mois, 15 actifs monitorés en temps réel, 1 req/s) — voir ADR-013/ADR-014.
+
+- `BREACHSENSE_LICENSE_KEY` (dans `backend/.env`) : sans elle, la plateforme bascule automatiquement
+  sur un provider neutre (aucun appel réel, findings vides) — utile en dev/CI sans licence. Le reste
+  de la configuration (`BREACHSENSE_QUOTA_SAFETY_MARGIN`, `BREACHSENSE_SCAN_COOLDOWN_HOURS`,
+  `BREACHSENSE_MONITORED_ASSET_POOL_SIZE`, `BREACHSENSE_WEBHOOK_USERNAME`/`PASSWORD`,
+  `BREACHSENSE_WEBHOOK_CALLBACK_URL`) est documentée dans `backend/.env.example`.
+- **Webhook** : `POST /api/v1/webhooks/breachsense` (Basic Auth) reçoit les notifications temps réel
+  de la licence. `BREACHSENSE_WEBHOOK_CALLBACK_URL` doit pointer vers une URL **publique** — non
+  disponible en développement local, donc non testable en conditions réelles avant déploiement.
+  D'ici là, le pipeline d'ingestion complet est vérifiable avec des payloads simulés reproduisant le
+  format exact de la doc (`apps/threat_intelligence/tests/test_webhook.py`) et avec la commande de
+  gestion `simulate_breach_finding` (mêmes chemins de code que la production, sans dépendre d'une
+  licence réelle) :
+  ```bash
+  docker compose exec web python manage.py simulate_breach_finding \
+    --tenant-slug <slug> --asset-value <url-ou-domaine-déclaré>
+  ```
+- Aucun secret renvoyé par Breachsense (mot de passe, token, cookie) n'est jamais stocké — masquage
+  non réversible dès la normalisation (ADR-014), vérifié par un test de propriété dédié.
+
 ## Sécurité
 
 Revue complète (OWASP Top 10:2021, mesures en place et risques résiduels acceptés) :
@@ -179,6 +207,9 @@ Points clés :
   risques acceptés) et scan Trivy de l'image backend, exécutés en CI à chaque push/PR.
 - **Aucun secret n'est jamais committé** : `.env`/`backend/.env` sont gitignorés,
   `backend/.env.example` ne contient que des placeholders vides.
+- **Renseignement sur la menace** : throttle Redis anti-429 sur la licence Breachsense partagée,
+  webhook en Basic Auth (comparaison en temps constant) et idempotent, secrets de fuite jamais
+  persistés (ADR-014).
 
 Pour signaler une vulnérabilité, contacter le mainteneur du dépôt directement plutôt que d'ouvrir
 une issue publique.

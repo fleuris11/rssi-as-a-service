@@ -1147,3 +1147,190 @@ tests e2e, documentation.
 - Tabs et Tooltip (primitives du kit) sont construits et exportés mais pas encore consommés par une
   page — aucun besoin identifié ne les justifiait dans cette passe ; disponibles pour la prochaine
   fonctionnalité qui en aura besoin plutôt que forcés dans une page qui n'en a pas l'usage.
+
+---
+
+## 2026-08-08 — Phase 7 : renseignement sur la menace (intégration Breachsense)
+
+### Contexte
+Mission complète, en autonomie : intégrer Breachsense (Cyber Threat Intelligence, palier
+Essentials) comme nouvelle source de détection de compromissions — mode requête (scan de
+diagnostic, quota partagé de 1000 requêtes/mois) et mode webhook (monitoring temps réel, pool
+partagé de 15 actifs). Contraintes structurantes de la licence : quota, pool et débit (1 req/s,
+bursts de 5) sont des ressources **partagées par toute la plateforme**, pas allouées par tenant —
+contrainte centrale de toute la conception, très différente du quota IA (`AIUsageQuota`, par
+tenant, Phase 4). L'API renvoie des secrets en clair (mots de passe, tokens, cookies) — règle
+absolue : ne jamais les stocker (ADR-014).
+
+**Arbitrage documenté (demandé explicitement, à ne pas trancher silencieusement)** : le cadrage
+(§3.2, roadmap V2) prévoyait la détection de fuites via l'API Have I Been Pwned. Le prompt de
+mission remplace ce choix par Breachsense. Ce n'est pas un simple changement de nom de fournisseur :
+HIBP est une API de requête ponctuelle sans webhook, alors que Breachsense expose un canal de
+notification temps réel et des catégories de fuite plus larges (stealer, sessions, NHI, dark web,
+documents, surface d'attaque) — pertinent pour la promesse produit « surveillance continue » du
+cadrage §1.3. Documenté dans ADR-013 et répercuté dans le cadrage (§3.2, la ligne HIBP est
+remplacée, la M6 « Breachsense — intégré » ajoutée).
+
+### Réalisé
+- **ADR-013** (intégration Breachsense, choix d'architecture) et **ADR-014** (traitement des
+  secrets de fuite — masquage, minimisation, rétention, RGPD).
+- **Nouvelle app `threat_intelligence`** :
+  - Interface abstraite `BreachIntelligenceProvider` (inversion de dépendance) + `NullProvider` de
+    repli (aucune licence configurée → aucun appel réel, findings vides) + factory `get_provider()`.
+  - Client HTTP bas niveau (`BreachsenseClient`) : header `lic`, pagination `206`→`200` automatique
+    (plafond de sécurité), un type d'erreur par code (400/401/403/422/429/500), retries + backoff,
+    tous les endpoints du palier Essentials (`/stealer`, `/combo`, `/creds`, `/sessions`, `/nhi`,
+    `/darkweb`, `/docs`, `/asm`, `/radar`, `/account` avec ses actions add/del/list/test/rotate/
+    audit/remaining). Le premium-marketplace (palier supérieur) est explicitement non implémenté
+    (commentaire dans le code + noté en roadmap V2 du cadrage).
+  - Throttle Redis (token-bucket, script Lua atomique, clé globale) sérialisant tous les appels
+    sortants à 1 req/s, bursts de 5 — empêche structurellement les 429 plutôt que de les retenter.
+  - `QuotaManager` : source de vérité `/account?action=remaining` (cache court, 5 min), marge de
+    sécurité configurable, refus propre avant même d'appeler l'API.
+  - Normaliseur : masquage récursif des secrets par nom de champ (pas une liste exacte par
+    endpoint — délibérément robuste à des schémas hétérogènes), mapping de sévérité imposé par le
+    prompt (stealer/sessions/nhi/darkweb = critique ; creds/combo/docs = élevé ; radar/asm =
+    attention), minimisation des identifiants tiers (masqués sauf s'il s'agit de l'email pro d'un
+    membre du tenant).
+  - Modèles tenant-scopés `BreachFinding` (jamais de secret en clair), `MonitoredAsset` (pool de 15
+    slots), `BreachIntelligenceUsage` (journal d'usage, pour l'attribution même si le budget est
+    global), `BreachScanJob` (pattern job asynchrone réutilisé d'ADR-011).
+  - Service `run_breach_scan` (mode requête) : cooldown anti-abus par tenant (manuel uniquement, le
+    scan initial en est exempté), garde-fou quota, dédoublonnage, création d'`Alert` via le moteur
+    existant d'`apps.monitoring` (nouveau type `BREACH_COMPROMISE`, nouvelle fonction publique
+    `monitoring.services.open_or_update_alert` qui extrait la logique déjà privée du moteur plutôt
+    que de la dupliquer).
+  - Scan initial déclenché par un signal Django `post_save` sur `monitoring.Asset` — choix
+    délibéré pour que `apps.monitoring` reste totalement ignorant de `threat_intelligence` (sens de
+    dépendance correct). L'inscription au pool de 15 slots (webhook), elle, reste une action
+    **explicite** distincte (bouton dédié) : automatiser l'inscription webhook sur chaque
+    déclaration d'actif épuiserait vite une ressource partagée par toute la plateforme.
+  - Webhook `POST /api/v1/webhooks/breachsense` : Basic Auth en temps constant
+    (`hmac.compare_digest`), CSRF exempté (endpoint serveur-à-serveur), tenant résolu via
+    `MonitoredAsset.provider_ref` (le webhook n'a ni JWT ni `X-Tenant-Id`), ingestion idempotente
+    (contrainte d'unicité `(tenant, dedup_hash)`), les notifications `test:true` (vérification de
+    connectivité côté Breachsense) sont reconnues et ignorées sans créer de fausse fuite.
+  - API tenant-scopée (findings, actifs monitorés, déclenchement/suivi de scan, état quota/
+    cooldown/pool) + back-office plateforme (`IsAdminUser`, quota/pool/journal — `platform_admin`
+    restant un scaffold vide réservé à une phase ultérieure, cette vue est exposée directement par
+    `threat_intelligence` plutôt que d'anticiper la construction du back-office complet).
+  - Commande de gestion `simulate_breach_finding` (même esprit que `simulate_check_failure`, Phase
+    3) : injecte une fuite simulée à travers le vrai pipeline d'ingestion, sans licence réelle.
+- **Intégration IA** (pseudonymisée, ADR-005 réutilisé sans nouveau point d'appel) :
+  `build_assistant_context`/`build_weather_context` incluent désormais les `BreachFinding` ouverts
+  (jamais `raw_data`, jamais un secret). La météo ☀️/⚠️/🔴 reflétait déjà les compromissions via le
+  moteur d'alertes réutilisé ; les templates email affichent maintenant le détail. Prompts
+  assistant/météo passés en V2 (versionnage existant) avec consigne explicite de reformuler une
+  compromission en langage dirigeant sans jamais mentionner de secret.
+- **Frontend** : nouvelle page `/compromissions` (onglets ouvertes/traitées/ignorées, secrets/
+  identifiants tiers masqués, explication en langage simple par type de fuite, bouton « Lancer un
+  scan » avec quota/cooldown visibles, section surveillance temps réel avec inscription/
+  désinscription par actif) ; bandeau critique + accès rapide sur le tableau de bord ; back-office
+  `/admin/breachsense` (gate `is_staff` frontend + `IsAdminUser` serveur). Entièrement construit sur
+  le design system existant (`ui/`, Sidebar, Tabs enfin utilisé — noté disponible-mais-inutilisé en
+  Phase 6).
+- **Sécurité** : `docs/security_review.md` mis à jour catégorie par catégorie (A01, A02, A04, A05,
+  A07, A08, A09, A10) + section dédiée de synthèse des nouveaux flux et du volet RGPD.
+- **Documentation** : cadrage (§3.1 nouvelle US-5.7 + M6, §3.2 roadmap corrigée, §4.2/§4.6 mis à
+  jour, §5 ADR-013/014 ajoutées, §11 Phase 7 ajoutée), README (section Breachsense dédiée, variable
+  d'environnement, note webhook non testable en local).
+
+### Tests et vérification
+- **219 tests dédiés `threat_intelligence`** (97 % de couverture sur le module) : client HTTP
+  (pagination, chaque code d'erreur, retries), throttle (burst, blocage jusqu'au refill,
+  non-dépassement sous concurrence réelle — vrai Redis, vrais threads), quota manager, normaliseurs
+  (masquage, sévérité, dédoublonnage), **test de propriété dédié** (`test_no_secret_persistence.py`,
+  ADR-014 §3) vérifiant par SQL brut qu'aucun secret connu n'apparaît en clair dans la ligne
+  persistée pour chaque endpoint porteur de secret, provider Breachsense (client mocké) +
+  NullProvider, services (ingestion/alerte/cooldown/quota/pool), API (étanchéité tenant sur chaque
+  endpoint), webhook (basic auth, idempotence, CSRF), signal de scan initial, tâche Celery
+  (idempotence, retry, échec définitif).
+- **Non-fuite IA spécifique aux données Breachsense** (`ai_assistant/tests/test_pseudonymization.py`,
+  nouvelle classe `TestBreachDataNoLeak`, réutilise les 4 scénarios à caractères spéciaux existants) :
+  confirme qu'un `BreachFinding` réel (identifiant = email du tenant, secret réel) ne fuit ni dans le
+  payload assistant ni dans celui de la météo enrichie, et — pour ne pas être trivialement vrai —
+  confirme aussi qu'un placeholder pseudonymisé apparaît bien dans ce payload (la donnée atteint
+  réellement le pipeline, elle n'a pas juste été oubliée).
+- **Vérification réelle de bout en bout**, pas seulement « ça devrait marcher » :
+  - Suite backend complète rejouée (455 tests, seuls les 3 tests d'export PDF pré-existants échouent
+    — limite connue de l'environnement Windows local hors Docker, WeasyPrint nécessite des
+    bibliothèques GTK absentes hors conteneur, sans rapport avec cette session).
+  - Suite e2e Playwright (5/5) rejouée contre la vraie stack docker-compose après ajout de
+    `/compromissions` au balayage d'accessibilité — 0 régression, 0 violation axe-core.
+  - Conteneurs `web`/`worker`/`beat` réellement redémarrés pour charger la nouvelle app ; migrations
+    réellement appliquées à la base du docker-compose de développement.
+  - Captures d'écran Playwright avec des fuites simulées (`simulate_breach_finding`) : masquage
+    confirmé **visuellement**, pas seulement en test unitaire (identifiant non-tenant affiché
+    `co••••@ex••••.com`, secret affiché `••••••23`).
+  - Le journal d'usage du back-office affiche de vraies lignes produites par le vrai pipeline
+    (signal → tâche Celery réelle → `NullProvider` → `BreachIntelligenceUsage`) déclenché par les
+    déclarations d'actifs de la suite e2e — preuve que le scan initial fonctionne bout en bout sur
+    la vraie stack, pas seulement en test mocké.
+  - Données de démonstration nettoyées après capture (fuites simulées supprimées, utilisateur de
+    démo remis à `is_staff=False`) pour ne pas polluer l'environnement de test manuel du prochain
+    smoke test.
+
+### Difficultés rencontrées et solutions
+- **Bug réel trouvé par le test de propriété non-fuite** : la première version de
+  `test_no_secret_persistence.py` construisait un payload de test où le champ `id` valait
+  volontairement la même chaîne que le secret — un artefact de construction de test, pas un scénario
+  Breachsense réaliste (`id` est un identifiant de fuite, pas un duplicata du secret). Comme `id`
+  n'est pas un nom de champ reconnu comme secret, il n'était pas masqué, et le test échouait à juste
+  titre — mais sur un faux positif de sa propre fabrication. Corrigé en donnant à `id` une valeur
+  distincte du secret dans le payload de test.
+- **Dict de pagination partagé et muté entre pages** (`BreachsenseClient.get_paginated`) : le code
+  initial réutilisait le même dict `params` d'une page à l'autre (`params["p"] = page`). Sans
+  conséquence fonctionnelle en production (`requests` sérialise la requête de façon synchrone avant
+  la mutation suivante), mais un test vérifiant les pages effectivement demandées
+  (`session.request.call_args_list`) l'a révélé : `Mock` conserve une référence au dict, pas un
+  instantané, donc tous les appels enregistrés pointaient vers l'état final du même objet. Corrigé
+  en construisant un nouveau dict à chaque page — plus sûr à raisonner, plus facile à tester.
+- **Simulation Celery de l'épuisement des tentatives** : mocker directement `.retry()` pour qu'il
+  lève une exception ne représente pas fidèlement un « épuisement des tentatives » (en production,
+  `.retry()` lève une exception de contrôle de flux que Celery intercepte, elle ne se propage jamais
+  telle quelle à l'appelant). Corrigé en poussant un contexte de requête Celery
+  (`task.push_request(retries=task.max_retries)`) pour que le code lise l'état réel qu'il verrait à
+  la dernière tentative, plutôt que de simuler l'effet de bord d'un appel à `.retry()`.
+- **Deux serveurs de développement Vite en parallèle** : un ancien serveur de dev (session de la
+  refonte d'interface précédente), toujours actif sur le port 5173, absorbait le trafic Playwright
+  via le rechargement à chaud (HMR) au lieu qu'un nouveau serveur propre démarre — a produit un échec
+  e2e à une seule assertion, sur une page dont le contenu principal ne s'affichait pas (`main` vide
+  dans l'arbre d'accessibilité), symptôme d'un état de HMR incohérent après une longue session
+  d'édition. Diagnostiqué en constatant que `npm run build` (compilation fraîche) réussissait sans
+  erreur alors que le serveur de dev échouait sur cette page précise — même signal diagnostique que
+  le bug de commentaire CSS de la session précédente (« le build passe, le dev échoue » pointe vers
+  un état de processus, pas vers une erreur de code). Résolu en tuant les processus Vite orphelins
+  (ports 5173/5174) et en relançant un serveur propre ; suite entièrement verte ensuite.
+- **`Tenant.objects` vs `TenantScopedManager`** : `apps.tenants.services.get_tenant` utilise le
+  manager par défaut de `Tenant` (`Tenant.objects`), pas `all_objects` — `Tenant` lui-même n'hérite
+  pas de `TenantScopedModel` (c'est la racine de l'isolation, pas une ressource scopée), donc son
+  manager par défaut n'est pas le `TenantScopedManager` fail-closed des autres modèles. Vérifié avant
+  d'écrire `tasks.py` (qui appelle cette fonction sans contexte de requête) plutôt que supposé —
+  aurait été un bug silencieux (tâche Celery ne trouvant jamais le tenant) sinon.
+
+### Reste à faire (sessions suivantes)
+- **Smoke test avec la licence réelle** (explicitement à la charge de l'utilisateur, pas de
+  cette session) : vérifier `/account?action=remaining`, un vrai scan de domaine, et l'inscription
+  au pool de 15 slots contre l'API réelle — cette session s'est appuyée sur `NullProvider` en dev et
+  sur un client mocké en test, jamais sur un appel réel à `api.breachsense.com`.
+- **Webhook en conditions réelles** : non testable avant déploiement (URL publique requise). Au
+  déploiement : définir `BREACHSENSE_WEBHOOK_CALLBACK_URL`, configurer les identifiants Basic Auth
+  côté Breachsense (`/account?action=add&creds=...`), inscrire un premier actif au pool, puis
+  déclencher une alerte de test (`send_test_alert` / action `test`) pour confirmer la connectivité
+  de bout en bout.
+- **Schéma exact des payloads Breachsense** : cette session s'appuie sur les informations fournies
+  dans le prompt de mission (auth par header `lic`, pagination `206`/`p`, webhook `ast`/`api`/
+  `test`) plutôt que sur la documentation complète du fournisseur — le normaliseur est conçu de
+  façon défensive (détection de secrets par sous-chaîne de nom de champ, pas une liste exacte par
+  endpoint) précisément pour rester robuste si le schéma réel diffère légèrement de ce qui a été
+  supposé, mais une vérification contre de vrais payloads (smoke test) reste nécessaire pour
+  confirmer que les champs `identifier`/`breach_date` sont bien extraits sous les noms attendus.
+- **Purge automatique planifiée des `BreachFinding`** (rétention 90 jours, ADR-014 §5) : la politique
+  de rétention est documentée mais la tâche Celery Beat de purge n'est pas implémentée dans cette
+  phase — livraison du flux d'ingestion et de l'affichage d'abord.
+- **`LOGGING` dict et outil de suivi d'erreurs** (gap déjà identifié en Phase 5, A09) : gagne en
+  urgence avec ce module, qui manipule les données les plus sensibles de la plateforme à date.
+- Le back-office CTI est exposé directement par `threat_intelligence` (gardé par `IsAdminUser`)
+  plutôt que par un vrai module `platform_admin` construit — cohérent avec le scaffold vide actuel
+  de cette app (réservée à une phase ultérieure), mais à réconcilier si `platform_admin` est un jour
+  développé pour de vrai (éviter deux back-offices parallèles).
