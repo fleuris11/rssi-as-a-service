@@ -1,8 +1,10 @@
 # Revue de sécurité — OWASP Top 10 (2021)
 
-- **Date** : 2026-08-05
+- **Date** : 2026-08-05 (revue initiale, Phase 5) — mise à jour 2026-08-08 (Phase 7, intégration
+  Breachsense/CTI — voir la section dédiée après A10 et ADR-013/ADR-014 pour le détail des décisions).
 - **Périmètre** : plateforme RSSI as a Service (backend Django/DRF, frontend React, infrastructure
-  Docker Compose + Caddy) à l'issue de la Phase 5 (durcissement).
+  Docker Compose + Caddy) à l'issue de la Phase 5 (durcissement), complété Phase 7 par le module de
+  renseignement sur la menace (`apps.threat_intelligence`).
 - **Méthode** : revue de code manuelle catégorie par catégorie, complétée par les scans automatisés
   de la CI (`pip-audit`, `npm audit`, Trivy — voir ADR-008) et par les tests end-to-end Playwright
   (parcours critiques + `@axe-core/playwright`). Chaque catégorie liste : la menace, les mesures déjà
@@ -41,9 +43,30 @@ insuffisant (lecteur) effectue une action réservée aux administrateurs/contrib
   porte en plus ses propres assertions d'étanchéité dans `test_api.py` (CLAUDE.md règle 2 : « toute
   nouvelle ressource DOIT avoir un test d'étanchéité »).
 
-**Mesures ajoutées dans cette session**
+**Mesures ajoutées dans cette session (Phase 5)**
 - Aucune nouvelle mesure de contrôle d'accès n'était nécessaire — le modèle défense-en-profondeur
   était déjà en place depuis les phases précédentes et a été revérifié ici sans régression détectée.
+
+**Mesures ajoutées en Phase 7 (Breachsense/CTI)**
+- Tous les nouveaux modèles (`BreachFinding`, `MonitoredAsset`, `BreachIntelligenceUsage`,
+  `BreachScanJob`) héritent de `TenantScopedModel` et bénéficient donc des trois mêmes mécanismes de
+  défense en profondeur que le reste de la plateforme — testé explicitement
+  (`apps/threat_intelligence/tests/test_api.py::TestBreachFindingAPI::test_cannot_read_another_tenants_finding`
+  et `test_findings_are_scoped_per_tenant_in_list`).
+- Le back-office CTI (`ThreatIntelligenceAdminStatusView`, quota/pool/journal d'usage
+  **plateforme entière**, volontairement pas tenant-scopé) est protégé par `permissions.IsAdminUser`
+  (`is_staff`) plutôt que par `IsTenantMember` — vérifié qu'un utilisateur non-staff reçoit `403`
+  (`test_api.py::TestAdminStatusAPI::test_non_staff_forbidden`). Le gate frontend (`StaffRoute.jsx`,
+  lien conditionnel dans `Sidebar.jsx`) n'est qu'une commodité UX — la frontière réelle est côté API.
+- Le webhook entrant (`POST /api/v1/webhooks/breachsense`) est le seul point d'entrée de toute la
+  plateforme qui ne résout **pas** le tenant via `TenantScopingMiddleware`/`X-Tenant-Id` : Breachsense
+  n'émet ni JWT ni en-tête tenant. Le tenant est résolu par une recherche dédiée et **non scopée**
+  (`threat_intelligence.services.resolve_monitored_asset_by_provider_ref`, `all_objects`), le seul
+  point du module explicitement autorisé à sortir du scoping ambiant — même logique de conception que
+  `TenantScopingMiddleware._resolve_membership`, qui doit lui aussi interroger sans filtre pour
+  *établir* le contexte avant de pouvoir le restreindre. Une notification pour un `ast`
+  (référence d'actif) non reconnu est journalisée et ignorée, jamais associée au mauvais tenant par
+  défaut (`test_services.py::TestWebhookIngestion::test_ingest_ignores_unmatched_asset_ref`).
 
 **Risques résiduels acceptés**
 - La résolution du tenant dépend d'un en-tête HTTP (`X-Tenant-Id`) plutôt que d'être encodée dans le
@@ -96,6 +119,29 @@ chiffrement réutilisées entre usages sans rapport.
   rotation nécessiterait aujourd'hui une procédure manuelle (rechiffrement des secrets existants).
   Accepté pour le stade actuel du projet (MVP, faible volume de secrets stockés) ; à revoir si le
   volume de credentials 2FA/mappings pseudonymisés augmente significativement.
+
+**Mesures ajoutées en Phase 7 (Breachsense/CTI) — traitement le plus sensible de la plateforme à date**
+- Contrairement aux secrets déjà couverts ci-dessus (mots de passe/TOTP appartenant à la plateforme
+  elle-même, chiffrables), les secrets renvoyés par Breachsense (mots de passe, tokens, cookies de
+  session) appartiennent à des tiers dont le compte a fuité — la décision (ADR-014) n'est **pas** de
+  les chiffrer au repos comme un secret applicatif, mais de ne **jamais** les persister du tout :
+  masquage récursif par nom de champ dès la normalisation
+  (`threat_intelligence.providers.breachsense.normalizer.mask_payload`), avant toute écriture en base.
+  Seule une forme tronquée non réversible (`secret_masked`, ex. `••••••23`) et un booléen
+  (`secret_seen`) sont conservés.
+  - **Test de propriété dédié** (pas une simple assertion unitaire) :
+    `apps/threat_intelligence/tests/test_no_secret_persistence.py` génère des secrets connus pour
+    chaque endpoint porteur de secret du palier Essentials, exécute le pipeline d'ingestion réel, puis
+    interroge la ligne créée par SQL brut (pas l'ORM, pour ne pas pouvoir être trompé par une
+    propriété Python qui ne reflèterait pas ce qui est réellement sur disque) et vérifie l'absence
+    totale du secret d'origine. Ce test a intercepté une construction de payload de test erronée
+    pendant l'écriture de la suite (voir `docs/journal.md`), confirmant qu'il exerce réellement
+    l'invariant et ne passe pas trivialement.
+- Aucun secret Breachsense ne transite par un `logger.*` (revue explicite de
+  `threat_intelligence/services.py`, `tasks.py`, `providers/breachsense/*.py` — seuls des identifiants
+  internes, endpoints, et compteurs sont journalisés) ni vers Sentry (absent du projet — voir A09) :
+  le scrubbing est donc structurel (la donnée n'existe nulle part en clair après normalisation),
+  pas un filtre appliqué après coup sur un flux qui la contiendrait encore.
 
 ---
 
@@ -162,6 +208,21 @@ indépendamment de la qualité d'implémentation.
   rate limiting général par tenant (A07) mais pas par une limite métier dédiée ; accepté pour le
   stade MVP, à réévaluer si un abus est constaté en production.
 
+**Mesures ajoutées en Phase 7 (Breachsense/CTI)**
+- Non-persistance des secrets par conception (ADR-014, voir A02) plutôt que filtrage a posteriori.
+- Provider CTI derrière une interface abstraite (ADR-013, `BreachIntelligenceProvider`) — aucun
+  service métier n'importe le client HTTP Breachsense ou son SDK ; un changement de fournisseur ou un
+  incident fournisseur reste cantonné à `providers/breachsense/`.
+- Throttle Redis (token-bucket, script Lua atomique) sérialisant tous les appels sortants à 1 req/s —
+  conçu pour qu'un `429` de la licence unique et partagée soit structurellement impossible en usage
+  normal, pas seulement retenté après coup ; `QuotaManager` refuse toute nouvelle requête sous une
+  marge de sécurité configurable avant même d'appeler l'API, pour ne jamais dépendre uniquement du
+  throttle pour éviter un dépassement de licence.
+- Anti-abus dédié sur le scan manuel (cooldown par tenant, `BREACHSENSE_SCAN_COOLDOWN_HOURS`) —
+  distinct du rate limiting DRF générique, car ici la ressource protégée (le quota de licence) est
+  partagée par toute la plateforme, pas par tenant : un seul tenant abusif pourrait épuiser le budget
+  de tous les autres sans ce garde-fou spécifique.
+
 ---
 
 ## A05:2021 — Security Misconfiguration (mauvaise configuration)
@@ -205,6 +266,16 @@ absents, secrets committés.
   par cookie de session pour l'API, donc pas de surface CSRF sur les endpoints métier. Seul
   `/admin/` (Django admin, session-based) reste concerné, protégé par `CsrfViewMiddleware`.
 - Pas de `LOGGING` dict explicite (voir A09) — configuration de journalisation par défaut Django.
+
+**Mesures ajoutées en Phase 7 (Breachsense/CTI)**
+- Le webhook (`BreachsenseWebhookView`) est explicitement exempté de CSRF (`@csrf_exempt`) — décision
+  déclarée, pas un oubli : c'est un endpoint serveur-à-serveur sans session/cookie Django, la
+  protection CSRF n'a pas de sens ici (elle protège contre des requêtes émises à l'insu d'un
+  navigateur authentifié par cookie) ; testé qu'un client Django `enforce_csrf_checks=True` peut bien
+  l'appeler (`test_webhook.py::test_no_csrf_token_required`).
+- `BREACHSENSE_WEBHOOK_USERNAME`/`PASSWORD` (identifiants Basic Auth du webhook) suivent la même
+  discipline que tout autre secret du projet : variables d'environnement uniquement,
+  `backend/.env.example` ne contient que des placeholders vides.
 
 ---
 
@@ -297,6 +368,15 @@ révocables, énumération de comptes.
 - Un access token JWT compromis reste valide jusqu'à 15 minutes sans révocation immédiate côté
   serveur (limite structurelle des JWT, mitigée par la courte durée de vie).
 
+**Mesures ajoutées en Phase 7 (Breachsense/CTI)**
+- Le webhook Breachsense utilise HTTP Basic Auth — délibérément distinct de `JWTAuthentication` (ce
+  n'est pas un utilisateur de la plateforme qui appelle, mais Breachsense lui-même, avec un secret
+  partagé configuré des deux côtés). Comparaison en **temps constant**
+  (`hmac.compare_digest`, `threat_intelligence/webhook_auth.py`) pour éviter une attaque par mesure de
+  temps sur le nom d'utilisateur/mot de passe. Testé : absence d'en-tête `Authorization`, mauvais
+  identifiants, et identifiants non configurés (`BREACHSENSE_WEBHOOK_USERNAME`/`PASSWORD` vides)
+  renvoient tous `401` (`test_webhook.py::TestWebhookAuth`).
+
 ---
 
 ## A08:2021 — Software and Data Integrity Failures (intégrité logicielle et des données)
@@ -335,6 +415,15 @@ asynchrones non idempotentes provoquant une double exécution ou une perte de do
 - Aucun mécanisme de signature/vérification d'intégrité des images Docker en production (ex. cosign)
   — accepté pour le stade actuel (déploiement manuel via SSH, pas de registre d'images tiers).
 
+**Mesures ajoutées en Phase 7 (Breachsense/CTI)**
+- Ingestion webhook idempotente au niveau base de données : `BreachFinding` porte une contrainte
+  d'unicité `(tenant, dedup_hash)` — une notification redélivrée (comportement attendu d'un webhook,
+  Breachsense pouvant retenter en cas de non-`200`) ne crée jamais de doublon, vérifié bout en bout
+  (`test_webhook.py::test_redelivered_payload_is_idempotent`) plutôt que supposé.
+- Tâche Celery (`run_breach_scan_task`) suit le même pattern retry/idempotence que le reste de la
+  plateforme (garde sur le statut du job, cf. `apps.ai_assistant.tasks`) — testé y compris le cas
+  « job déjà terminé » (redelivery no-op) et « échec définitif après épuisement des tentatives ».
+
 ---
 
 ## A09:2021 — Security Logging and Monitoring Failures (journalisation insuffisante)
@@ -368,6 +457,14 @@ exposent des données personnelles.
   destination persistante, et évaluer l'intégration d'un outil de suivi d'erreurs — en respectant la
   même contrainte que le reste du projet (CLAUDE.md : jamais de donnée personnelle envoyée à un
   service de suivi d'erreurs tiers).
+
+**Mesures ajoutées en Phase 7 (Breachsense/CTI)**
+- Ce gap préexistant (pas de `LOGGING` dict, pas de Sentry) s'applique tel quel au nouveau module —
+  revérifié qu'aucun des fichiers `threat_intelligence/*.py` n'écrit de secret, d'email, ou de domaine
+  réel dans un `logger.*` (seuls des identifiants internes et des compteurs de requêtes). C'est
+  d'autant plus important ici que ce module manipule les données les plus sensibles de la
+  plateforme (voir A02) : la recommandation Phase 6 ci-dessus (LOGGING dict + outil de suivi
+  d'erreurs) reste valable et gagne en urgence pour ce module en particulier, une fois en production.
 
 ---
 
@@ -404,6 +501,60 @@ interne (métadonnées cloud, réseau privé) sous couvert d'un actif « déclar
   figée), disproportionné pour la surface de risque réelle (checks passifs, pas d'action destructive
   possible même en cas de succès de l'attaque).
 
+**Mesures ajoutées en Phase 7 (Breachsense/CTI)**
+- Pas de nouvelle surface SSRF : contrairement aux checks de `apps.monitoring`, les appels sortants
+  du client Breachsense (`BreachsenseClient`) ciblent exclusivement `BREACHSENSE_BASE_URL` (une
+  constante de configuration, jamais dérivée d'une entrée utilisateur) — le domaine/URL déclaré par
+  le tenant n'est jamais utilisé pour construire une requête HTTP arbitraire, seulement transmis comme
+  **paramètre** (`domain=`/`email=`) d'une requête vers l'API Breachsense fixe. Le webhook, lui, est
+  entrant (Breachsense appelle la plateforme, jamais l'inverse) — sans surface SSRF par construction.
+
+---
+
+## Phase 7 — Renseignement sur la menace (Breachsense) : synthèse des nouveaux flux et RGPD
+
+Cette section rassemble, en un seul endroit, les flux de données introduits par
+`apps.threat_intelligence` (détaillés catégorie par catégorie ci-dessus et dans ADR-013/ADR-014) —
+demandé explicitement pour cette phase en plus des ajouts dispersés dans le corps du document.
+
+### Nouveaux flux de données
+
+1. **Requête sortante (scan)** : `threat_intelligence.services.execute_scan` → `BreachsenseClient` →
+   API Breachsense (domaine/email du tenant en paramètre de requête, jamais de PII supplémentaire) →
+   réponse potentiellement porteuse de secrets → **masquage immédiat** (`normalizer.py`) → persistance
+   du seul résultat masqué (`BreachFinding`). Consomme le quota `query` partagé (throttlé, quotaté).
+2. **Notification entrante (webhook)** : Breachsense → `POST /api/v1/webhooks/breachsense` (Basic
+   Auth) → résolution du tenant via `MonitoredAsset.provider_ref` → même pipeline de normalisation/
+   masquage que le scan → `BreachFinding` + `Alert`. Hors quota `query`, limité au pool de 15 slots.
+3. **Sortie vers l'IA (pseudonymisée)** : `BreachFinding` (jamais `raw_data`, jamais un secret) →
+   `build_assistant_context`/`build_weather_context` → pipeline de pseudonymisation existant (ADR-005)
+   → API Claude. Aucun nouveau point d'appel IA (réutilise Haiku déjà routé pour l'assistant/la
+   météo — sobriété, cadrage §8).
+4. **Sortie vers le tenant (frontend)** : `BreachFindingSerializer` exclut explicitement `raw_data` —
+   le tenant voit l'identifiant masqué/en clair (selon qu'il s'agit ou non de son propre email pro),
+   le type de fuite, la gravité, et un indicateur `secret_seen` — jamais `raw_data`.
+
+### RGPD
+
+- **Personnes concernées** : les membres du tenant (si l'identifiant fuité est leur email
+  professionnel) et, incidemment, des tiers (clients, partenaires) dont l'identifiant apparaît dans
+  une fuite liée à un actif du tenant.
+- **Base légale** : exécution du contrat pour les données concernant le tenant et ses membres (le
+  tenant a explicitement déclaré l'actif et sollicité sa surveillance) ; intérêt légitime strictement
+  minimisé (identifiant masqué uniquement, jamais conservé en clair) pour les données concernant des
+  tiers non-utilisateurs de la plateforme — voir ADR-014 §4/§6 pour le détail de l'arbitrage.
+- **Non-conservation des secrets** : absolue, par construction (ADR-014, voir A02 ci-dessus) — aucune
+  fonctionnalité de la plateforme ne permet d'afficher un secret en clair à qui que ce soit.
+- **Durée de rétention** : alignée sur la politique déjà en vigueur pour les résultats de check bruts
+  (cadrage §7, 90 jours) pour les `BreachFinding` non traités ; un finding marqué traité/ignoré est
+  conservé à des fins d'audit de conformité, au même titre qu'une action du plan d'action. La **purge
+  automatique planifiée** des findings non traités de plus de 90 jours n'est **pas** implémentée dans
+  cette phase (reste-à-faire explicite, voir `docs/journal.md`) — livraison du flux d'ingestion et de
+  l'affichage d'abord, purge planifiée ensuite.
+- **Transparence** : le tenant voit, sans appel supplémentaire, l'état du quota et le cooldown avant
+  de déclencher un scan (`GET /api/v1/threat-intelligence/status/`), dans le même esprit de
+  transparence que l'encart « données transmises » de la Phase 4 pour l'IA.
+
 ---
 
 ## Synthèse
@@ -418,5 +569,6 @@ interne (métadonnées cloud, réseau privé) sous couvert d'un actif « déclar
 | A06 Vulnerable Components | Couvert — pip-audit/npm audit/Trivy ajoutés cette session, 0 vulnérabilité HIGH/CRITICAL actuellement |
 | A07 Auth Failures | Couvert — 2FA, verrouillage progressif, rate limiting, non-énumération, tous ajoutés cette session |
 | A08 Software/Data Integrity | Couvert — CI stricte, migrations expand/contract, tâches idempotentes, E2E réels ajoutés cette session |
-| A09 Logging/Monitoring | **Gap identifié** — pas de `LOGGING` dict ni d'outil de suivi d'erreurs ; recommandé pour Phase 6 |
+| A09 Logging/Monitoring | **Gap identifié** — pas de `LOGGING` dict ni d'outil de suivi d'erreurs ; recommandé pour Phase 6 (plus critique désormais avec le CTI) |
 | A10 SSRF | Couvert — garde-fou dédié, testé, limite TOCTOU documentée et acceptée |
+| **Phase 7 — Breachsense/CTI** | Couvert — non-stockage des secrets par conception et testé par propriété (ADR-014), étanchéité tenant testée sur tous les nouveaux endpoints, webhook en Basic Auth temps constant + idempotent, throttle/quota anti-429 et anti-dépassement de licence, aucune nouvelle surface SSRF |
