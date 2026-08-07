@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import AuthLayout from '../components/AuthLayout'
+import Button from '../components/ui/Button'
 import { useAuth } from '../context/AuthContext'
 
 const inputClass =
-  'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500'
+  'transition-smooth mt-1 w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-brand-600'
 
 function CredentialsStep({ onSubmitted }) {
   const { login } = useAuth()
@@ -29,7 +31,7 @@ function CredentialsStep({ onSubmitted }) {
   return (
     <form onSubmit={handleSubmit} className="mt-6 space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-700" htmlFor="email">
+        <label className="block text-sm font-medium text-ink-700" htmlFor="email">
           Email
         </label>
         <input
@@ -43,7 +45,7 @@ function CredentialsStep({ onSubmitted }) {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-slate-700" htmlFor="password">
+        <label className="block text-sm font-medium text-ink-700" htmlFor="password">
           Mot de passe
         </label>
         <input
@@ -57,17 +59,13 @@ function CredentialsStep({ onSubmitted }) {
         />
       </div>
       {error && (
-        <p className="text-sm text-red-600" role="alert">
+        <p className="text-sm text-critical-strong" role="alert">
           {error}
         </p>
       )}
-      <button
-        type="submit"
-        disabled={submitting}
-        className="w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:opacity-50"
-      >
-        {submitting ? 'Connexion…' : 'Se connecter'}
-      </button>
+      <Button type="submit" variant="primary" loading={submitting} className="w-full">
+        Se connecter
+      </Button>
     </form>
   )
 }
@@ -100,7 +98,7 @@ function TwoFactorStep({ challengeToken, onBack }) {
   return (
     <form onSubmit={handleSubmit} className="mt-6 space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-700" htmlFor="totp-code">
+        <label className="block text-sm font-medium text-ink-700" htmlFor="totp-code">
           {useRecoveryCode
             ? 'Code de récupération'
             : "Code à 6 chiffres de votre application d'authentification"}
@@ -117,18 +115,14 @@ function TwoFactorStep({ challengeToken, onBack }) {
         />
       </div>
       {error && (
-        <p className="text-sm text-red-600" role="alert">
+        <p className="text-sm text-critical-strong" role="alert">
           {error}
         </p>
       )}
-      <button
-        type="submit"
-        disabled={submitting}
-        className="w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:opacity-50"
-      >
-        {submitting ? 'Vérification…' : 'Vérifier'}
-      </button>
-      <div className="flex justify-between text-xs text-slate-500">
+      <Button type="submit" variant="primary" loading={submitting} className="w-full">
+        Vérifier
+      </Button>
+      <div className="flex justify-between text-xs text-ink-500">
         <button
           type="button"
           onClick={() => {
@@ -136,11 +130,11 @@ function TwoFactorStep({ challengeToken, onBack }) {
             setCode('')
             setError('')
           }}
-          className="underline"
+          className="transition-smooth underline hover:text-brand-700"
         >
           {useRecoveryCode ? "Utiliser l'application d'authentification" : 'Utiliser un code de récupération'}
         </button>
-        <button type="button" onClick={onBack} className="underline">
+        <button type="button" onClick={onBack} className="transition-smooth underline hover:text-brand-700">
           Retour
         </button>
       </div>
@@ -161,23 +155,23 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6">
-      <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-xl font-semibold text-slate-900">Connexion</h1>
-        {challenge ? (
-          <TwoFactorStep challengeToken={challenge} onBack={() => setChallenge(null)} />
-        ) : (
-          <CredentialsStep onSubmitted={handleCredentialsSubmitted} />
-        )}
-        {!challenge && (
-          <p className="mt-4 text-center text-sm text-slate-500">
-            Pas encore de compte ?{' '}
-            <Link to="/inscription" className="font-medium text-slate-900 underline">
-              Créer un compte
-            </Link>
-          </p>
-        )}
-      </div>
-    </div>
+    <AuthLayout>
+      <h1 className="font-display text-2xl font-semibold text-ink-900">
+        {challenge ? 'Vérification en deux étapes' : 'Connexion'}
+      </h1>
+      {challenge ? (
+        <TwoFactorStep challengeToken={challenge} onBack={() => setChallenge(null)} />
+      ) : (
+        <CredentialsStep onSubmitted={handleCredentialsSubmitted} />
+      )}
+      {!challenge && (
+        <p className="mt-4 text-center text-sm text-ink-500">
+          Pas encore de compte ?{' '}
+          <Link to="/inscription" className="font-medium text-brand-700 underline">
+            Créer un compte
+          </Link>
+        </p>
+      )}
+    </AuthLayout>
   )
 }

@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { twoFactorApi } from '../api/endpoints'
+import Button from '../components/ui/Button'
+import Card from '../components/ui/Card'
+import { SkeletonText } from '../components/ui/Skeleton'
+import { useToast } from '../components/ui/Toast'
 
 const inputClass =
-  'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500'
+  'transition-smooth mt-1 w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-brand-600'
 
 function EnrollmentFlow({ onEnabled }) {
   const [step, setStep] = useState('start') // start | confirm | recovery-codes
@@ -44,23 +48,18 @@ function EnrollmentFlow({ onEnabled }) {
   if (step === 'start') {
     return (
       <div>
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-ink-600">
           La double authentification ajoute une vérification par code à chaque connexion, en plus
           de votre mot de passe.
         </p>
         {error && (
-          <p className="mt-2 text-sm text-red-600" role="alert">
+          <p className="mt-2 text-sm text-critical-strong" role="alert">
             {error}
           </p>
         )}
-        <button
-          type="button"
-          onClick={handleStart}
-          disabled={submitting}
-          className="mt-4 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:opacity-50"
-        >
-          {submitting ? 'Préparation…' : 'Activer la double authentification'}
-        </button>
+        <Button variant="primary" loading={submitting} onClick={handleStart} className="mt-4">
+          Activer la double authentification
+        </Button>
       </div>
     )
   }
@@ -68,21 +67,21 @@ function EnrollmentFlow({ onEnabled }) {
   if (step === 'confirm') {
     return (
       <form onSubmit={handleConfirm} className="space-y-4">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-ink-600">
           Scannez ce QR code avec votre application d’authentification (Google Authenticator, Authy…),
           puis saisissez le code à 6 chiffres qu’elle affiche pour confirmer.
         </p>
         <img
           src={setupData.qr_code}
           alt="QR code d’enrôlement de la double authentification"
-          className="h-40 w-40 rounded-md border border-slate-200"
+          className="h-40 w-40 rounded-md border border-ink-200"
         />
-        <details className="text-xs text-slate-500">
+        <details className="text-xs text-ink-500">
           <summary className="cursor-pointer">Saisir la clé manuellement</summary>
-          <code className="mt-1 block break-all rounded bg-slate-50 p-2">{setupData.secret}</code>
+          <code className="mt-1 block break-all rounded bg-ink-50 p-2">{setupData.secret}</code>
         </details>
         <div>
-          <label className="block text-sm font-medium text-slate-700" htmlFor="confirm-code">
+          <label className="block text-sm font-medium text-ink-700" htmlFor="confirm-code">
             Code à 6 chiffres
           </label>
           <input
@@ -96,17 +95,13 @@ function EnrollmentFlow({ onEnabled }) {
           />
         </div>
         {error && (
-          <p className="text-sm text-red-600" role="alert">
+          <p className="text-sm text-critical-strong" role="alert">
             {error}
           </p>
         )}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:opacity-50"
-        >
-          {submitting ? 'Vérification…' : 'Confirmer'}
-        </button>
+        <Button type="submit" variant="primary" loading={submitting}>
+          Confirmer
+        </Button>
       </form>
     )
   }
@@ -114,24 +109,20 @@ function EnrollmentFlow({ onEnabled }) {
   // step === 'recovery-codes'
   return (
     <div className="space-y-4">
-      <p className="text-sm font-medium text-emerald-700">Double authentification activée.</p>
-      <p className="text-sm text-slate-600">
+      <p className="text-sm font-medium text-ok-strong">Double authentification activée.</p>
+      <p className="text-sm text-ink-600">
         Notez ces codes de récupération dans un endroit sûr : chacun permet une seule connexion si
         vous perdez l’accès à votre application d’authentification. Ils ne seront plus jamais
         affichés.
       </p>
-      <ul className="grid grid-cols-2 gap-2 rounded-md bg-slate-50 p-4 font-mono text-sm">
+      <ul className="grid grid-cols-2 gap-2 rounded-md bg-ink-50 p-4 font-mono text-sm">
         {recoveryCodes.map((recoveryCode) => (
           <li key={recoveryCode}>{recoveryCode}</li>
         ))}
       </ul>
-      <button
-        type="button"
-        onClick={onEnabled}
-        className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
-      >
+      <Button variant="primary" onClick={onEnabled}>
         J’ai noté mes codes de récupération
-      </button>
+      </Button>
     </div>
   )
 }
@@ -158,19 +149,15 @@ function DisableFlow({ onDisabled }) {
 
   return (
     <div>
-      <p className="text-sm font-medium text-emerald-700">Double authentification activée.</p>
+      <p className="text-sm font-medium text-ok-strong">Double authentification activée.</p>
       {!confirming ? (
-        <button
-          type="button"
-          onClick={() => setConfirming(true)}
-          className="mt-4 rounded-md border border-red-200 px-4 py-2 text-sm text-red-600 hover:border-red-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
-        >
+        <Button variant="danger" onClick={() => setConfirming(true)} className="mt-4">
           Désactiver la double authentification
-        </button>
+        </Button>
       ) : (
         <form onSubmit={handleSubmit} className="mt-4 space-y-3">
           <div>
-            <label className="block text-sm font-medium text-slate-700" htmlFor="disable-password">
+            <label className="block text-sm font-medium text-ink-700" htmlFor="disable-password">
               Confirmez avec votre mot de passe
             </label>
             <input
@@ -184,17 +171,13 @@ function DisableFlow({ onDisabled }) {
             />
           </div>
           {error && (
-            <p className="text-sm text-red-600" role="alert">
+            <p className="text-sm text-critical-strong" role="alert">
               {error}
             </p>
           )}
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:opacity-50"
-          >
-            {submitting ? 'Désactivation…' : 'Confirmer la désactivation'}
-          </button>
+          <Button type="submit" variant="danger" loading={submitting}>
+            Confirmer la désactivation
+          </Button>
         </form>
       )}
     </div>
@@ -202,21 +185,21 @@ function DisableFlow({ onDisabled }) {
 }
 
 export default function TwoFactorSettingsPage() {
+  const { showToast } = useToast()
   const [enabled, setEnabled] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
-    setLoadError('')
     try {
       const response = await twoFactorApi.status()
       setEnabled(response.data.enabled)
     } catch {
-      setLoadError('Impossible de charger le statut de la double authentification.')
+      showToast({ type: 'error', message: 'Impossible de charger le statut de la double authentification.' })
     } finally {
       setLoading(false)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -226,18 +209,17 @@ export default function TwoFactorSettingsPage() {
   return (
     <div className="max-w-lg space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Sécurité du compte</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <h1 className="font-display text-2xl font-semibold text-ink-900">Sécurité du compte</h1>
+        <p className="mt-1 text-sm text-ink-500">
           Double authentification (TOTP) — recommandée pour protéger votre compte.
         </p>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        {loading && <p className="text-slate-500">Chargement…</p>}
-        {loadError && <p className="text-sm text-red-600">{loadError}</p>}
-        {!loading && !loadError && enabled === false && <EnrollmentFlow onEnabled={load} />}
-        {!loading && !loadError && enabled === true && <DisableFlow onDisabled={load} />}
-      </div>
+      <Card>
+        {loading && <SkeletonText lines={2} />}
+        {!loading && enabled === false && <EnrollmentFlow onEnabled={load} />}
+        {!loading && enabled === true && <DisableFlow onDisabled={load} />}
+      </Card>
     </div>
   )
 }
