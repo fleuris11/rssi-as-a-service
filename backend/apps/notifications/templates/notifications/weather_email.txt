@@ -15,6 +15,10 @@ Alertes ouvertes ({{ open_alerts|length }}) :
 {% endfor %}{% else %}
 Aucune alerte ouverte.
 {% endif %}
+{% if open_breach_findings %}
+Compromissions détectées ({{ open_breach_findings|length }}) :
+{% for finding in open_breach_findings %}- {{ finding.asset_value }}{% if finding.identifier %} ({{ finding.identifier }}){% endif %} — {{ finding.source_label }} ({{ finding.severity_label }})
+{% endfor %}{% endif %}
 Tableau de bord complet : {{ dashboard_url }}
 
 — RSSI as a Service

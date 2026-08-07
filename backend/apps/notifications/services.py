@@ -14,6 +14,8 @@ from apps.monitoring import services as monitoring_services
 from apps.monitoring.models import Alert, CheckResult
 from apps.tenants import services as tenants_services
 from apps.tenants.models import Membership
+from apps.threat_intelligence import services as threat_intelligence_services
+from apps.threat_intelligence.models import BreachFinding
 
 from .models import EmailLog, NotificationPreferences
 
@@ -154,6 +156,25 @@ def build_weather_context(tenant) -> dict:
         for alert in open_alerts
     ]
 
+    # Phase 7 (ADR-013) : les BREACH_COMPROMISE ouvertes sont déjà comptées
+    # dans `open_alerts`/`worst` ci-dessus (même moteur d'alertes que le
+    # reste de la surveillance — rien à dupliquer pour la météo ☀️/⚠️/🔴).
+    # Cette liste distincte apporte le détail (endpoint d'origine,
+    # identifiant) que l'Alert générique n'a pas, pour que la reformulation
+    # IA (_maybe_enrich_weather_summary) puisse être concrète ("un compte a
+    # été trouvé dans une fuite de type X") plutôt que générique.
+    breach_rows = [
+        {
+            "asset_value": finding.asset.value,
+            "source_label": finding.get_source_endpoint_display(),
+            "severity_label": finding.get_severity_display(),
+            "identifier": finding.identifier_plain or finding.identifier_masked,
+        }
+        for finding in threat_intelligence_services.list_findings(
+            tenant, status=BreachFinding.Status.OPEN
+        ).select_related("asset")[:20]
+    ]
+
     context = {
         "tenant_name": tenant.name,
         "date": timezone.localdate(),
@@ -161,6 +182,7 @@ def build_weather_context(tenant) -> dict:
         "mood_label": _MOOD_LABEL[worst],
         "assets": asset_rows,
         "open_alerts": alert_rows,
+        "open_breach_findings": breach_rows,
         "dashboard_url": f"{settings.FRONTEND_BASE_URL}/surveillance",
     }
     context["enriched_summary"] = _maybe_enrich_weather_summary(tenant, context)
@@ -191,6 +213,7 @@ def _maybe_enrich_weather_summary(tenant, context: dict) -> str | None:
             for asset in context["assets"]
         ],
         "alertes_ouvertes": context["open_alerts"],
+        "compromissions_ouvertes": context["open_breach_findings"],
     }
     return ai_assistant_services.enrich_weather_summary(
         tenant=tenant, deterministic_context=deterministic_context

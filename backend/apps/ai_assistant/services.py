@@ -35,6 +35,8 @@ from apps.assessments import services as assessments_services
 from apps.monitoring import services as monitoring_services
 from apps.monitoring.models import Asset
 from apps.tenants import services as tenants_services
+from apps.threat_intelligence import services as threat_intelligence_services
+from apps.threat_intelligence.models import BreachFinding
 
 from . import prompts
 from .models import (
@@ -522,6 +524,23 @@ def build_assistant_context(tenant) -> dict:
                 "gravite": alert.get_severity_display(),
             }
             for alert in open_alerts
+        ],
+        # Phase 7 (ADR-013/014) : uniquement les champs déjà non-sensibles
+        # d'un BreachFinding — jamais raw_data, jamais un secret. identifier_
+        # plain (l'email pro d'un membre) passe par la pseudonymisation comme
+        # tout le reste de ce contexte ; identifier_masked/secret_masked sont
+        # déjà des formes masquées non réversibles, sans PII à pseudonymiser.
+        "compromissions_ouvertes": [
+            {
+                "actif": finding.asset.value,
+                "type": finding.get_source_endpoint_display(),
+                "gravite": finding.get_severity_display(),
+                "identifiant": finding.identifier_plain or finding.identifier_masked,
+                "secret_expose": finding.secret_seen,
+            }
+            for finding in threat_intelligence_services.list_findings(
+                tenant, status=BreachFinding.Status.OPEN
+            ).select_related("asset")[:20]
         ],
     }
 

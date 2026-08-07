@@ -15,6 +15,8 @@ from apps.ai_assistant import services
 from apps.ai_assistant.models import Conversation, GeneratedDocument, Message
 from apps.monitoring import services as monitoring_services
 from apps.monitoring.models import Asset
+from apps.threat_intelligence import services as threat_intelligence_services
+from apps.threat_intelligence.providers.base import RawFinding
 
 pytestmark = pytest.mark.django_db
 
@@ -159,6 +161,83 @@ class TestNoLeakProperty:
         call_kwargs = mock_claude_client.messages.create.call_args.kwargs
         payload = call_kwargs["system"] + str(call_kwargs["messages"])
         _assert_no_leak(payload, scenario)
+
+
+class TestBreachDataNoLeak:
+    """Phase 7 (ADR-013/014): BreachFinding data reaches the assistant and
+    weather-enrichment contexts (apps.ai_assistant.services.
+    build_assistant_context, apps.notifications.services.
+    build_weather_context) — this must go through the exact same
+    pseudonymization pipeline as every other identifying data on the
+    platform (CLAUDE.md architecture rule 3). Reuses scenario_tenant's
+    special-character company/email/domain scenarios so a breach-specific
+    regression can't hide behind a "simple" test value.
+    """
+
+    def _ingest_finding_for_tenant_email(self, tenant, scenario):
+        website = Asset.all_objects.get(tenant=tenant, type=Asset.Type.WEBSITE)
+        raw = RawFinding(
+            endpoint="stealer",
+            payload={"email": scenario["member_email"], "password": "SuperSecretRealValue123"},
+        )
+        return threat_intelligence_services.ingest_raw_findings(
+            tenant=tenant, asset=website, raw_findings=[raw]
+        )[0]
+
+    def test_assistant_context_never_leaks_finding_identifier_or_asset(
+        self, scenario_tenant, mock_claude_client
+    ):
+        tenant, scenario = scenario_tenant
+        finding = self._ingest_finding_for_tenant_email(tenant, scenario)
+        assert finding.identifier_plain == scenario["member_email"]  # sanity: real ingestion path
+
+        conversation = Conversation.all_objects.create(tenant=tenant)
+        Message.all_objects.create(
+            tenant=tenant, conversation=conversation, role=Message.Role.USER, content="Bonjour"
+        )
+
+        services.generate_assistant_reply(conversation=conversation)
+
+        call_kwargs = mock_claude_client.messages.create.call_args.kwargs
+        payload = call_kwargs["system"] + str(call_kwargs["messages"])
+        _assert_no_leak(payload, scenario)
+        assert "SuperSecretRealValue123" not in payload
+
+    def test_weather_enrichment_never_leaks_finding_identifier_or_asset(
+        self, scenario_tenant, mock_claude_client
+    ):
+        from apps.notifications import services as notifications_services
+
+        tenant, scenario = scenario_tenant
+        self._ingest_finding_for_tenant_email(tenant, scenario)
+        notifications_services.update_preferences(tenant, weather_enrichment_enabled=True)
+
+        notifications_services.build_weather_context(tenant)
+
+        call_kwargs = mock_claude_client.messages.create.call_args.kwargs
+        payload = call_kwargs["system"] + str(call_kwargs["messages"])
+        _assert_no_leak(payload, scenario)
+        assert "SuperSecretRealValue123" not in payload
+
+    def test_assistant_context_includes_pseudonymizable_breach_summary(
+        self, scenario_tenant, mock_claude_client
+    ):
+        """Not just "no leak" — confirms the finding actually reaches the
+        payload (as a placeholder), so the no-leak assertion above isn't
+        trivially true because the data was silently dropped."""
+        tenant, scenario = scenario_tenant
+        self._ingest_finding_for_tenant_email(tenant, scenario)
+        conversation = Conversation.all_objects.create(tenant=tenant)
+        Message.all_objects.create(
+            tenant=tenant, conversation=conversation, role=Message.Role.USER, content="Bonjour"
+        )
+
+        services.generate_assistant_reply(conversation=conversation)
+
+        call_kwargs = mock_claude_client.messages.create.call_args.kwargs
+        payload = call_kwargs["system"] + str(call_kwargs["messages"])
+        assert "compromissions_ouvertes" in payload
+        assert "{{EMAIL_1}}" in payload or "{{EMAIL_2}}" in payload or "{{MEMBER_1}}" in payload
 
 
 class TestPseudonymizeTextOrdering:
