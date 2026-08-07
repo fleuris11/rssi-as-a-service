@@ -1,5 +1,12 @@
+import { ChevronDown, ChevronUp, FileText, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { aiApi } from '../api/endpoints'
+import Badge from '../components/ui/Badge'
+import Button from '../components/ui/Button'
+import Card from '../components/ui/Card'
+import EmptyState from '../components/ui/EmptyState'
+import { SkeletonCard } from '../components/ui/Skeleton'
+import { useToast } from '../components/ui/Toast'
 
 const STATUS_LABELS = {
   generating: 'Génération en cours…',
@@ -8,15 +15,11 @@ const STATUS_LABELS = {
   failed: 'Échec',
 }
 
-// -600/-700 shades (not the lighter -400/-500 Tailwind default badge tone):
-// white text on the lighter shades falls under the WCAG AA 4.5:1 contrast
-// minimum (e.g. amber-500 on white text is ~2.15:1) — caught by the axe-core
-// scan in frontend/e2e/c-charter-generation-review-validation.spec.js.
-const STATUS_COLOR = {
-  generating: 'bg-slate-600',
-  draft: 'bg-amber-700',
-  validated: 'bg-emerald-700',
-  failed: 'bg-red-600',
+const STATUS_VARIANT = {
+  generating: 'neutral',
+  draft: 'warning',
+  validated: 'ok',
+  failed: 'critical',
 }
 
 const DOCUMENT_TYPE_LABELS = { it_charter: 'Charte informatique' }
@@ -49,48 +52,40 @@ function AISettingsBanner({ settings, onToggle, toggling }) {
   if (!settings) return null
   const { ai_enabled: aiEnabled, quota } = settings
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="font-medium text-slate-800">
-            IA {aiEnabled ? 'activée' : 'désactivée'} pour cette entreprise
+    <Card className="flex flex-wrap items-center justify-between gap-3" padding="p-4">
+      <div>
+        <p className="text-sm font-medium text-ink-800">
+          IA {aiEnabled ? 'activée' : 'désactivée'} pour cette entreprise
+        </p>
+        {aiEnabled && quota && (
+          <p className="mt-1 text-xs text-ink-500">
+            Quota mensuel : {quota.tokens_used.toLocaleString('fr-FR')} /{' '}
+            {quota.monthly_token_limit.toLocaleString('fr-FR')} tokens (
+            {quota.remaining_tokens.toLocaleString('fr-FR')} restants)
           </p>
-          {aiEnabled && quota && (
-            <p className="mt-1 text-xs text-slate-500">
-              Quota mensuel : {quota.tokens_used.toLocaleString('fr-FR')} /{' '}
-              {quota.monthly_token_limit.toLocaleString('fr-FR')} tokens (
-              {quota.remaining_tokens.toLocaleString('fr-FR')} restants)
-            </p>
-          )}
-        </div>
-        <button
-          type="button"
-          disabled={toggling}
-          onClick={() => onToggle(!aiEnabled)}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-400 disabled:opacity-50"
-        >
-          {aiEnabled ? 'Désactiver l’IA' : 'Activer l’IA'}
-        </button>
+        )}
       </div>
-    </div>
+      <Button variant="secondary" size="sm" loading={toggling} onClick={() => onToggle(!aiEnabled)}>
+        {aiEnabled ? 'Désactiver l’IA' : 'Activer l’IA'}
+      </Button>
+    </Card>
   )
 }
 
 function PreviewPanel() {
+  const { showToast } = useToast()
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
   const [open, setOpen] = useState(false)
 
   async function handleToggle() {
     if (!open && !preview) {
       setLoading(true)
-      setError('')
       try {
         const response = await aiApi.previewCharter()
         setPreview(response.data)
       } catch {
-        setError('Impossible de charger l’aperçu.')
+        showToast({ type: 'error', message: 'Impossible de charger l’aperçu.' })
       } finally {
         setLoading(false)
       }
@@ -99,42 +94,40 @@ function PreviewPanel() {
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-sm">
+    <Card padding="p-4">
       <button
         type="button"
         onClick={handleToggle}
-        className="text-xs font-medium text-slate-600 underline decoration-dotted underline-offset-2"
+        className="transition-smooth flex items-center gap-1 text-xs font-medium text-ink-600 hover:text-brand-700"
       >
+        {open ? <ChevronUp className="size-3.5" aria-hidden="true" /> : <ChevronDown className="size-3.5" aria-hidden="true" />}
         {open ? 'Masquer' : 'Voir'} les données qui seraient transmises à l’IA
       </button>
-      <p className="mt-1 text-xs text-slate-500">
+      <p className="mt-1 text-xs text-ink-400">
         Transparence (US-4.3) : ces données sont pseudonymisées avant tout appel — aucun nom
         d’entreprise, de personne, d’email ou de domaine réel n’est envoyé.
       </p>
       {open && (
         <div className="mt-2">
-          {loading && <p className="text-xs text-slate-500">Chargement…</p>}
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          {loading && <p className="text-xs text-ink-500">Chargement…</p>}
           {preview && (
-            <pre className="max-h-64 overflow-auto rounded bg-slate-50 p-3 text-xs text-slate-700">
+            <pre className="max-h-64 overflow-auto rounded bg-ink-50 p-3 text-xs text-ink-700">
               {JSON.stringify(preview, null, 2)}
             </pre>
           )}
         </div>
       )}
-    </div>
+    </Card>
   )
 }
 
 function DocumentEditor({ document: doc, onUpdated }) {
+  const { showToast } = useToast()
   const [content, setContent] = useState(doc.content_markdown)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     setContent(doc.content_markdown)
-    setSaved(false)
   }, [doc.id, doc.content_markdown])
 
   const isValidated = doc.status === 'validated'
@@ -142,14 +135,12 @@ function DocumentEditor({ document: doc, onUpdated }) {
 
   async function handleSave() {
     setSaving(true)
-    setError('')
-    setSaved(false)
     try {
       const response = await aiApi.updateDocument(doc.id, content)
       onUpdated(response.data)
-      setSaved(true)
+      showToast({ type: 'success', message: 'Modifications enregistrées.' })
     } catch {
-      setError('Impossible d’enregistrer les modifications.')
+      showToast({ type: 'error', message: 'Impossible d’enregistrer les modifications.' })
     } finally {
       setSaving(false)
     }
@@ -157,104 +148,77 @@ function DocumentEditor({ document: doc, onUpdated }) {
 
   async function handleValidate() {
     setSaving(true)
-    setError('')
     try {
       const response = await aiApi.validateDocument(doc.id)
       onUpdated(response.data)
+      showToast({ type: 'success', message: 'Document validé.' })
     } catch {
-      setError('Impossible de valider ce document.')
+      showToast({ type: 'error', message: 'Impossible de valider ce document.' })
     } finally {
       setSaving(false)
     }
   }
 
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob)
+    const link = window.document.createElement('a')
+    link.href = url
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   async function handleExport() {
-    setError('')
     try {
       const response = await aiApi.exportDocument(doc.id)
-      const url = URL.createObjectURL(response.data)
-      const link = window.document.createElement('a')
-      link.href = url
-      link.download = `${doc.type}-v${doc.version}.md`
-      link.click()
-      URL.revokeObjectURL(url)
+      downloadBlob(response.data, `${doc.type}-v${doc.version}.md`)
     } catch {
-      setError('Impossible d’exporter ce document.')
+      showToast({ type: 'error', message: 'Impossible d’exporter ce document.' })
     }
   }
 
   async function handleExportPdf() {
-    setError('')
     try {
       const response = await aiApi.exportDocumentPdf(doc.id)
-      const url = URL.createObjectURL(response.data)
-      const link = window.document.createElement('a')
-      link.href = url
-      link.download = `${doc.type}-v${doc.version}.pdf`
-      link.click()
-      URL.revokeObjectURL(url)
+      downloadBlob(response.data, `${doc.type}-v${doc.version}.pdf`)
     } catch {
-      setError('Impossible d’exporter ce document en PDF.')
+      showToast({ type: 'error', message: 'Impossible d’exporter ce document en PDF.' })
     }
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-slate-800">
+          <p className="text-sm font-medium text-ink-800">
             {DOCUMENT_TYPE_LABELS[doc.type] || doc.type} — v{doc.version}
           </p>
-          <span
-            className={`mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-white ${STATUS_COLOR[doc.status]}`}
-          >
-            {STATUS_LABELS[doc.status]}
-          </span>
+          <div className="mt-1">
+            <Badge variant={STATUS_VARIANT[doc.status]}>{STATUS_LABELS[doc.status]}</Badge>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={handleExport}
-            disabled={isGenerating || !content}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:border-slate-400 disabled:opacity-50"
-          >
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" onClick={handleExport} disabled={isGenerating || !content}>
             Exporter (.md)
-          </button>
-          <button
-            type="button"
-            onClick={handleExportPdf}
-            disabled={isGenerating || !content}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:border-slate-400 disabled:opacity-50"
-          >
+          </Button>
+          <Button variant="primary" size="sm" icon={FileText} onClick={handleExportPdf} disabled={isGenerating || !content}>
             Exporter (.pdf)
-          </button>
+          </Button>
           {!isValidated && !isGenerating && (
             <>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:border-slate-400 disabled:opacity-50"
-              >
+              <Button variant="secondary" size="sm" loading={saving} onClick={handleSave}>
                 Enregistrer
-              </button>
-              <button
-                type="button"
-                onClick={handleValidate}
-                disabled={saving}
-                className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-              >
+              </Button>
+              <Button variant="secondary" size="sm" loading={saving} onClick={handleValidate}>
                 Valider
-              </button>
+              </Button>
             </>
           )}
         </div>
       </div>
 
       {isGenerating ? (
-        <p className="mt-4 text-sm text-slate-500">
-          Génération en cours par l’IA (30 à 60 secondes)…
-        </p>
+        <p className="mt-4 text-sm text-ink-500">Génération en cours par l’IA (30 à 60 secondes)…</p>
       ) : (
         <textarea
           aria-label={`Contenu de ${DOCUMENT_TYPE_LABELS[doc.type] || doc.type} v${doc.version}`}
@@ -262,42 +226,37 @@ function DocumentEditor({ document: doc, onUpdated }) {
           onChange={(e) => setContent(e.target.value)}
           readOnly={isValidated}
           rows={16}
-          className="mt-4 w-full rounded-md border border-slate-300 p-3 font-mono text-xs disabled:bg-slate-50"
+          className="transition-smooth mt-4 w-full rounded-md border border-ink-200 p-3 font-mono text-xs focus-visible:outline-2 focus-visible:outline-brand-600 disabled:bg-ink-50"
         />
       )}
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-      {saved && <p className="mt-2 text-sm text-emerald-600">Modifications enregistrées.</p>}
-    </div>
+    </Card>
   )
 }
 
 export default function DocumentsPage() {
+  const { showToast } = useToast()
   const [settings, setSettings] = useState(null)
   const [documents, setDocuments] = useState([])
   const [selectedId, setSelectedId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [togglingAI, setTogglingAI] = useState(false)
-  const [error, setError] = useState('')
   const poll = usePolling()
 
   const load = useCallback(async () => {
     setLoading(true)
-    setError('')
     try {
-      const [settingsRes, documentsRes] = await Promise.all([
-        aiApi.getSettings(),
-        aiApi.listDocuments(),
-      ])
+      const [settingsRes, documentsRes] = await Promise.all([aiApi.getSettings(), aiApi.listDocuments()])
       setSettings(settingsRes.data)
       setDocuments(documentsRes.data.results)
     } catch (err) {
       if (err.response?.status !== 403) {
-        setError('Impossible de charger les documents.')
+        showToast({ type: 'error', message: 'Impossible de charger les documents.' })
       }
     } finally {
       setLoading(false)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -311,7 +270,7 @@ export default function DocumentsPage() {
       setSettings(response.data)
       if (nextValue) load()
     } catch {
-      setError('Seul un administrateur de l’entreprise peut activer/désactiver l’IA.')
+      showToast({ type: 'error', message: 'Seul un administrateur de l’entreprise peut activer/désactiver l’IA.' })
     } finally {
       setTogglingAI(false)
     }
@@ -319,7 +278,6 @@ export default function DocumentsPage() {
 
   async function handleGenerate() {
     setGenerating(true)
-    setError('')
     try {
       const response = await aiApi.generateDocument('it_charter')
       const { document, job } = response.data
@@ -331,8 +289,7 @@ export default function DocumentsPage() {
         setGenerating(false)
       })
     } catch (err) {
-      const detail = err.response?.data?.detail
-      setError(detail || 'Impossible de lancer la génération.')
+      showToast({ type: 'error', message: err.response?.data?.detail || 'Impossible de lancer la génération.' })
       setGenerating(false)
     }
   }
@@ -340,16 +297,20 @@ export default function DocumentsPage() {
   const selectedDocument = documents.find((d) => d.id === selectedId) || documents[0] || null
 
   if (loading) {
-    return <p className="text-slate-500">Chargement…</p>
+    return (
+      <div className="space-y-4">
+        <SkeletonCard />
+        <SkeletonCard />
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Documents</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Génération de votre charte informatique personnalisée par IA, à relire et valider avant
-          export.
+        <h1 className="font-display text-2xl font-semibold text-ink-900">Documents</h1>
+        <p className="mt-1 text-sm text-ink-500">
+          Génération de votre charte informatique personnalisée par IA, à relire et valider avant export.
         </p>
       </div>
 
@@ -359,40 +320,42 @@ export default function DocumentsPage() {
         <>
           <PreviewPanel />
 
-          <button
-            type="button"
-            onClick={handleGenerate}
-            disabled={generating}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-          >
-            {generating ? 'Génération…' : 'Générer la charte informatique'}
-          </button>
-
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          <Button variant="primary" icon={Sparkles} loading={generating} onClick={handleGenerate}>
+            Générer la charte informatique
+          </Button>
 
           {documents.length === 0 ? (
-            <p className="text-slate-600">Aucun document généré pour l’instant.</p>
+            <EmptyState
+              icon={FileText}
+              title="Aucun document généré"
+              description="Générez votre première charte informatique personnalisée avec l’assistant IA."
+            />
           ) : (
-            <div className="grid gap-4 md:grid-cols-[220px_1fr]">
-              <ul className="space-y-1">
-                {documents.map((d) => (
-                  <li key={d.id}>
+            <div className="grid gap-4 md:grid-cols-[240px_1fr]">
+              <div className="space-y-2">
+                {documents.map((d) => {
+                  const active = selectedDocument && selectedDocument.id === d.id
+                  return (
                     <button
+                      key={d.id}
                       type="button"
                       onClick={() => setSelectedId(d.id)}
-                      className={`w-full rounded-md px-3 py-2 text-left text-xs ${
-                        (selectedDocument && selectedDocument.id === d.id)
-                          ? 'bg-slate-900 text-white'
-                          : 'bg-white text-slate-600 hover:bg-slate-100'
+                      className={`transition-smooth block w-full rounded-lg border p-3 text-left ${
+                        active
+                          ? 'border-brand-600 bg-brand-50'
+                          : 'border-ink-200 bg-surface hover:border-brand-300'
                       }`}
                     >
-                      {DOCUMENT_TYPE_LABELS[d.type] || d.type} v{d.version}
-                      <br />
-                      <span className="text-[10px] opacity-70">{STATUS_LABELS[d.status]}</span>
+                      <p className="text-sm font-medium text-ink-800">
+                        {DOCUMENT_TYPE_LABELS[d.type] || d.type} v{d.version}
+                      </p>
+                      <div className="mt-1.5">
+                        <Badge variant={STATUS_VARIANT[d.status]}>{STATUS_LABELS[d.status]}</Badge>
+                      </div>
                     </button>
-                  </li>
-                ))}
-              </ul>
+                  )
+                })}
+              </div>
               {selectedDocument && (
                 <DocumentEditor
                   document={selectedDocument}
@@ -405,7 +368,7 @@ export default function DocumentsPage() {
           )}
         </>
       ) : (
-        <p className="text-slate-600">
+        <p className="text-ink-600">
           L’IA est désactivée pour cette entreprise. Un administrateur peut l’activer ci-dessus.
         </p>
       )}
