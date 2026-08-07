@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "apps.monitoring",
     "apps.notifications",
     "apps.ai_assistant",
+    "apps.threat_intelligence",
     "apps.platform_admin",
 ]
 
@@ -183,6 +184,9 @@ CELERY_TASK_ROUTES = {
     "apps.monitoring.tasks.*": {"queue": "monitoring"},
     "apps.notifications.tasks.*": {"queue": "emails"},
     "apps.ai_assistant.tasks.*": {"queue": "ai"},
+    # Le CTI est un sous-domaine de la surveillance (ADR-013), pas de l'IA —
+    # partage la file "monitoring", pas "ai".
+    "apps.threat_intelligence.tasks.*": {"queue": "monitoring"},
 }
 # Un worker tué en cours de tâche doit la relivrer plutôt que la perdre —
 # les tasks sont conçues pour être idempotentes (voir apps.monitoring.tasks
@@ -229,6 +233,40 @@ AI_PSEUDONYMIZATION_TTL_HOURS = env.int("AI_PSEUDONYMIZATION_TTL_HOURS", default
 # Quota mensuel de tokens par défaut, par tenant (Green IT, cadrage §8) —
 # override possible par tenant via AIUsageQuota.monthly_token_limit.
 AI_DEFAULT_MONTHLY_TOKEN_LIMIT = env.int("AI_DEFAULT_MONTHLY_TOKEN_LIMIT", default=200_000)
+
+# --- Threat intelligence / Breachsense (Phase 7, ADR-013/014) --------------
+#
+# Licence Essentials, unique et partagée par toute la plateforme (pas par
+# tenant) : 1000 requêtes "query"/mois, 15 actifs monitorés (webhook) max,
+# 1 req/s soutenue (bursts 5). Vide (pas d'appel réel possible) fait
+# retomber apps.threat_intelligence.providers.get_provider() sur le
+# NullProvider — utile en dev/CI sans licence.
+BREACHSENSE_LICENSE_KEY = env("BREACHSENSE_LICENSE_KEY", default="")
+BREACHSENSE_BASE_URL = env("BREACHSENSE_BASE_URL", default="https://api.breachsense.com")
+# Redis dédié au token-bucket (clé globale, pas par tenant — la licence est
+# unique) ; par défaut le même index que le cache Django, namespacé par clé.
+BREACHSENSE_THROTTLE_REDIS_URL = env(
+    "BREACHSENSE_THROTTLE_REDIS_URL", default=env("REDIS_URL", default="redis://localhost:6379/0")
+)
+# Marge de sécurité (nombre de requêtes) sous laquelle QuotaManager refuse
+# toute nouvelle requête "query" plutôt que de risquer un dépassement de
+# licence en cours de mois.
+BREACHSENSE_QUOTA_SAFETY_MARGIN = env.int("BREACHSENSE_QUOTA_SAFETY_MARGIN", default=50)
+# Anti-abus (ADR-013) : délai minimal entre deux scans manuels déclenchés
+# par le même tenant — ne s'applique pas au scan initial automatique.
+BREACHSENSE_SCAN_COOLDOWN_HOURS = env.int("BREACHSENSE_SCAN_COOLDOWN_HOURS", default=24)
+# Taille du pool d'actifs monitorés en temps réel (webhook) — palier
+# Essentials. À ajuster si la licence change de palier.
+BREACHSENSE_MONITORED_ASSET_POOL_SIZE = env.int("BREACHSENSE_MONITORED_ASSET_POOL_SIZE", default=15)
+# Identifiants HTTP Basic du webhook entrant (configurés côté Breachsense
+# via /account?action=add&creds=...) — jamais de secret en dur dans le code.
+BREACHSENSE_WEBHOOK_USERNAME = env("BREACHSENSE_WEBHOOK_USERNAME", default="")
+BREACHSENSE_WEBHOOK_PASSWORD = env("BREACHSENSE_WEBHOOK_PASSWORD", default="")
+# URL publique de POST /api/v1/webhooks/breachsense — n'existe qu'une fois
+# la plateforme déployée (pas d'URL publique en dev local) ; tant qu'elle
+# est vide, l'inscription au pool de 15 actifs monitorés refuse proprement
+# (docs/journal.md : protocole de smoke test au déploiement).
+BREACHSENSE_WEBHOOK_CALLBACK_URL = env("BREACHSENSE_WEBHOOK_CALLBACK_URL", default="")
 
 # --- 2FA TOTP (Phase 5, US-1.3, cadrage §6) : clé Fernet chiffrant le
 # secret TOTP au repos — dédiée, distincte de AI_PSEUDONYMIZATION_KEY

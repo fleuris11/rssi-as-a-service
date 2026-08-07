@@ -192,6 +192,18 @@ def _open_or_update_alert(asset: Asset, alert_type: str, severity: str, details:
     return alert, changed
 
 
+def open_or_update_alert(*, asset: Asset, alert_type: str, severity: str, details: dict) -> Alert:
+    """Public entry point for other apps that need to open/escalate an
+    alert on a tenant's asset through this module's dedup/escalation
+    engine, without duplicating it (Phase 7, ADR-013:
+    apps.threat_intelligence calls this for breach-compromise alerts). The
+    check-specific ``evaluate_alerts``/``_evaluate_*`` functions above stay
+    private — they're only ever driven by this module's own CheckResults —
+    this wrapper is for alert types with no CheckResult behind them."""
+    alert, _created = _open_or_update_alert(asset, alert_type, severity, details)
+    return alert
+
+
 def _resolve_alert(asset: Asset, alert_type: str) -> None:
     Alert.all_objects.filter(asset=asset, alert_type=alert_type, is_open=True).update(
         is_open=False, resolved_at=timezone.now()

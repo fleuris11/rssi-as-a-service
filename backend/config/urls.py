@@ -2,6 +2,8 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+from apps.threat_intelligence.views import BreachsenseWebhookView
+
 from .views import healthz, healthz_worker
 
 urlpatterns = [
@@ -15,6 +17,14 @@ urlpatterns = [
     path("api/v1/monitoring/", include("apps.monitoring.urls")),
     path("api/v1/notifications/", include("apps.notifications.urls")),
     path("api/v1/ai/", include("apps.ai_assistant.urls")),
+    path("api/v1/threat-intelligence/", include("apps.threat_intelligence.urls")),
+    # Hors du namespace tenant-scopé habituel : pas de JWT/X-Tenant-Id côté
+    # Breachsense, authentification HTTP Basic dédiée (ADR-013 §7).
+    path(
+        "api/v1/webhooks/breachsense",
+        BreachsenseWebhookView.as_view(),
+        name="breachsense-webhook",
+    ),
     path("api/v1/schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
         "api/v1/schema/swagger-ui/",

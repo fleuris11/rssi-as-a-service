@@ -76,6 +76,10 @@ class Alert(TenantScopedModel):
         SSL_EXPIRING = "ssl_expiring", "Certificat SSL bientôt expiré"
         SECURITY_HEADERS = "security_headers", "En-têtes de sécurité manquants"
         EMAIL_MISCONFIGURED = "email_misconfigured", "Configuration email incomplète"
+        # Phase 7 (ADR-013) : ouverte par apps.threat_intelligence via
+        # services.open_or_update_alert, jamais par ce module lui-même —
+        # apps.monitoring reste ignorant de threat_intelligence.
+        BREACH_COMPROMISE = "breach_compromise", "Compromission détectée"
 
     class Severity(models.TextChoices):
         WARNING = "warning", "Avertissement"
