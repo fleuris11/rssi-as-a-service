@@ -954,3 +954,196 @@ identifiée en fin de Phase 4).
 - Rotation automatisée des clés Fernet (`AI_PSEUDONYMIZATION_KEY`, `TOTP_ENCRYPTION_KEY`) —
   actuellement manuelle, acceptable au volume actuel de secrets stockés (voir
   `docs/security_review.md`, A02).
+
+## 2026-08-07 — Refonte complète de l'interface
+
+### Contexte
+Mission : transformer le prototype fonctionnel (Phases 1-5) en produit SaaS au niveau du marché
+(référence de qualité perçue : Vanta, Drata, Linear), pour un public de dirigeants de PME non
+techniques. Contrainte absolue : aucune régression fonctionnelle — tous les tests (unitaires,
+e2e Playwright, axe-core) devaient rester verts à la fin. Aucune nouvelle fonctionnalité produit
+hors dashboard (composé à partir des endpoints existants, sans ajout backend). Périmètre : système
+de design, nouveau layout applicatif (sidebar), nouvelle page Tableau de bord, refonte de toutes
+les pages existantes, états/micro-interactions, vérification visuelle réelle, mise à jour des
+tests e2e, documentation.
+
+### Réalisé
+
+**Système de design (`frontend/src/index.css`, Tailwind v4 `@theme`)**
+- **Palette** : une couleur de marque signature — bleu nuit profond (H215, désaturé) plutôt que le
+  slate/blue par défaut de Tailwind — utilisée pour la sidebar, le panneau de marque des écrans
+  d'authentification et les liens/focus. Une couleur d'accent chaleureuse (ambre/or, H36) réservée
+  **exclusivement** au CTA principal de chaque écran et aux états actifs/sélectionnés — jamais pour
+  de grandes surfaces, pour qu'elle garde sa valeur de signal. Une échelle neutre « ink » teintée de
+  la même teinte que la marque plutôt que le gris Tailwind générique, pour que toute la palette
+  se lise comme un système cohérent. Un fond d'application légèrement teinté (`--color-canvas`,
+  `#f6f8fa`) plutôt que blanc/gris pur. Couleurs sémantiques ok/warning/critical avec deux variantes
+  chacune (« -strong » pour badges à texte blanc, « -subtle » pour badges à fond clair/texte foncé),
+  toutes deux vérifiées ≥ 4,5:1 par calcul (formule de luminance relative WCAG) avant intégration.
+- **Typographie** : Inter (interface, poids 400/500/600/700) chargée via `@fontsource`, subsets
+  latin/latin-ext uniquement (l'app est exclusivement en français — inutile de livrer les glyphes
+  cyrilliques/grecs/vietnamiens, cohérent avec la sobriété Green IT). Fraunces (titrage, un serif
+  moderne légèrement éditorial, poids 500 italique/600/700) pour tous les `<h1>`/titres de page et
+  le nombre héros du score — c'est ce qui évite le rendu « template admin Tailwind » : un public non
+  technique lit un titre en serif comme « posé », pas comme un outil froid.
+- **Radii** (sm/md/lg/xl) et **deux niveaux d'ombre** seulement (`--shadow-soft` pour le repos,
+  `--shadow-elevated` pour modales/popovers), teintées de la couleur de marque plutôt que noir pur.
+- **Icônes** : `lucide-react`, un seul set cohérent dans toute l'application (aucun mélange
+  d'emoji/icônes ad hoc).
+- **Primitives** (`frontend/src/components/ui/`) : Button (primary/secondary/ghost/danger, état
+  loading avec spinner), Card, Badge (variantes sémantiques + option `dot`), EmptyState,
+  Skeleton/SkeletonText/SkeletonCard, Modal (gestion du focus, Echap, restauration du focus au
+  ferme), Toast (provider global + `useToast()`, actions « Réessayer »), Tabs, Tooltip,
+  SegmentedControl (non listé dans la mission mais nécessaire pour les réponses du diagnostic —
+  `role="radiogroup"`/`role="radio"`, plus correct sémantiquement que les boutons plats de la
+  version précédente). Toutes les pages consomment ces primitives — plus aucun style Tailwind ad hoc
+  dupliqué pour bouton/carte/badge.
+
+**Layout applicatif** (`AppLayout.jsx`, `Sidebar.jsx`, `Topbar.jsx`)
+- Sidebar fixe fond marine sombre : wordmark, navigation à icônes (Tableau de bord, Diagnostic,
+  Plan d'action, Surveillance, Documents, Assistant), bas de sidebar avec tenant courant
+  (avatar-initiales), Préférences, Sécurité, Déconnexion.
+- Responsive à trois états : desktop (lg+, sidebar complète), tablette (md-lg, rail à icônes
+  seules), mobile (drawer en overlay déclenché par un bouton hamburger dans la topbar). Les trois
+  variantes de sidebar (rail icône, rail complet, drawer) sont montées avec `hidden`/`lg:hidden`
+  plutôt qu'un positionnement absolu — un élément `display:none` est retiré de l'arbre
+  d'accessibilité, donc aucune ambiguïté de lien dupliqué pour les lecteurs d'écran ni pour les
+  sélecteurs `getByRole` des tests.
+- Topbar fine : titre de la page courante (source unique `frontend/src/config/navigation.js`
+  partagée avec la sidebar). **Bug corrigé pendant la vérification** : ce titre était initialement
+  un `<h1>`, entrant en conflit avec le `<h1>` propre à chaque page — deux titres de niveau 1
+  identiques sur un même document, un vrai défaut d'accessibilité (pas seulement un souci de test).
+  Redescendu en `<p>` : la topbar est une étiquette de localisation persistante, pas un second titre
+  de document.
+
+**Nouvelle page : Tableau de bord** (`/tableau-de-bord`, nouvelle route par défaut après connexion)
+- Composée entièrement à partir des endpoints existants (assessments, monitoring, actions) —
+  aucun endpoint backend ajouté, la donnée nécessaire existait déjà.
+- Carte héro score de conformité (anneau SVG animé une seule fois au montage — `ScoreRing.jsx`,
+  réutilisé sur Résultats — avec tendance vs évaluation précédente), carte météo du jour (icônes
+  météo Sun/CloudSun/CloudLightning reprenant la métaphore ☀️/⚠️/🔴 déjà présente côté backend),
+  alertes ouvertes (liste courte), progression du plan d'action avec quick wins (mesures impact
+  élevé + effort faible non terminées), accès rapides.
+- Onboarding en 3 étapes visuelles si aucune évaluation terminée (nouveau tenant) : Diagnostic →
+  Plan d'action → Surveillance, chacune avec sa propre carte et son CTA.
+
+**Refonte page par page** (détails dans les commits `feat(design): redesign ...`)
+- **Diagnostic** : liste plate de 10 sections → assistant par étapes, un domaine ANSSI à la fois,
+  barre de progression sticky globale + par domaine, réponses en `SegmentedControl` (role="radio"),
+  navigation Précédent/Suivant gagnée par domaine (Suivant désactivé tant que le domaine courant
+  n'est pas complet), reprise automatique au premier domaine incomplet plutôt que redémarrage
+  systématique, écran de complétion sobre (une icône de succès, pas de confettis) avant renvoi vers
+  les résultats.
+- **Résultats** : `ScoreRing` héroïque, radar Recharts recoloré à la palette de marque (avec un
+  correctif de troncature des libellés de domaines longs — bug pré-existant, révélé en testant avec
+  de vraies données), cartes de détail par domaine avec barre de score colorée et lien direct vers
+  le plan d'action filtré sur ce domaine.
+- **Plan d'action** : vrai kanban 3 colonnes, cartes riches (badge « Quick win » quand impact élevé
+  + effort faible, badge priorité, tags impact/effort, avatar-initiales de l'assigné à côté du
+  sélecteur de réassignation), compteurs par colonne, filtre par domaine relié à `?domaine=` dans
+  l'URL (permet le lien profond depuis Résultats).
+- **Surveillance** : une carte par actif avec statut global calculé (pire état entre alertes
+  ouvertes et derniers checks), historique d'uptime en barres recoloré, les 4 types de check en
+  grille, panneau d'alertes ouvertes. Le formulaire de déclaration d'actif est passé dans une Modal.
+- **Documents** : liste de documents en cartes sélectionnables (badge de statut, pas juste un
+  libellé), éditeur de relecture nettoyé, export PDF rendu visuellement prioritaire (`variant
+  primary`) par rapport à l'export Markdown (`secondary`).
+- **Assistant** : vraie UI de chat — bulles avec avatar produit (icône Bot dans un rond marine),
+  indicateur de génération en points qui rebondissent plutôt qu'une ligne de texte, suggestions de
+  questions à la première utilisation, zone de saisie fixe en bas avec bouton d'envoi icône.
+- **Connexion/Inscription** : écran deux panneaux (`AuthLayout.jsx`) — panneau de marque sombre à
+  gauche (wordmark, tagline en Fraunces italique, 3 bénéfices produit), formulaire épuré à droite ;
+  collapse en colonne unique (juste le wordmark) sur mobile. L'étape de challenge 2FA du login
+  utilise le même panneau.
+- **Sécurité (2FA) et Préférences de notification** : non nommées explicitement dans la mission mais
+  restylées pour la même raison que le reste — « zéro style ad hoc dupliqué » s'applique à toute
+  l'application, pas seulement aux pages listées.
+
+**États et micro-interactions**
+- Skeletons pendant les chargements sur toutes les pages (jamais de page blanche).
+- EmptyState avec guidance + CTA sur chaque liste vide (documents, actifs, plan d'action, résultats).
+- Erreurs migrées des messages inline vers le système de Toast global avec action « Réessayer » là
+  où une nouvelle tentative a du sens (rechargement du tableau de bord, du plan d'action).
+- Transition CSS uniforme à 180ms (`.transition-smooth`, désactivée sous
+  `prefers-reduced-motion: reduce`) sur hover/focus/apparitions — aucune animation au-delà de ça
+  (le mission demandait explicitement la sobriété).
+- Focus visibles conservés partout (`focus-visible:outline-2` systématique sur les primitives).
+
+### Tests et vérification
+- **Vérification visuelle réelle** : capture d'écran Playwright (desktop 1440px, tablette 900px,
+  mobile 390px) de chaque page refondue, avec un vrai compte de démonstration et de vraies données
+  (diagnostic complété via l'API, actif surveillé avec alerte simulée via `simulate_check_failure`,
+  Phase 5) — pas seulement l'état vide. Plusieurs itérations réelles à partir de ces captures, pas
+  de « ça devrait aller » :
+  - Radar Résultats : libellés de domaines longs tronqués par le bord du graphique — `outerRadius`
+    et `tickFormatter` corrigés.
+  - Deux jetons de couleur (`--color-ink-500`, `--color-ink-400`) ne passaient pas le seuil AA
+    4,5:1 sur fond blanc/canvas malgré un rendu visuellement correct à l'œil — détecté par
+    axe-core, pas par inspection visuelle, alors même que la vérification visuelle avait été faite
+    en amont. Confirme que le contrôle automatisé reste nécessaire même après une revue à l'œil.
+  - Un artefact de capture plein-page (footer `position: fixed` du diagnostic apparaissant à
+    chevaucher le contenu) a été vérifié comme un artefact de l'outil de capture, pas un vrai bug —
+    confirmé par une capture du viewport réellement scrollé jusqu'en bas.
+- **Suite e2e Playwright + axe-core** (`frontend/e2e/`, 5 specs, contre la vraie stack
+  docker-compose) : entièrement remise à niveau pour le nouveau markup, cf. « Difficultés » —
+  **5/5 vertes**, **0 violation critique/sérieuse axe-core** sur l'ensemble des pages parcourues.
+- Suite backend complète (323 tests) rejouée sans modification : verte, confirme l'absence de
+  régression fonctionnelle (aucun fichier backend touché par cette mission).
+- `ruff check`/`ruff format --check` (backend, inchangé) et `npm run lint` (frontend, 0 erreur, 2
+  avertissements pré-existants sans rapport) verts.
+
+### Difficultés rencontrées et solutions
+- **Commentaire CSS fermant prématurément le bloc `@theme`** : le commentaire d'en-tête de
+  `index.css` contenait littéralement la séquence `*/` (dans « `--color-*/--font-*/` », un raccourci
+  visuel pour lister plusieurs préfixes) — qui ferme un commentaire CSS `/* ... */` avant l'endroit
+  prévu. Tout le texte suivant (y compris le vrai `@theme` avec les jetons de couleur) se retrouvait
+  interprété comme du CSS réel, provoquant une erreur « Unknown word --shadow-* » du serveur de dev
+  à une ligne (1172) très éloignée de la source réelle (145 lignes) — les fichiers de police
+  `@import`és sont inlinés avant ce commentaire lors du traitement, décalant fortement les numéros
+  de ligne rapportés. Root cause trouvée en comparant : `npm run build` (pipeline de production,
+  plus tolérant) passait, alors que le serveur de dev (pipeline postcss strict) échouait sur le
+  même fichier — signal qu'il fallait chercher un problème de syntaxe fragile plutôt qu'une
+  incompatibilité d'outils. Corrigé en reformulant le commentaire pour ne jamais faire apparaître
+  `*/` involontairement.
+- **Apostrophe droite vs courbe entre le JSX et les sélecteurs e2e** : le bouton « Terminer
+  l'évaluation » utilise une apostrophe courbe (’) dans le JSX, conforme à la convention déjà
+  établie ailleurs dans le projet (« Plan d'action », etc.), mais le test e2e réutilisait encore
+  l'apostrophe droite (') de l'ancienne implémentation. `getByRole` ne normalise pas ce genre de
+  caractère : le sélecteur ne matchait jamais, provoquant un timeout de 150 s en attente d'un
+  bouton qui existait bel et bien à l'écran (confirmé par capture). Corrigé dans le test ; réaffirme
+  la discipline déjà notée en Phase 4/5 de toujours utiliser l'apostrophe courbe dans le texte UI
+  français du projet.
+- **Course entre résolution réseau et rendu React dans la boucle e2e du diagnostic** : après le
+  dernier `PUT`/`GET` d'un domaine, le test vérifiait immédiatement (`.count()`) si le bouton
+  « Terminer l'évaluation » était présent pour savoir s'il s'agissait du dernier domaine — mais la
+  promesse réseau résolue ne garantit pas que React a déjà validé le re-rendu qui insère ce bouton
+  dans le DOM. Sur le dixième domaine, cette course faisait parfois cliquer le test sur un bouton
+  « Suivant » qui n'existe plus une fois sur le dernier domaine, bloquant le test indéfiniment.
+  Corrigé en attendant sur un locator combiné (`finishButton.or(nextButton).waitFor()`) qui laisse
+  le mécanisme de nouvelle tentative de Playwright absorber la course, plutôt qu'un instantané
+  synchrone.
+- **Timeouts par défaut trop courts pour de vrais appels serveur enchaînés** : deux assertions
+  (l'apparition de l'écran de complétion après `complete()`, qui déclenche
+  `generate_action_plan` côté serveur pour 42 mesures ; l'apparition du plan d'action, qui enchaîne
+  `actionsApi.listAll()` paginé + `tenantsApi.listMembers()` + `projectedScore()`) dépassaient
+  parfois le timeout par défaut de 5 s de Playwright contre la vraie stack Docker Compose — pas un
+  bug applicatif, juste un temps de traitement serveur réel plus long que l'attente par défaut d'un
+  test. Timeouts étendus (15 s) sur ces deux assertions précises avec un commentaire expliquant
+  pourquoi, plutôt qu'un `waitForTimeout` arbitraire global qui aurait ralenti toute la suite.
+- **Jeton de couleur " correct à l'œil, invalide au contraste »** : `--color-ink-500` (texte
+  secondaire utilisé partout) atteignait ~4,3:1 sur blanc — sous le seuil AA 4,5:1 — malgré un
+  rendu visuellement tout à fait lisible. Recalculé (formule de luminance relative WCAG, cf. script
+  Node utilisé en Phase 5 pour les mêmes vérifications) et assombri au niveau du jeton lui-même
+  plutôt que patché usage par usage, pour que toute la palette reste garantie conforme d'un coup.
+
+### Reste à faire (sessions suivantes)
+- Découpage de code (`code-splitting`) du bundle frontend : l'avertissement Vite « chunks > 500 kB »
+  pré-existant (Phase 1-5) n'a pas été traité cette session — hors périmètre d'une refonte visuelle,
+  mais à envisager si le budget de performance frontend (Green IT, CLAUDE.md) devient un critère
+  d'évaluation explicite.
+- Le panneau d'alertes de Surveillance reste « ouvertes uniquement » — un panneau ouvert/résolu
+  demanderait un nouvel endpoint d'historique des alertes résolues, hors du périmètre backend
+  autorisé pour cette mission (« sauf si un endpoint léger manque pour le dashboard »).
+- Tabs et Tooltip (primitives du kit) sont construits et exportés mais pas encore consommés par une
+  page — aucun besoin identifié ne les justifiait dans cette passe ; disponibles pour la prochaine
+  fonctionnalité qui en aura besoin plutôt que forcés dans une page qui n'en a pas l'usage.
