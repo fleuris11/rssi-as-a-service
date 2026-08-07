@@ -184,14 +184,19 @@ class BreachsenseClient:
         needs ``requests_consumed`` to report accurate usage to
         QuotaManager, since one logical query may cost several HTTP
         requests."""
-        params = dict(params or {})
+        base_params = params or {}
         items: list[dict] = []
         requests_consumed = 0
         page = 1
 
         while True:
-            params["p"] = page
-            response = self._request_with_retries("GET", path, params=params)
+            # Un nouveau dict à chaque page (pas de mutation d'un dict
+            # partagé) : session.request() construit sa requête de façon
+            # synchrone, donc muter params après coup serait déjà sans
+            # danger fonctionnel, mais un objet neuf par appel reste plus
+            # sûr et plus facile à raisonner (et à tester).
+            page_params = {**base_params, "p": page}
+            response = self._request_with_retries("GET", path, params=page_params)
             requests_consumed += 1
             body = response.json() if response.content else []
             items.extend(self._extract_items(body))

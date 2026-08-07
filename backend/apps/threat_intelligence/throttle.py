@@ -74,15 +74,32 @@ def get_redis_client() -> redis.Redis:
 class RedisTokenBucketThrottle:
     """One instance is enough for the whole process — state lives in
     Redis, not in this object. Constructed per-call in practice (cheap,
-    stateless wrapper) so tests can swap the Redis client easily."""
+    stateless wrapper) so tests can swap the Redis client easily.
 
-    def __init__(self, client: redis.Redis | None = None):
+    ``bucket_key``/``capacity``/``refill_rate_per_second`` default to the
+    real licence limits but are overridable — tests use a dedicated key and
+    a tiny/fast-refilling bucket so the *same* blocking logic that
+    protects the real licence can be exercised in well under a second
+    instead of waiting out a real 1 req/s rate.
+    """
+
+    def __init__(
+        self,
+        client: redis.Redis | None = None,
+        *,
+        bucket_key: str = BUCKET_KEY,
+        capacity: int = CAPACITY,
+        refill_rate_per_second: float = REFILL_RATE_PER_SECOND,
+    ):
         self._client = client or get_redis_client()
         self._script = self._client.register_script(_TOKEN_BUCKET_SCRIPT)
+        self._bucket_key = bucket_key
+        self._capacity = capacity
+        self._refill_rate = refill_rate_per_second
 
     def _try_acquire(self) -> bool:
         allowed, _tokens = self._script(
-            keys=[BUCKET_KEY], args=[CAPACITY, REFILL_RATE_PER_SECOND, time.time()]
+            keys=[self._bucket_key], args=[self._capacity, self._refill_rate, time.time()]
         )
         return bool(int(allowed))
 

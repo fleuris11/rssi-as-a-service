@@ -380,6 +380,44 @@ class TestNoDuplicateOpenAlert:
             )
 
 
+class TestOpenOrUpdateAlertPublicWrapper:
+    """Phase 7 (ADR-013): the public entry point apps.threat_intelligence
+    calls to reuse this engine for alert types with no CheckResult behind
+    them, instead of duplicating the dedup/escalation logic."""
+
+    def test_opens_a_new_alert(self, website_asset):
+        alert = services.open_or_update_alert(
+            asset=website_asset,
+            alert_type=Alert.AlertType.BREACH_COMPROMISE,
+            severity=Alert.Severity.CRITICAL,
+            details={"finding_id": 1},
+        )
+        assert alert.is_open is True
+        assert alert.alert_type == Alert.AlertType.BREACH_COMPROMISE
+
+    def test_reuses_the_same_open_alert_instead_of_duplicating(self, website_asset):
+        first = services.open_or_update_alert(
+            asset=website_asset,
+            alert_type=Alert.AlertType.BREACH_COMPROMISE,
+            severity=Alert.Severity.WARNING,
+            details={"finding_id": 1},
+        )
+        second = services.open_or_update_alert(
+            asset=website_asset,
+            alert_type=Alert.AlertType.BREACH_COMPROMISE,
+            severity=Alert.Severity.CRITICAL,
+            details={"finding_id": 2},
+        )
+        assert first.id == second.id
+        assert (
+            Alert.all_objects.filter(
+                asset=website_asset, alert_type=Alert.AlertType.BREACH_COMPROMISE, is_open=True
+            ).count()
+            == 1
+        )
+        assert second.severity == Alert.Severity.CRITICAL
+
+
 class TestUptimePercentage:
     def test_none_without_any_checks(self, website_asset):
         assert services.compute_uptime_percentage(website_asset) is None
