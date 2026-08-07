@@ -73,6 +73,23 @@ export const monitoringApi = {
   openAlerts: () => apiClient.get('/api/v1/monitoring/alerts/'),
 }
 
+export const threatIntelligenceApi = {
+  listFindings: (status) =>
+    apiClient.get('/api/v1/threat-intelligence/findings/', { params: status ? { status } : {} }),
+  updateFindingStatus: (id, status) =>
+    apiClient.patch(`/api/v1/threat-intelligence/findings/${id}/`, { status }),
+  listMonitoredAssets: () => apiClient.get('/api/v1/threat-intelligence/monitored-assets/'),
+  registerMonitoredAsset: (assetId) =>
+    apiClient.post('/api/v1/threat-intelligence/monitored-assets/', { asset_id: assetId }),
+  unregisterMonitoredAsset: (assetId) =>
+    apiClient.delete(`/api/v1/threat-intelligence/monitored-assets/${assetId}/`),
+  triggerScan: (assetId) =>
+    apiClient.post('/api/v1/threat-intelligence/scans/', assetId ? { asset_id: assetId } : {}),
+  getScanJob: (jobId) => apiClient.get(`/api/v1/threat-intelligence/scans/${jobId}/`),
+  status: () => apiClient.get('/api/v1/threat-intelligence/status/'),
+  adminStatus: () => apiClient.get('/api/v1/threat-intelligence/admin/status/'),
+}
+
 export const notificationsApi = {
   getPreferences: () => apiClient.get('/api/v1/notifications/preferences/'),
   updatePreferences: (payload) =>

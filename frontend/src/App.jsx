@@ -1,8 +1,11 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout'
 import ProtectedRoute from './components/ProtectedRoute'
+import StaffRoute from './components/StaffRoute'
 import ActionPlanPage from './pages/ActionPlanPage'
+import AdminBreachsensePage from './pages/AdminBreachsensePage'
 import AssistantPage from './pages/AssistantPage'
+import CompromisesPage from './pages/CompromisesPage'
 import DashboardPage from './pages/DashboardPage'
 import DiagnosticPage from './pages/DiagnosticPage'
 import DocumentsPage from './pages/DocumentsPage'
@@ -27,10 +30,14 @@ function App() {
           <Route path="/resultats/:assessmentId" element={<ResultsPage />} />
           <Route path="/plan-action" element={<ActionPlanPage />} />
           <Route path="/surveillance" element={<SurveillancePage />} />
+          <Route path="/compromissions" element={<CompromisesPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/assistant" element={<AssistantPage />} />
           <Route path="/preferences" element={<NotificationPreferencesPage />} />
           <Route path="/securite" element={<TwoFactorSettingsPage />} />
+          <Route element={<StaffRoute />}>
+            <Route path="/admin/breachsense" element={<AdminBreachsensePage />} />
+          </Route>
         </Route>
       </Route>
 

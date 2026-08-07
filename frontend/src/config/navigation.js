@@ -5,6 +5,7 @@ import {
   MessageSquareText,
   Radar,
   ScrollText,
+  ShieldAlert,
 } from 'lucide-react'
 
 // Single source of truth for the sidebar links AND the topbar's page
@@ -15,6 +16,7 @@ export const NAV_ITEMS = [
   { to: '/diagnostic', label: 'Diagnostic', icon: ClipboardCheck },
   { to: '/plan-action', label: 'Plan d’action', icon: KanbanSquare },
   { to: '/surveillance', label: 'Surveillance', icon: Radar },
+  { to: '/compromissions', label: 'Compromissions', icon: ShieldAlert },
   { to: '/documents', label: 'Documents', icon: ScrollText },
   { to: '/assistant', label: 'Assistant', icon: MessageSquareText },
 ]
@@ -25,6 +27,7 @@ const SECONDARY_TITLES = {
   '/resultats': 'Résultats',
   '/preferences': 'Préférences',
   '/securite': 'Sécurité',
+  '/admin/breachsense': 'Administration — Renseignement sur la menace',
 }
 
 export function pageTitleFor(pathname) {

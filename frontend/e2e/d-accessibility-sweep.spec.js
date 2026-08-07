@@ -35,6 +35,7 @@ test('pages principales authentifiées sans violation critique', async ({ page }
     // terminée...") rather than the h1 — still a real page state worth
     // scanning.
     { path: '/resultats', text: 'Aucune évaluation terminée' },
+    { path: '/compromissions', heading: 'Compromissions' },
     { path: '/assistant', heading: 'Assistant' },
     { path: '/preferences', heading: 'Préférences de notification' },
     { path: '/securite', heading: 'Sécurité du compte' },

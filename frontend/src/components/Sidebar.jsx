@@ -1,4 +1,4 @@
-import { LogOut, ShieldCheck, SlidersHorizontal } from 'lucide-react'
+import { LogOut, ShieldCheck, ShieldEllipsis, SlidersHorizontal } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { NAV_ITEMS } from '../config/navigation'
 import { useAuth } from '../context/AuthContext'
@@ -19,7 +19,7 @@ function linkClass({ isActive }, collapsed) {
  * mobile drawer — same markup, the drawer just controls visibility/overlay.
  */
 export default function Sidebar({ collapsed = false, onNavigate }) {
-  const { currentTenant, logout } = useAuth()
+  const { currentTenant, logout, user } = useAuth()
 
   return (
     <div className="flex h-full flex-col bg-brand-950 text-white">
@@ -76,6 +76,17 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
           <ShieldCheck className="size-5 shrink-0" aria-hidden="true" />
           {!collapsed && <span>Sécurité</span>}
         </NavLink>
+        {user?.is_staff && (
+          <NavLink
+            to="/admin/breachsense"
+            onClick={onNavigate}
+            className={(state) => linkClass(state, collapsed)}
+            title={collapsed ? 'Administration CTI' : undefined}
+          >
+            <ShieldEllipsis className="size-5 shrink-0" aria-hidden="true" />
+            {!collapsed && <span>Administration CTI</span>}
+          </NavLink>
+        )}
         <button
           type="button"
           onClick={logout}

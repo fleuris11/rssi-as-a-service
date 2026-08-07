@@ -7,6 +7,7 @@ import {
   Minus,
   Radar,
   ScrollText,
+  ShieldAlert,
   Sun,
   TrendingDown,
   TrendingUp,
@@ -14,7 +15,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { actionsApi, assessmentsApi, monitoringApi } from '../api/endpoints'
+import { actionsApi, assessmentsApi, monitoringApi, threatIntelligenceApi } from '../api/endpoints'
 import ScoreRing from '../components/ScoreRing'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
@@ -27,6 +28,7 @@ const QUICK_LINKS = [
   { to: '/diagnostic', label: 'Diagnostic', icon: ClipboardCheck },
   { to: '/plan-action', label: "Plan d'action", icon: KanbanSquare },
   { to: '/surveillance', label: 'Surveillance', icon: Radar },
+  { to: '/compromissions', label: 'Compromissions', icon: ShieldAlert },
   { to: '/documents', label: 'Documents', icon: ScrollText },
 ]
 
@@ -106,19 +108,22 @@ export default function DashboardPage() {
   const [assessments, setAssessments] = useState([])
   const [dashboardRows, setDashboardRows] = useState([])
   const [actionItems, setActionItems] = useState([])
+  const [breachFindings, setBreachFindings] = useState([])
   const { showToast } = useToast()
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [assessmentsRes, dashboardRes, items] = await Promise.all([
+      const [assessmentsRes, dashboardRes, items, findingsRes] = await Promise.all([
         assessmentsApi.list(),
         monitoringApi.dashboard(),
         actionsApi.listAll(),
+        threatIntelligenceApi.listFindings('open'),
       ])
       setAssessments(assessmentsRes.data.results.filter((a) => a.status === 'completed'))
       setDashboardRows(dashboardRes.data)
       setActionItems(items)
+      setBreachFindings(findingsRes.data.results)
     } catch {
       showToast({
         type: 'error',
@@ -171,7 +176,8 @@ export default function DashboardPage() {
       ? latest.score_global - previous.score_global
       : null
 
-  const weatherKey = worstStatus(dashboardRows)
+  const criticalBreachFindings = breachFindings.filter((f) => f.severity === 'critical')
+  const weatherKey = criticalBreachFindings.length > 0 ? 'critical' : worstStatus(dashboardRows)
   const weather = WEATHER[weatherKey]
   const openAlerts = dashboardRows.flatMap((row) =>
     row.open_alerts.map((alert) => ({ ...alert, assetValue: row.asset.value }))
@@ -189,6 +195,21 @@ export default function DashboardPage() {
         <h1 className="font-display text-2xl font-semibold text-ink-900">Tableau de bord</h1>
         <p className="mt-1 text-sm text-ink-500">Votre posture cybersécurité en un coup d’œil.</p>
       </div>
+
+      {criticalBreachFindings.length > 0 && (
+        <Link
+          to="/compromissions"
+          className="transition-smooth flex items-center gap-3 rounded-lg border border-critical-strong/20 bg-critical-subtle px-4 py-3 hover:bg-critical-subtle/70"
+        >
+          <ShieldAlert className="size-5 shrink-0 text-critical-strong" aria-hidden="true" />
+          <p className="flex-1 text-sm font-medium text-critical-strong">
+            {criticalBreachFindings.length} compromission{criticalBreachFindings.length > 1 ? 's' : ''}{' '}
+            critique{criticalBreachFindings.length > 1 ? 's' : ''} détectée
+            {criticalBreachFindings.length > 1 ? 's' : ''} — action immédiate recommandée.
+          </p>
+          <ArrowRight className="size-4 shrink-0 text-critical-strong" aria-hidden="true" />
+        </Link>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Hero: compliance score */}
