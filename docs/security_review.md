@@ -222,11 +222,17 @@ absents, secrets committés.
   n'offre aucun mécanisme natif d'acceptation de risque documentée ; ce script en est le plus petit
   équivalent : une liste blanche d'identifiants GHSA avec justification en commentaire.
   - **Risque accepté documenté** : `GHSA-qwww-vcr4-c8h2` (react-router / react-router-dom, CWE-352,
-    « RSC Mode... Action Execution Before 400 Response »). Inapplicable à cette application : routage
-    déclaratif classique `<Routes>/<Route>`, aucun React Server Components, aucune action de données
-    en mode framework (le chemin de code vulnérable n'est simplement pas utilisé). Le seul correctif
-    disponible est un downgrade « breaking change » vers une version antérieure elle-même vulnérable
-    différemment — corriger créerait plus de risque que le statu quo documenté.
+    « RSC Mode CSRF Bypass Allows Action Execution Before 400 Response »). L'avis amont le précise
+    explicitement : « This only affects your application if you are using the unstable RSC APIs » —
+    cette application utilise un routage déclaratif classique `<Routes>/<Route>`, sans React Server
+    Components ni action de données en mode framework, donc hors de portée de la vulnérabilité quelle
+    que soit la version installée. Un correctif réel existe (`react-router@8.3.0`), mais la v8 a
+    supprimé le paquet séparé `react-router-dom` dont dépend le projet — la migration implique de
+    renommer la dépendance et tous les imports (`react-router-dom` → `react-router`) et de relire le
+    guide de migration v7→v8, pas une simple montée de version. `npm audit fix` (sans `--force`) ne
+    propose aucun correctif non cassant ; `--force` ne propose qu'un retour à la version 7.11.0 (7
+    versions mineures en arrière), pas le vrai correctif. Migration v8 notée comme évolution possible
+    hors urgence, pas comme correctif de sécurité immédiat (l'application n'est pas exposée).
 - **Image Docker** : scan Trivy (`aquasecurity/trivy-action`, job `container-scan`,
   `severity: HIGH,CRITICAL`, `ignore-unfixed: true`) sur l'image `backend/Dockerfile` buildée en CI.
   Exécuté localement pendant cette session sur l'image de production actuelle : **0 vulnérabilité

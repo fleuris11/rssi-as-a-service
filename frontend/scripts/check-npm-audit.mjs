@@ -7,12 +7,19 @@ import { execSync } from "node:child_process";
 
 const ACCEPTED_RISK_ADVISORIES = new Set([
   // GHSA-qwww-vcr4-c8h2 (react-router / react-router-dom, CWE-352):
-  // "RSC Mode... Action Execution Before 400 Response". This app uses plain
-  // declarative <Routes>/<Route> routing with no React Server Components and
-  // no framework-mode data actions, so the vulnerable code path is unused.
-  // The only available fix is a breaking downgrade to an older, differently
-  // vulnerable release. See docs/security_review.md (A06) for the full
-  // justification.
+  // "RSC Mode CSRF Bypass Allows Action Execution Before 400 Response".
+  // Per the advisory itself: "This only affects your application if you
+  // are using the unstable RSC APIs" — this app uses plain declarative
+  // <Routes>/<Route> routing, no React Server Components, no framework-mode
+  // data actions, so the vulnerable code path is unused regardless of
+  // version. A real fix exists (react-router 8.3.0), but v8 dropped the
+  // separate "react-router-dom" package this app depends on — upgrading
+  // means renaming the dependency and every import
+  // ("react-router-dom" -> "react-router") plus reviewing the v7->v8
+  // migration guide, not a drop-in bump. `npm audit fix` (no --force)
+  // confirms no non-breaking fix is available; `--force` only offers a
+  // downgrade to 7.11.0 (7 minor versions back), not the real fix. See
+  // docs/security_review.md (A06) for the full justification.
   "GHSA-qwww-vcr4-c8h2",
 ]);
 
