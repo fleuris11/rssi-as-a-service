@@ -57,7 +57,7 @@ function StatusBadge({ status }) {
 
 function UptimeHistory({ history }) {
   if (!history || history.length === 0) {
-    return <p className="text-xs text-ink-400">Pas encore de données.</p>
+    return <p className="text-xs text-ink-500">Pas encore de données.</p>
   }
   const ordered = [...history].reverse()
   return (

@@ -16,7 +16,10 @@ export default function Topbar({ onOpenMenu }) {
       >
         <Menu className="size-5" aria-hidden="true" />
       </button>
-      <h1 className="text-sm font-semibold text-ink-800">{title}</h1>
+      {/* Not an <h1>: every page already renders its own — this is a
+          persistent location label, not the document heading. Two <h1>s
+          with the same text is both bad a11y and ambiguous for tests. */}
+      <p className="text-sm font-semibold text-ink-800">{title}</p>
     </header>
   )
 }

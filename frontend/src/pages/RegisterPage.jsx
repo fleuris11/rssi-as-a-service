@@ -113,7 +113,7 @@ export default function RegisterPage() {
             onChange={updateField('password')}
             className={inputClass}
           />
-          <p className="mt-1 text-xs text-ink-400">12 caractères minimum.</p>
+          <p className="mt-1 text-xs text-ink-500">12 caractères minimum.</p>
         </div>
         {errors.length > 0 && (
           <ul className="space-y-1 text-sm text-critical-strong">

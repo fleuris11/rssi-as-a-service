@@ -13,7 +13,7 @@ import {
 export const NAV_ITEMS = [
   { to: '/tableau-de-bord', label: 'Tableau de bord', icon: LayoutDashboard },
   { to: '/diagnostic', label: 'Diagnostic', icon: ClipboardCheck },
-  { to: '/plan-action', label: "Plan d'action", icon: KanbanSquare },
+  { to: '/plan-action', label: 'Plan d’action', icon: KanbanSquare },
   { to: '/surveillance', label: 'Surveillance', icon: Radar },
   { to: '/documents', label: 'Documents', icon: ScrollText },
   { to: '/assistant', label: 'Assistant', icon: MessageSquareText },

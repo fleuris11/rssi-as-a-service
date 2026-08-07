@@ -26,6 +26,10 @@ test('pages principales authentifiées sans violation critique', async ({ page }
   })
 
   const pages = [
+    // A fresh tenant has no completed assessment yet, so this is the
+    // 3-step onboarding view, not the populated dashboard — still worth
+    // scanning as its own real state.
+    { path: '/tableau-de-bord', text: 'Bienvenue sur RSSI as a Service' },
     // No heading here: a fresh tenant has no completed assessment yet, so
     // this renders ResultsPage's empty state ("Aucune évaluation
     // terminée...") rather than the h1 — still a real page state worth

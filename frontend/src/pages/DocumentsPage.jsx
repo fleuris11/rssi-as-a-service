@@ -103,7 +103,7 @@ function PreviewPanel() {
         {open ? <ChevronUp className="size-3.5" aria-hidden="true" /> : <ChevronDown className="size-3.5" aria-hidden="true" />}
         {open ? 'Masquer' : 'Voir'} les données qui seraient transmises à l’IA
       </button>
-      <p className="mt-1 text-xs text-ink-400">
+      <p className="mt-1 text-xs text-ink-500">
         Transparence (US-4.3) : ces données sont pseudonymisées avant tout appel — aucun nom
         d’entreprise, de personne, d’email ou de domaine réel n’est envoyé.
       </p>

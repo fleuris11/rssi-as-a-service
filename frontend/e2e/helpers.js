@@ -33,14 +33,14 @@ export function assertNoCriticalViolations(axeResults) {
 }
 
 /** Fills the registration form and submits — leaves the browser on
- * /diagnostic (RegisterPage redirects there on success), authenticated. */
+ * /tableau-de-bord (RegisterPage redirects there on success), authenticated. */
 export async function registerNewTenant(page, { companyName, email }) {
   await page.goto('/inscription')
   await page.getByLabel('Nom de l’entreprise').fill(companyName)
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Mot de passe').fill(E2E_PASSWORD)
   await page.getByRole('button', { name: 'Créer mon compte' }).click()
-  await page.waitForURL('**/diagnostic')
+  await page.waitForURL('**/tableau-de-bord')
 }
 
 /** Reads the freshly-registered user's own tenant slug straight from the

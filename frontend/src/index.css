@@ -82,7 +82,11 @@
   --color-ink-200: #e1e5ea;
   --color-ink-300: #c4cad4;
   --color-ink-400: #95a0b2;
-  --color-ink-500: #6b7b94;
+  /* L44, not the "textbook" L50 midpoint: ink-500 is used pervasively as
+     muted body text directly on white/canvas throughout the app, and L50
+     (#6b7b94) only reaches ~4.3:1 there — under the WCAG AA 4.5:1 minimum.
+     Caught by axe-core, not by eye. */
+  --color-ink-500: #5e6c82;
   --color-ink-600: #566276;
   --color-ink-700: #404a59;
   --color-ink-800: #2b313b;

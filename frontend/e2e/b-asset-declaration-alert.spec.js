@@ -30,6 +30,12 @@ test('déclaration d’un actif puis alerte visible après un check en échec', 
 
   await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
 
+  // Two "Déclarer un actif" buttons exist while the asset list is empty
+  // (the page header action and the EmptyState's own CTA) — .first() picks
+  // either, both open the same modal.
+  await page.getByRole('button', { name: 'Déclarer un actif' }).first().click()
+  await expect(page.getByRole('dialog', { name: 'Déclarer un actif' })).toBeVisible()
+
   await page.getByLabel('Type').selectOption('website')
   await page.getByLabel('URL (https://...)').fill(assetUrl)
   await page
@@ -37,6 +43,7 @@ test('déclaration d’un actif puis alerte visible après un check en échec', 
     .click()
   await page.getByRole('button', { name: 'Ajouter' }).click()
 
+  await expect(page.getByRole('dialog')).not.toBeVisible()
   await expect(page.getByText(assetUrl)).toBeVisible()
 
   const tenantSlug = await getCurrentTenantSlug(page)
