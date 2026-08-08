@@ -16,6 +16,17 @@ def _fast_password_hashing(settings):
 
 
 @pytest.fixture(autouse=True)
+def _breach_secret_encryption_key(settings):
+    # Fixed, valid Fernet key so tests don't depend on
+    # BREACH_SECRET_ENCRYPTION_KEY being set in the environment — global
+    # (not scoped to apps/threat_intelligence/tests) because
+    # apps.threat_intelligence.services.ingest_raw_findings is called
+    # cross-app (e.g. apps.ai_assistant.tests.test_pseudonymization), same
+    # pattern as apps.accounts.tests.conftest._totp_encryption_key.
+    settings.BREACH_SECRET_ENCRYPTION_KEY = "d3WIQitt1JLP5CBSQ0KApk3DHHrPbUUXRXiHUbxK_5w="
+
+
+@pytest.fixture(autouse=True)
 def _clear_cache():
     # DRF throttling (apps.accounts/apps.tenants throttling.py) and the
     # account+IP lockout (apps.accounts.services) both key off the shared

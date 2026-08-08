@@ -41,13 +41,18 @@ STEALER_EXTRA_SECRET_FIELDS = ["ccn", "ccx", "cwa"]
 
 
 def _row_text_blob(finding_id: int) -> str:
-    """Every text/JSON column of the BreachFinding row, concatenated —
-    deliberately raw SQL (not the ORM) so this test can't be fooled by a
-    Python-level property that doesn't reflect what's actually on disk."""
+    """Every text/JSON/binary column of the BreachFinding row, concatenated
+    — deliberately raw SQL (not the ORM) so this test can't be fooled by a
+    Python-level property that doesn't reflect what's actually on disk.
+    ``secret_encrypted`` is included (cast to hex) precisely BECAUSE it now
+    holds the secret — encrypted: the property under test is that the
+    ciphertext never contains the plaintext substring, i.e. that encryption
+    (not omission) is what's protecting it (ADR-014 update)."""
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT identifier_plain, identifier_masked, secret_masked, raw_data::text
+            SELECT identifier_plain, identifier_masked, secret_masked, raw_data::text,
+                   encode(secret_encrypted, 'hex')
             FROM threat_intelligence_breachfinding
             WHERE id = %s
             """,
@@ -94,7 +99,7 @@ class TestNoSecretPersistence:
 
     def test_darkweb_and_radar_and_asm_have_no_secret_field(self, tenant, website_asset):
         """Ces trois endpoints n'ont, par construction du schéma réel,
-        aucun champ secret — vérifie que secret_seen reste False plutôt que
+        aucun champ secret — vérifie que has_secret reste False plutôt que
         de masquer quelque chose par erreur (faux positif)."""
         for endpoint, payload in (
             ("darkweb", {"data": "example.com", "site": "ForumX", "found": "2026-01-01"}),
@@ -106,8 +111,9 @@ class TestNoSecretPersistence:
                 tenant=tenant, asset=website_asset, raw_findings=[raw]
             )
             assert created
-            assert created[0].secret_seen is False
+            assert created[0].has_secret is False
             assert created[0].secret_masked == ""
+            assert bytes(created[0].secret_encrypted) == b""
 
     def test_secret_absent_even_from_json_raw_data_field(self, tenant, website_asset):
         secret = "TotallyLeakedPassword42"
@@ -116,9 +122,15 @@ class TestNoSecretPersistence:
 
         finding = BreachFinding.all_objects.get(tenant=tenant)
         assert secret not in json.dumps(finding.raw_data)
-        assert finding.secret_seen is True
+        assert finding.has_secret is True
         assert finding.secret_masked != ""
         assert secret not in finding.secret_masked
+        # ADR-014 update: the secret now lives encrypted, not omitted —
+        # the property under test is that decryption round-trips correctly
+        # and that the ciphertext itself never contains the plaintext.
+        assert bytes(finding.secret_encrypted) != b""
+        assert secret not in bytes(finding.secret_encrypted).decode("latin-1")
+        assert services.decrypt_secret(bytes(finding.secret_encrypted)) == secret
 
     def test_cookie_metadata_fields_survive_unmasked_only_val_is_masked(
         self, tenant, website_asset

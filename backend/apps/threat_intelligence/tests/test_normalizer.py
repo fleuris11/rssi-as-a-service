@@ -113,16 +113,17 @@ REALISTIC_PAYLOADS = {
 
 class TestMaskPayload:
     def test_masks_password_field(self):
-        masked, secret_seen, secret_masked = normalizer.mask_payload(
+        masked, secret_seen, secret_masked, secret_plain = normalizer.mask_payload(
             {"email": "a@example.com", "password": "SuperSecret123"}
         )
         assert masked["password"] == "••••••23"
         assert masked["email"] == "a@example.com"
         assert secret_seen is True
         assert secret_masked == "••••••23"
+        assert secret_plain == "SuperSecret123"
 
     def test_masks_secret_nested_anywhere_in_the_tree(self):
-        masked, secret_seen, _ = normalizer.mask_payload(
+        masked, secret_seen, _, _plain = normalizer.mask_payload(
             {"outer": {"token": "abc123XYZ"}, "meta": [{"api_key": "sk-verysecret"}]}
         )
         assert masked["outer"]["token"].endswith("YZ")
@@ -132,17 +133,30 @@ class TestMaskPayload:
         assert secret_seen is True
 
     def test_no_secret_key_present_leaves_secret_seen_false(self):
-        masked, secret_seen, secret_masked = normalizer.mask_payload(
+        masked, secret_seen, secret_masked, secret_plain = normalizer.mask_payload(
             {"email": "a@example.com", "date": "2026-01-01"}
         )
         assert secret_seen is False
         assert secret_masked == ""
+        assert secret_plain == ""
         assert masked == {"email": "a@example.com", "date": "2026-01-01"}
 
     def test_masking_is_non_reversible_short_tail_only(self):
-        _masked, _seen, secret_masked = normalizer.mask_payload({"token": "abcdefghijklmnop"})
+        _masked, _seen, secret_masked, _plain = normalizer.mask_payload(
+            {"token": "abcdefghijklmnop"}
+        )
         assert secret_masked == "••••••op"
         assert "abcdefghijklmn" not in secret_masked
+
+    def test_first_secret_plain_feeds_encryption_not_display(self):
+        """secret_plain is the in-memory-only counterpart of secret_masked —
+        never itself displayed, only handed to services.encrypt_secret
+        (ADR-014 update) before being discarded."""
+        _masked, _seen, secret_masked, secret_plain = normalizer.mask_payload(
+            {"token": "abcdefghijklmnop"}
+        )
+        assert secret_plain == "abcdefghijklmnop"
+        assert secret_plain not in secret_masked
 
     def test_exact_field_secrets_masked_val_ccn_ccx_cwa(self):
         payload = {
@@ -151,7 +165,7 @@ class TestMaskPayload:
             "ccx": "12/27",
             "cwa": "bc1qxyz",
         }
-        masked, secret_seen, _ = normalizer.mask_payload(payload)
+        masked, secret_seen, _, _plain = normalizer.mask_payload(payload)
         assert secret_seen is True
         for key in ("val", "ccn", "ccx", "cwa"):
             assert masked[key].startswith("••••••")
@@ -161,7 +175,7 @@ class TestMaskPayload:
         """Regression: "cookie" used to be a generic marker and would have
         wrongly masked cookie_name/cookie_path (structural metadata, not
         secrets) — only the actual cookie value ("val") is a secret."""
-        masked, _seen, _ = normalizer.mask_payload(REALISTIC_PAYLOADS["sessions"])
+        masked, _seen, _, _plain = normalizer.mask_payload(REALISTIC_PAYLOADS["sessions"])
         assert masked["cookie_name"] == "session_id"
         assert masked["cookie_path"] == "/account"
         assert masked["val"] != REALISTIC_PAYLOADS["sessions"]["val"]
@@ -170,10 +184,10 @@ class TestMaskPayload:
         """Regression: "hash" used to be a generic marker and would have
         wrongly masked docs.file_hash (a checksum, not a secret) and
         creds.hash (a 0/1 "hashed vs decrypted" indicator, not a secret)."""
-        docs_masked, _seen, _ = normalizer.mask_payload(REALISTIC_PAYLOADS["docs"])
+        docs_masked, _seen, _, _plain = normalizer.mask_payload(REALISTIC_PAYLOADS["docs"])
         assert docs_masked["file_hash"] == REALISTIC_PAYLOADS["docs"]["file_hash"]
 
-        creds_masked, _seen, _ = normalizer.mask_payload(REALISTIC_PAYLOADS["creds"])
+        creds_masked, _seen, _, _plain = normalizer.mask_payload(REALISTIC_PAYLOADS["creds"])
         assert creds_masked["hash"] == 0
 
 
@@ -198,7 +212,7 @@ class TestNormalizeFindingPerEndpoint:
         assert result["severity"] == "critical"
         assert result["breach_date"].isoformat() == "2026-01-10"  # inf prioritaire sur fnd
         assert result["finding_type"] == "RedLine"  # champ mal
-        assert result["secret_seen"] is True
+        assert result["has_secret"] is True
         blob = str(result["raw_data"])
         assert "SuperSecret123" not in blob
         assert "4111111111111111" not in blob
@@ -239,14 +253,14 @@ class TestNormalizeFindingPerEndpoint:
         result = normalizer.normalize_finding("nhi", REALISTIC_PAYLOADS["nhi"])
         assert result["severity"] == "critical"
         assert result["finding_type"] == "service-account"
-        assert result["secret_seen"] is True
+        assert result["has_secret"] is True
         assert "sk-live-abcdef1234567890" not in str(result["raw_data"])
 
     def test_darkweb_uses_found_field_for_date(self):
         result = normalizer.normalize_finding("darkweb", REALISTIC_PAYLOADS["darkweb"])
         assert result["severity"] == "critical"
         assert result["breach_date"].isoformat() == "2026-01-15"
-        assert result["secret_seen"] is False  # aucun champ secret sur cet endpoint
+        assert result["has_secret"] is False  # aucun champ secret sur cet endpoint
 
     def test_radar_default_severity_attention(self):
         result = normalizer.normalize_finding("radar", REALISTIC_PAYLOADS["radar"])
@@ -265,7 +279,7 @@ class TestNormalizeFindingPerEndpoint:
         result = normalizer.normalize_finding("asm", REALISTIC_PAYLOADS["asm"])
         assert result["severity"] == "attention"
         assert result["finding_type"] == "mx"
-        assert result["secret_seen"] is False
+        assert result["has_secret"] is False
 
     def test_asm_phishing_type_is_elevated_to_high(self):
         payload = {**REALISTIC_PAYLOADS["asm"], "type": "pphish", "dom": "examp1e-secure.com"}
@@ -312,4 +326,4 @@ class TestNormalizeFindingGeneral:
         )
         assert result["identifier_masked"] != "" or result["identifier_plain"] != ""
         assert result["breach_date"].isoformat() == "2026-03-01"
-        assert result["secret_seen"] is True
+        assert result["has_secret"] is True
