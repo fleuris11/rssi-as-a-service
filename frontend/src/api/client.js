@@ -69,7 +69,18 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const { config, response } = error
-    if (response?.status === 401 && !config._retried && tokenStorage.getRefresh()) {
+    // skipAuthRetry: some endpoints return 401 for a business reason (e.g.
+    // POST .../reveal/'s step-up re-authentication rejecting a wrong
+    // password/TOTP code) rather than an expired access token — retrying
+    // those after a token refresh would silently resubmit the same
+    // (still-wrong) credentials a second time against the server, double
+    // counting against its rate limit and audit log for a single mistake.
+    if (
+      response?.status === 401 &&
+      !config._retried &&
+      !config.skipAuthRetry &&
+      tokenStorage.getRefresh()
+    ) {
       config._retried = true
       try {
         if (!refreshPromise) {

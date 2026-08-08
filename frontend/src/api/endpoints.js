@@ -80,11 +80,17 @@ export const threatIntelligenceApi = {
     apiClient.patch(`/api/v1/threat-intelligence/findings/${id}/`, { status }),
   // Step-up re-authentication (ADR-014) : mot de passe OU code TOTP, jamais
   // mis en cache côté client — chaque appel doit re-fournir l'un des deux.
+  // skipAuthRetry : un 401 ici signifie "identifiants de step-up rejetés",
+  // pas "jeton d'accès expiré" — sans ce flag, l'intercepteur retenterait la
+  // requête après rafraîchissement du jeton, soumettant deux fois le même
+  // mot de passe/code invalide (double comptage dans le rate limit et le
+  // journal d'audit pour une seule erreur de saisie).
   revealFindingSecret: (id, { password = '', totpCode = '' } = {}) =>
-    apiClient.post(`/api/v1/threat-intelligence/findings/${id}/reveal/`, {
-      password,
-      totp_code: totpCode,
-    }),
+    apiClient.post(
+      `/api/v1/threat-intelligence/findings/${id}/reveal/`,
+      { password, totp_code: totpCode },
+      { skipAuthRetry: true }
+    ),
   listRevealAudit: () => apiClient.get('/api/v1/threat-intelligence/audit/reveals/'),
   listMonitoredAssets: () => apiClient.get('/api/v1/threat-intelligence/monitored-assets/'),
   registerMonitoredAsset: (assetId) =>

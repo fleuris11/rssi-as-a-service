@@ -1492,9 +1492,46 @@ privilégié, ré-authentifié et tracé, sans jamais persister le secret en cla
   17 dédiés à la révélation) et la compilation/lint frontend l'ont été. À refaire dès que
   l'environnement Docker est disponible.
 
+### Addendum (même jour) — vérification navigateur end-to-end après redémarrage de Docker Desktop
+
+L'utilisateur a redémarré Docker Desktop ; la vérification différée ci-dessus a été faite.
+
+- `docker compose up -d` a d'abord échoué partiellement : `web`/`beat` sont sortis en erreur
+  (`Exited (1)`) sur `django.db.utils.ProgrammingError: column "secret_seen" ... does not exist` —
+  une course entre les trois entrypoints (`web`/`worker`/`beat`) exécutant chacun `migrate` au
+  démarrage : l'un des trois a appliqué la migration 0002 avec succès (schéma vérifié ensuite par
+  `psql \d` : `has_secret`/`secret_encrypted`/`secretrevealaudit` présents, `secret_seen` absent),
+  les deux autres ont couru dessus une fraction de seconde trop tard et ont crashé sur une colonne
+  déjà supprimée par le premier. Résolu en relançant simplement `web`/`beat` (migration déjà
+  appliquée, donc no-op au second passage) — pas un bug du code, un artefact de multiples
+  entrypoints Docker migrant la même base concurremment sans verrou applicatif, déjà latent avant
+  cette session (accepté tel quel, hors périmètre de cette phase).
+- `BREACH_SECRET_ENCRYPTION_KEY` manquait dans le `backend/.env` réel de développement (seul le
+  placeholder de `.env.example` avait été ajouté) — généré et ajouté, `web`/`worker`/`beat`
+  redémarrés pour le charger.
+- Suite Playwright ad hoc (flow complet : inscription, déclaration d'actif, injection d'une fuite
+  simulée via `manage.py simulate_breach_finding`, révélation avec mauvais mot de passe puis bon
+  mot de passe, journal des révélations côté tenant, passage en admin plateforme via `is_staff` et
+  vérification du journal agrégé) — **un vrai bug trouvé et corrigé** :
+  l'intercepteur Axios générique (`apiClient.interceptors.response.use`, `frontend/src/api/
+  client.js`) retente automatiquement toute requête en 401 après rafraîchissement du jeton d'accès
+  — pensé pour le cas « jeton expiré », jamais auparavant confronté à un 401 métier sur un endpoint
+  déjà authentifié. Le step-up de révélation renvoie précisément ce cas (mauvais mot de passe/code
+  → 401), ce que l'intercepteur interprétait à tort comme un jeton expiré : il rafraîchissait le
+  jeton (qui n'avait pourtant rien d'invalide) et **resoumettait silencieusement la même requête
+  une seconde fois** — un seul clic utilisateur produisait deux tentatives réelles côté serveur,
+  visibles en double dans `SecretRevealAudit` et comptant double contre le rate limit dédié
+  (5/min). Trouvé uniquement grâce à la vérification navigateur réelle (invisible en pytest, qui
+  n'exerce jamais l'intercepteur HTTP du frontend). Corrigé par un flag `skipAuthRetry` sur la
+  requête de révélation (`endpoints.js`) que l'intercepteur respecte désormais — vérifié après
+  correctif : un clic = un seul appel réseau, une seule ligne d'audit.
+- Suite verte confirmée après redémarrage propre : 501 tests backend (hors les 3 WeasyPrint/
+  Windows pré-existants), lint frontend propre, et le scénario Playwright ci-dessus rejoué au vert
+  après le correctif (captures d'écran : carte de fuite avec bouton « Révéler », modale de
+  ré-authentification, secret affiché en clair avec compte à rebours et copie, journal des
+  révélations côté tenant, journal agrégé côté admin plateforme — tous conformes au design attendu).
+
 ### Reste à faire (sessions suivantes)
-- **Vérification navigateur end-to-end** du flux de révélation (bloquée cette session par
-  l'indisponibilité de Docker Desktop, voir ci-dessus).
 - **Suite Vitest** : CLAUDE.md prévoit des tests de composants frontend critiques, mais aucune suite
   Vitest n'existe encore dans ce projet (ni dépendances, ni config) — `RevealSecretModal.jsx` reste
   donc non couvert par des tests unitaires frontend, comme tout le reste du frontend à ce stade.
