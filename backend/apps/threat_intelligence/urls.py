@@ -3,10 +3,12 @@ from django.urls import path
 from .views import (
     BreachFindingDetailView,
     BreachFindingListView,
+    BreachFindingRevealView,
     BreachScanJobDetailView,
     BreachScanTriggerView,
     MonitoredAssetDetailView,
     MonitoredAssetListCreateView,
+    SecretRevealAuditListView,
     ThreatIntelligenceAdminStatusView,
     ThreatIntelligenceStatusView,
 )
@@ -17,6 +19,14 @@ urlpatterns = [
         "findings/<int:finding_id>/",
         BreachFindingDetailView.as_view(),
         name="breach-finding-detail",
+    ),
+    path(
+        "findings/<int:finding_id>/reveal/",
+        BreachFindingRevealView.as_view(),
+        name="breach-finding-reveal",
+    ),
+    path(
+        "audit/reveals/", SecretRevealAuditListView.as_view(), name="breach-reveal-audit-list"
     ),
     path("monitored-assets/", MonitoredAssetListCreateView.as_view(), name="monitored-asset-list"),
     path(

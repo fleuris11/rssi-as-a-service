@@ -11,11 +11,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.monitoring import services as monitoring_services
-from apps.tenants.permissions import IsTenantMember, IsTenantMemberReadOnlyForReader
+from apps.tenants.models import Membership
+from apps.tenants.permissions import IsTenantAdmin, IsTenantMember, IsTenantMemberReadOnlyForReader
 
 from . import quota as quota_module
 from . import services
-from .models import BreachIntelligenceUsage
+from .models import BreachIntelligenceUsage, SecretRevealAudit
+from .reveal_throttle import RevealIPRateThrottle, RevealUserRateThrottle
 from .serializers import (
     BreachFindingSerializer,
     BreachFindingStatusUpdateSerializer,
@@ -24,11 +26,24 @@ from .serializers import (
     BreachScanTriggerSerializer,
     MonitoredAssetCreateSerializer,
     MonitoredAssetSerializer,
+    SecretRevealAuditAdminSerializer,
+    SecretRevealAuditSerializer,
+    SecretRevealRequestSerializer,
 )
 from .tasks import run_breach_scan_task
 from .webhook_auth import is_valid_basic_auth
 
 logger = logging.getLogger(__name__)
+
+
+def _client_ip(request) -> str:
+    # Same trust model as apps.accounts.views._client_ip: the only path to
+    # this app in production is behind Caddy, which sets X-Forwarded-For —
+    # never trust this header on a directly internet-facing process.
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "") or ""
 
 
 class BreachFindingListView(generics.ListAPIView):
@@ -60,6 +75,116 @@ class BreachFindingDetailView(APIView):
             finding, status=serializer.validated_data["status"], user=request.user
         )
         return Response(BreachFindingSerializer(finding).data)
+
+
+class BreachFindingRevealView(APIView):
+    """POST /api/v1/threat-intelligence/findings/{id}/reveal/ (ADR-014, mise
+    à jour) : déchiffre en mémoire le secret d'un finding et le renvoie une
+    fois, jamais mis en cache/persisté à nouveau. Conditions cumulatives :
+    (a) rôle admin du tenant OU utilisateur plateforme (is_staff) déjà membre
+    de ce tenant — ``request.tenant``/``request.membership`` ne se résolvent
+    que pour un tenant dont l'utilisateur est réellement membre (voir
+    ``TenantScopingMiddleware``), donc même le bypass "admin plateforme" ne
+    permet pas d'atteindre un tenant hors de sa propre appartenance (pas de
+    mécanisme d'emprunt d'identité inter-tenant dans cette plateforme — un
+    admin plateforme sans aucune adhésion ne peut révéler aucun finding) ;
+    (b) ré-authentification fraîche (mot de passe ou code TOTP, vérifiée à
+    chaque appel) ; (c) tenant-scoping strict (``services.get_finding``
+    filtre déjà sur ``request.tenant``). La permission de rôle est vérifiée
+    manuellement (pas via ``permission_classes``) pour que CHAQUE refus —
+    y compris "rôle insuffisant" — soit tracé dans ``SecretRevealAudit``,
+    ce que le court-circuit habituel de DRF sur un ``has_permission`` figé
+    ne permettrait pas."""
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
+    throttle_classes = [RevealUserRateThrottle, RevealIPRateThrottle]
+
+    def post(self, request, finding_id):
+        ip_address = _client_ip(request)
+        user_agent = request.META.get("HTTP_USER_AGENT", "")
+
+        def _deny(*, denial_reason, finding=None, http_status, detail):
+            services.record_reveal_attempt(
+                tenant=request.tenant,
+                finding=finding,
+                user=request.user,
+                success=False,
+                denial_reason=denial_reason,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            return Response({"detail": detail}, status=http_status)
+
+        is_admin_or_platform_staff = (
+            request.membership.role == Membership.Role.ADMIN or bool(request.user.is_staff)
+        )
+        if not is_admin_or_platform_staff:
+            return _deny(
+                denial_reason=SecretRevealAudit.DenialReason.ROLE,
+                http_status=status.HTTP_403_FORBIDDEN,
+                detail="Cette action nécessite le rôle administrateur sur l'entreprise "
+                "(ou un accès administrateur plateforme).",
+            )
+
+        finding = services.get_finding(tenant=request.tenant, finding_id=finding_id)
+        if finding is None:
+            return _deny(
+                denial_reason=SecretRevealAudit.DenialReason.NOT_FOUND,
+                http_status=status.HTTP_404_NOT_FOUND,
+                detail="Fuite introuvable.",
+            )
+
+        serializer = SecretRevealRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        step_up_ok = services.verify_step_up(
+            user=request.user,
+            password=serializer.validated_data["password"],
+            totp_code=serializer.validated_data["totp_code"],
+        )
+        if not step_up_ok:
+            return _deny(
+                denial_reason=SecretRevealAudit.DenialReason.STEP_UP,
+                finding=finding,
+                http_status=status.HTTP_401_UNAUTHORIZED,
+                detail="Ré-authentification invalide (mot de passe ou code incorrect).",
+            )
+
+        if not finding.has_secret or not bytes(finding.secret_encrypted):
+            return _deny(
+                denial_reason=SecretRevealAudit.DenialReason.NO_SECRET,
+                finding=finding,
+                http_status=status.HTTP_404_NOT_FOUND,
+                detail="Aucun secret chiffré n'est disponible pour cette fuite.",
+            )
+
+        secret = services.decrypt_secret(bytes(finding.secret_encrypted))
+        services.record_reveal_attempt(
+            tenant=request.tenant,
+            finding=finding,
+            user=request.user,
+            success=True,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
+        response = Response({"finding_id": finding.id, "secret": secret})
+        # Jamais mis en cache — ni par un proxy intermédiaire, ni par le
+        # navigateur (ADR-014 : la révélation est ponctuelle, à usage unique
+        # côté affichage).
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+class SecretRevealAuditListView(generics.ListAPIView):
+    """Journal des révélations du tenant courant — consultable par l'admin
+    du tenant (ADR-014, mise à jour) ; jamais le secret lui-même."""
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantAdmin]
+    serializer_class = SecretRevealAuditSerializer
+
+    def get_queryset(self):
+        return services.list_reveal_audits(self.request.tenant)
 
 
 class MonitoredAssetListCreateView(generics.ListAPIView):
@@ -180,11 +305,20 @@ class ThreatIntelligenceAdminStatusView(APIView):
         recent_usage = BreachIntelligenceUsage.all_objects.select_related("tenant").order_by(
             "-created_at"
         )[:50]
+        recent_reveal_audits = services.list_reveal_audits_all_tenants(limit=50)
         return Response(
             {
                 "quota": quota_summary,
                 "pool": pool,
                 "recent_usage": BreachIntelligenceUsageSerializer(recent_usage, many=True).data,
+                # ADR-014 (mise à jour) : agrégat suffisamment non-sensible
+                # (qui/quand/accordé ou refusé, jamais le secret ni le
+                # détail du finding) pour être plateforme-entière, à la
+                # différence d'un BreachFinding complet — voir docstring de
+                # cette vue.
+                "recent_reveal_audits": SecretRevealAuditAdminSerializer(
+                    recent_reveal_audits, many=True
+                ).data,
             }
         )
 

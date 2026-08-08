@@ -1,6 +1,12 @@
 from rest_framework import serializers
 
-from .models import BreachFinding, BreachIntelligenceUsage, BreachScanJob, MonitoredAsset
+from .models import (
+    BreachFinding,
+    BreachIntelligenceUsage,
+    BreachScanJob,
+    MonitoredAsset,
+    SecretRevealAudit,
+)
 
 
 class BreachFindingSerializer(serializers.ModelSerializer):
@@ -20,14 +26,16 @@ class BreachFindingSerializer(serializers.ModelSerializer):
             "identifier_plain",
             "identifier_masked",
             "secret_masked",
-            "secret_seen",
+            "has_secret",
             "breach_date",
             "detected_at",
             "treated_at",
         ]
-        # raw_data est délibérément exclu (ADR-014 : minimisation — le
-        # dirigeant a besoin de savoir *quoi* et *où*, pas du détail brut,
-        # même déjà masqué, de la charge fournisseur).
+        # raw_data et secret_encrypted sont délibérément exclus (ADR-014 :
+        # minimisation — le dirigeant a besoin de savoir *quoi* et *où*, pas
+        # du détail brut, même déjà masqué, de la charge fournisseur ; le
+        # secret chiffré ne sort jamais que via l'endpoint de révélation
+        # dédié, ré-authentifié).
         read_only_fields = fields
 
 
@@ -35,6 +43,56 @@ class BreachFindingStatusUpdateSerializer(serializers.Serializer):
     status = serializers.ChoiceField(
         choices=[BreachFinding.Status.TREATED, BreachFinding.Status.IGNORED]
     )
+
+
+class SecretRevealRequestSerializer(serializers.Serializer):
+    """Step-up re-authentication payload (ADR-014, mise à jour) : le mot de
+    passe du compte OU un code TOTP à 6 chiffres, jamais les deux requis —
+    au moins l'un des deux, fourni à CHAQUE révélation (pas de session
+    élevée mise en cache)."""
+
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
+    totp_code = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        if not attrs.get("password") and not attrs.get("totp_code"):
+            raise serializers.ValidationError(
+                "Fournissez votre mot de passe ou un code de vérification à 6 chiffres."
+            )
+        return attrs
+
+
+class SecretRevealAuditSerializer(serializers.ModelSerializer):
+    """Tenant admin's own view of the reveal log — never the secret."""
+
+    finding_id = serializers.IntegerField(source="finding.id", read_only=True, default=None)
+    user_email = serializers.CharField(source="user.email", read_only=True, default="")
+
+    class Meta:
+        model = SecretRevealAudit
+        fields = [
+            "id",
+            "finding_id",
+            "user_email",
+            "success",
+            "denial_reason",
+            "ip_address",
+            "user_agent",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class SecretRevealAuditAdminSerializer(SecretRevealAuditSerializer):
+    """Platform back-office variant — adds which tenant, same aggregate-only
+    spirit as ``BreachIntelligenceUsageSerializer`` (no finding detail beyond
+    its id, no secret)."""
+
+    tenant_name = serializers.CharField(source="tenant.name", read_only=True)
+
+    class Meta(SecretRevealAuditSerializer.Meta):
+        fields = [*SecretRevealAuditSerializer.Meta.fields, "tenant_name"]
+        read_only_fields = fields
 
 
 class MonitoredAssetSerializer(serializers.ModelSerializer):
