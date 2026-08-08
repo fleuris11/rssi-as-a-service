@@ -68,6 +68,26 @@ insuffisant (lecteur) effectue une action réservée aux administrateurs/contrib
   (référence d'actif) non reconnu est journalisée et ignorée, jamais associée au mauvais tenant par
   défaut (`test_services.py::TestWebhookIngestion::test_ingest_ignores_unmatched_asset_ref`).
 
+**Mesures ajoutées lors de la mise à jour ADR-014 (chiffrement réversible + révélation)**
+- `POST /api/v1/threat-intelligence/findings/{id}/reveal/` vérifie le rôle **manuellement** dans la
+  vue (pas via `permission_classes`) précisément pour que chaque refus — y compris « rôle
+  insuffisant » — soit tracé dans `SecretRevealAudit` ; le court-circuit habituel de DRF sur un
+  `has_permission` figé n'aurait pas permis d'auditer ce cas-là. Rôle requis : administrateur du
+  tenant, ou utilisateur plateforme (`is_staff`) — mais uniquement pour un tenant dont ce dernier est
+  déjà membre (aucune adhésion => `request.tenant` ne se résout pas => 403, avant même d'atteindre le
+  code de la vue). Un admin plateforme sans aucune adhésion à un tenant ne peut donc révéler aucun
+  finding de ce tenant via cet endpoint — pas de mécanisme d'emprunt d'identité inter-tenant dans
+  cette plateforme, une limite de portée assumée (voir ADR-014, section « Mise à jour »).
+- `services.get_finding` reste filtré par `request.tenant` comme le reste du module : un admin ne
+  peut réussir la révélation que sur un finding de son propre tenant, même en connaissant l'id
+  numérique d'un finding d'un autre tenant — testé explicitement
+  (`test_reveal.py::TestBreachFindingRevealAPI::test_admin_cannot_reveal_another_tenants_finding`).
+- Le journal d'audit des révélations (`GET /api/v1/threat-intelligence/audit/reveals/`) est gardé
+  par `IsTenantAdmin` (rôle admin strict, pas de bypass `is_staff`) côté tenant ; la vue plateforme
+  (`recent_reveal_audits` sur `ThreatIntelligenceAdminStatusView`) reste un agrégat (qui/quand/
+  accordé ou refusé, jamais le secret ni le détail complet du finding) — même principe que le reste
+  du back-office plateforme (bullet précédent).
+
 **Risques résiduels acceptés**
 - La résolution du tenant dépend d'un en-tête HTTP (`X-Tenant-Id`) plutôt que d'être encodée dans le
   JWT lui-même. C'est un choix délibéré (un utilisateur multi-tenant change de contexte sans se
@@ -121,27 +141,37 @@ chiffrement réutilisées entre usages sans rapport.
   volume de credentials 2FA/mappings pseudonymisés augmente significativement.
 
 **Mesures ajoutées en Phase 7 (Breachsense/CTI) — traitement le plus sensible de la plateforme à date**
-- Contrairement aux secrets déjà couverts ci-dessus (mots de passe/TOTP appartenant à la plateforme
-  elle-même, chiffrables), les secrets renvoyés par Breachsense (mots de passe, tokens, cookies de
-  session) appartiennent à des tiers dont le compte a fuité — la décision (ADR-014) n'est **pas** de
-  les chiffrer au repos comme un secret applicatif, mais de ne **jamais** les persister du tout :
-  masquage récursif par nom de champ dès la normalisation
-  (`threat_intelligence.providers.breachsense.normalizer.mask_payload`), avant toute écriture en base.
-  Seule une forme tronquée non réversible (`secret_masked`, ex. `••••••23`) et un booléen
-  (`secret_seen`) sont conservés.
+- Les secrets renvoyés par Breachsense (mots de passe, tokens, cookies de session) appartiennent à
+  des tiers dont le compte a fuité, jamais à la plateforme elle-même. La décision initiale (ADR-014)
+  était de ne **jamais** les persister du tout (masquage récursif, remplacement immédiat en mémoire).
+  Une **mise à jour d'ADR-014** (voir ce document) revient sur ce point précis, pour un besoin métier
+  identifié après coup (le dirigeant a besoin de pouvoir retrouver la valeur exacte d'un mot de passe
+  compromis, pas seulement savoir qu'il a fuité) : le secret représentatif est désormais **chiffré au
+  repos** (`BreachFinding.secret_encrypted`, Fernet, clé dédiée `BREACH_SECRET_ENCRYPTION_KEY` —
+  même principe de séparation des clés que `TOTP_ENCRYPTION_KEY`/`AI_PSEUDONYMIZATION_KEY`), et
+  déchiffrable uniquement via un endpoint de révélation privilégié, ré-authentifié et tracé (voir
+  A01 et A07 ci-dessous pour le détail des contrôles). Le masquage récursif à la normalisation
+  (`threat_intelligence.providers.breachsense.normalizer.mask_payload`) reste inchangé pour tout le
+  reste du payload (`raw_data` demeure le payload masqué, jamais le brut) — seule l'irréversibilité
+  du secret représentatif (`secret_masked`/`has_secret`, ex-`secret_seen`) est levée.
   - **Test de propriété dédié** (pas une simple assertion unitaire) :
     `apps/threat_intelligence/tests/test_no_secret_persistence.py` génère des secrets connus pour
     chaque endpoint porteur de secret du palier Essentials, exécute le pipeline d'ingestion réel, puis
     interroge la ligne créée par SQL brut (pas l'ORM, pour ne pas pouvoir être trompé par une
-    propriété Python qui ne reflèterait pas ce qui est réellement sur disque) et vérifie l'absence
-    totale du secret d'origine. Ce test a intercepté une construction de payload de test erronée
-    pendant l'écriture de la suite (voir `docs/journal.md`), confirmant qu'il exerce réellement
+    propriété Python qui ne reflèterait pas ce qui est réellement sur disque) — étendu pour couvrir
+    aussi la colonne `secret_encrypted` (encodée en hex) : la propriété vérifiée est désormais que le
+    texte en clair n'apparaît dans **aucune** colonne, y compris la colonne chiffrée, garanti par les
+    propriétés de Fernet (chiffrement authentifié, sortie indistinguable d'aléatoire) plutôt que par
+    l'absence de la donnée. Ce test a intercepté une construction de payload de test erronée pendant
+    l'écriture de la suite initiale (voir `docs/journal.md`), confirmant qu'il exerce réellement
     l'invariant et ne passe pas trivialement.
 - Aucun secret Breachsense ne transite par un `logger.*` (revue explicite de
-  `threat_intelligence/services.py`, `tasks.py`, `providers/breachsense/*.py` — seuls des identifiants
-  internes, endpoints, et compteurs sont journalisés) ni vers Sentry (absent du projet — voir A09) :
-  le scrubbing est donc structurel (la donnée n'existe nulle part en clair après normalisation),
-  pas un filtre appliqué après coup sur un flux qui la contiendrait encore.
+  `threat_intelligence/services.py`, `views.py`, `tasks.py`, `providers/breachsense/*.py` — seuls des
+  identifiants internes, endpoints, et compteurs sont journalisés) ni vers Sentry (absent du projet
+  — voir A09) : le scrubbing est donc structurel (la donnée n'existe en clair que dans la réponse
+  HTTP de révélation elle-même, jamais dans un flux de journalisation), pas un filtre appliqué après
+  coup sur un flux qui la contiendrait encore. La réponse de révélation porte `Cache-Control:
+  no-store` — ni un proxy intermédiaire ni le navigateur ne doivent pouvoir la rejouer.
 
 ---
 
@@ -360,11 +390,25 @@ révocables, énumération de comptes.
 - L'intégralité de cette catégorie (2FA, verrouillage progressif, rate limiting, non-énumération) a
   été introduite en Phase 5 — le socle Phase 1 ne fournissait que JWT + RBAC de base.
 
+**Mesures ajoutées lors de la mise à jour ADR-014 (chiffrement réversible + révélation)**
+- **Step-up authentication** sur `POST /api/v1/threat-intelligence/findings/{id}/reveal/` :
+  réutilise directement les primitives 2FA déjà en place (`accounts_services.get_confirmed_credential`/
+  `verify_totp_code`) et `user.check_password` — mot de passe du compte OU code TOTP, fourni à
+  **chaque** appel, jamais une session/élévation mise en cache (contrairement à un jeton d'accès
+  qui reste valide 15 minutes sans re-preuve). Un jeton d'accès volé seul ne suffit donc pas à
+  révéler un secret — il faut aussi le mot de passe ou le second facteur.
+- Rate limiting dédié, plus strict que le rate limiting générique par tenant : `5/min` par
+  utilisateur et `10/min` par IP (`apps/threat_intelligence/reveal_throttle.py`), pour empêcher une
+  extraction massive automatisée même via un compte admin compromis (testé,
+  `test_reveal.py::TestBreachFindingRevealAPI::test_reveal_rate_limited_per_user`).
+
 **Risques résiduels acceptés**
 - La 2FA est optionnelle par tenant/utilisateur (US-1.3 ne l'impose pas globalement) — un compte qui
   ne l'active pas reste protégé uniquement par mot de passe + verrouillage progressif. Une politique
   d'entreprise imposant la 2FA à tous les membres d'un tenant est hors périmètre actuel (voir
-  ADR-009).
+  ADR-009). Cela signifie qu'un tenant sans 2FA activée ne dispose que du mot de passe comme facteur
+  de step-up pour la révélation de secret — moins robuste que le TOTP, mais toujours une preuve
+  fraîche distincte du jeton d'accès.
 - Un access token JWT compromis reste valide jusqu'à 15 minutes sans révocation immédiate côté
   serveur (limite structurelle des JWT, mitigée par la courte durée de vie).
 
@@ -530,9 +574,17 @@ demandé explicitement pour cette phase en plus des ajouts dispersés dans le co
    `build_assistant_context`/`build_weather_context` → pipeline de pseudonymisation existant (ADR-005)
    → API Claude. Aucun nouveau point d'appel IA (réutilise Haiku déjà routé pour l'assistant/la
    météo — sobriété, cadrage §8).
-4. **Sortie vers le tenant (frontend)** : `BreachFindingSerializer` exclut explicitement `raw_data` —
-   le tenant voit l'identifiant masqué/en clair (selon qu'il s'agit ou non de son propre email pro),
-   le type de fuite, la gravité, et un indicateur `secret_seen` — jamais `raw_data`.
+4. **Sortie vers le tenant (frontend)** : `BreachFindingSerializer` exclut explicitement `raw_data`
+   **et** `secret_encrypted` — le tenant voit l'identifiant masqué/en clair (selon qu'il s'agit ou
+   non de son propre email pro), le type de fuite, la gravité, et un indicateur `has_secret` (ex-
+   `secret_seen`) — jamais `raw_data`, jamais le secret chiffré.
+5. **Révélation privilégiée (mise à jour ADR-014)** : `POST /findings/{id}/reveal/` → vérification
+   du rôle (admin tenant ou plateforme) → ré-authentification fraîche (mot de passe ou TOTP) →
+   `services.decrypt_secret` (déchiffrement en mémoire uniquement) → réponse HTTP unique,
+   `Cache-Control: no-store`, jamais re-persistée. Chaque tentative — accordée ou refusée — est
+   journalisée dans `SecretRevealAudit` (voir A01/A07 ci-dessus pour le détail des contrôles
+   cumulatifs). Aucun nouveau flux sortant (pas d'appel réseau, pas d'appel IA) : ce flux est
+   strictement interne (base de données ↔ mémoire du process web ↔ réponse HTTP au tenant).
 
 ### RGPD
 
@@ -543,17 +595,35 @@ demandé explicitement pour cette phase en plus des ajouts dispersés dans le co
   tenant a explicitement déclaré l'actif et sollicité sa surveillance) ; intérêt légitime strictement
   minimisé (identifiant masqué uniquement, jamais conservé en clair) pour les données concernant des
   tiers non-utilisateurs de la plateforme — voir ADR-014 §4/§6 pour le détail de l'arbitrage.
-- **Non-conservation des secrets** : absolue, par construction (ADR-014, voir A02 ci-dessus) — aucune
-  fonctionnalité de la plateforme ne permet d'afficher un secret en clair à qui que ce soit.
+- **Conservation chiffrée, révélation exceptionnelle** (mise à jour ADR-014) : le secret
+  représentatif d'un finding est désormais conservé chiffré (`secret_encrypted`, Fernet, clé hors
+  base) plutôt que jamais persisté — un revirement assumé sur le point « non-conservation absolue »
+  de la version initiale de cet ADR, pour un besoin métier légitime (le dirigeant a besoin de
+  pouvoir retrouver la valeur exacte d'un mot de passe compromis, pas seulement savoir qu'il a
+  fuité). La révélation reste l'exception, pas la norme : ré-authentifiée à chaque accès, tracée
+  intégralement (`SecretRevealAudit`, jamais le secret lui-même), rate-limitée. Voir ADR-014,
+  section « Mise à jour », pour l'arbitrage bénéfice/risque complet.
 - **Durée de rétention** : alignée sur la politique déjà en vigueur pour les résultats de check bruts
   (cadrage §7, 90 jours) pour les `BreachFinding` non traités ; un finding marqué traité/ignoré est
-  conservé à des fins d'audit de conformité, au même titre qu'une action du plan d'action. La **purge
-  automatique planifiée** des findings non traités de plus de 90 jours n'est **pas** implémentée dans
-  cette phase (reste-à-faire explicite, voir `docs/journal.md`) — livraison du flux d'ingestion et de
-  l'affichage d'abord, purge planifiée ensuite.
+  conservé à des fins d'audit de conformité, au même titre qu'une action du plan d'action. Le secret
+  chiffré suit exactement le même cycle de vie que le finding qui le porte (pas de durée de
+  conservation distincte ni de champ dédié) — sa purge est donc conditionnée à la même **purge
+  automatique planifiée** des findings non traités de plus de 90 jours, qui n'est **pas**
+  implémentée dans cette phase (reste-à-faire explicite, voir `docs/journal.md`) — livraison du flux
+  d'ingestion, de l'affichage et de la révélation d'abord, purge planifiée ensuite. Le journal
+  `SecretRevealAudit` (traçabilité des accès, pas le secret) n'a pas de politique de purge propre
+  non plus à ce stade — même reste-à-faire.
+- **Minimisation** : seul le secret représentatif (celui qui produisait déjà `secret_masked`) est
+  chiffré et conservé — pas l'intégralité des champs sensibles d'un payload multi-secrets (ex.
+  `/stealer` qui porte à la fois un mot de passe et des données financières) ; le reste du payload
+  demeure masqué de façon non réversible dans `raw_data`, exactement comme avant cette mise à jour.
+- **Traçabilité des accès** : chaque tentative de révélation (accordée ou refusée) est journalisée
+  avec qui, quel finding, quel tenant, horodatage, IP, user-agent — jamais le secret — et consultable
+  par l'admin du tenant (ses propres tentatives) et par l'admin plateforme (vue agrégée).
 - **Transparence** : le tenant voit, sans appel supplémentaire, l'état du quota et le cooldown avant
   de déclencher un scan (`GET /api/v1/threat-intelligence/status/`), dans le même esprit de
-  transparence que l'encart « données transmises » de la Phase 4 pour l'IA.
+  transparence que l'encart « données transmises » de la Phase 4 pour l'IA. Un bandeau dans la
+  modale de révélation (frontend) rappelle explicitement que l'accès est tracé.
 
 ---
 
@@ -571,4 +641,4 @@ demandé explicitement pour cette phase en plus des ajouts dispersés dans le co
 | A08 Software/Data Integrity | Couvert — CI stricte, migrations expand/contract, tâches idempotentes, E2E réels ajoutés cette session |
 | A09 Logging/Monitoring | **Gap identifié** — pas de `LOGGING` dict ni d'outil de suivi d'erreurs ; recommandé pour Phase 6 (plus critique désormais avec le CTI) |
 | A10 SSRF | Couvert — garde-fou dédié, testé, limite TOCTOU documentée et acceptée |
-| **Phase 7 — Breachsense/CTI** | Couvert — non-stockage des secrets par conception et testé par propriété (ADR-014), étanchéité tenant testée sur tous les nouveaux endpoints, webhook en Basic Auth temps constant + idempotent, throttle/quota anti-429 et anti-dépassement de licence, aucune nouvelle surface SSRF |
+| **Phase 7 — Breachsense/CTI** | Couvert — chiffrement réversible des secrets (Fernet, clé dédiée) testé par propriété (ADR-014 mise à jour), révélation ré-authentifiée/tracée/rate-limitée, étanchéité tenant testée sur tous les endpoints (dont la révélation), webhook en Basic Auth temps constant + idempotent, throttle/quota anti-429 et anti-dépassement de licence, aucune nouvelle surface SSRF |

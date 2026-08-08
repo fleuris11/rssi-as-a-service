@@ -116,3 +116,96 @@ identifier *lequel* compte est concerné parmi plusieurs, sans exposer le secret
   strictement scopé à ce tenant.
 - Un correctif de sécurité futur qui ajouterait un champ à `BreachFinding` doit repasser par le
   test de propriété (point 3) avant merge — CI bloquante si un secret fuite dans une colonne.
+
+## Mise à jour (phase ultérieure) — chiffrement réversible et révélation privilégiée
+
+### Contexte du revirement
+
+La Décision d'origine (point « Conséquences » ci-dessus) posait une contrainte volontairement
+absolue : jamais aucun affichage en clair, sans exception. À l'usage, le dirigeant d'un tenant a
+un besoin métier légitime que cette contrainte ne couvre pas : **retrouver la valeur exacte d'un
+mot de passe compromis** (pas seulement savoir qu'il a fuité) — par exemple pour vérifier s'il est
+réutilisé ailleurs (gestionnaire de mots de passe, autre service) avant de le faire changer partout,
+ou pour le communiquer à un prestataire IT chargé de la remédiation. L'option A de la section
+« Options étudiées » (chiffrement réversible) avait été rejetée par prudence ; ce point du
+cadrage est révisé ici, pas silencieusement contourné — d'où cette mise à jour explicite plutôt
+qu'un nouvel ADR séparé (même sujet, même modèle, décision qui en amende directement une
+précédente).
+
+### Décision (remplace le point 1 « non-persistance stricte » et le 1er item de « Conséquences »)
+
+1. **Chiffrement réversible au lieu de la non-persistance** : le secret représentatif détecté par
+   `normalizer.mask_payload` (la même valeur qui produisait déjà `secret_masked`) est désormais
+   **conservé chiffré** (`BreachFinding.secret_encrypted`, `BinaryField`, Fernet) plutôt que
+   simplement remplacé en mémoire. Clé dédiée `BREACH_SECRET_ENCRYPTION_KEY` (variable d'env,
+   jamais commitée), distincte de `TOTP_ENCRYPTION_KEY` et `AI_PSEUDONYMIZATION_KEY` — même
+   principe de séparation des clés Fernet que le reste de la plateforme (compromettre l'une ne
+   doit pas compromettre les autres). `secret_masked` (affichage par défaut) et le nouveau booléen
+   `has_secret` (remplace `secret_seen` — voir « Migration » ci-dessous) sont inchangés dans leur
+   rôle : c'est uniquement l'irréversibilité qui est levée, pas le masquage par défaut.
+2. Le point 2 (masquage à la normalisation) et le point 3 (test de propriété) restent en vigueur
+   **tels quels** pour tout ce qui n'est pas le secret représentatif chiffré : le payload persisté
+   dans `raw_data` reste le payload masqué, jamais le brut ; le test de propriété est étendu (pas
+   remplacé) pour couvrir aussi `secret_encrypted` — la propriété vérifiée devient « le texte en
+   clair du secret n'apparaît dans aucune colonne, y compris la colonne chiffrée », ce qui est
+   garanti par les propriétés de Fernet (chiffrement authentifié, sortie indistinguable de
+   aléatoire) plutôt que par l'absence de la donnée.
+3. **Migration de données** : les `BreachFinding` déjà en base au moment de cette mise à jour n'ont,
+   par construction, aucun secret chiffré disponible (ils n'ont jamais existé qu'à l'état masqué/
+   jeté) — `has_secret` vaut `False` pour ces lignes, **jamais** reporté depuis l'ancien
+   `secret_seen` (qui indiquait « un secret était présent dans la charge d'origine », pas « un
+   secret chiffré est disponible » — les deux ont cessé de coïncider avec ce changement). Une
+   tentative de révélation sur un finding antérieur à cette mise à jour échoue proprement (404,
+   « aucun secret chiffré disponible »), tracée comme tout autre refus.
+
+### Révélation : conditions cumulatives et mesures compensatoires
+
+Le risque explicitement accepté par ce revirement — concentrer des secrets tiers déchiffrables
+dans la base, plutôt que de ne jamais les y faire transiter — est compensé par un accès aussi
+étroit et tracé que possible, pas par la confiance dans le seul chiffrement au repos :
+
+1. **Rôle** : administrateur du tenant concerné (`Membership.Role.ADMIN`), ou utilisateur
+   plateforme (`is_staff`) — mais uniquement pour un tenant dont ce dernier est **déjà membre**
+   (aucun mécanisme d'emprunt d'identité inter-tenant n'existe dans cette plateforme ;
+   `request.tenant`/`request.membership` ne se résolvent que via une adhésion réelle —
+   `TenantScopingMiddleware`). Un administrateur plateforme sans aucune adhésion à un tenant ne
+   peut donc révéler aucun de ses findings via cet endpoint — une limite de portée assumée plutôt
+   qu'un mécanisme de bascule de tenant construit spécialement pour ce cas, hors périmètre de
+   cette mise à jour.
+2. **Ré-authentification fraîche (step-up)** : mot de passe du compte OU code TOTP à 6 chiffres,
+   fourni à **chaque** appel de révélation — jamais une session ou un jeton d'élévation mis en
+   cache côté serveur. Un jeton d'accès volé seul (sans le mot de passe ni le second facteur) ne
+   suffit donc pas à révéler un secret.
+3. **Étanchéité tenant stricte** : `services.get_finding` reste filtré par `request.tenant`,
+   comme tout le reste de ce module — un admin ne peut réussir la révélation que sur un finding de
+   son propre tenant, testé explicitement (`test_admin_cannot_reveal_another_tenants_finding`).
+4. **Traçabilité intégrale** : chaque tentative — accordée ou refusée, quelle qu'en soit la raison
+   (rôle insuffisant, ré-authentification invalide, finding hors périmètre, aucun secret
+   disponible) — est journalisée dans `SecretRevealAudit` (qui, quel finding, quel tenant,
+   horodatage, IP, user-agent), **jamais** le secret lui-même. Consultable par l'admin du tenant
+   (ses propres tentatives) et par l'admin plateforme (vue agrégée toutes entreprises).
+5. **Rate limiting strict** : throttle DRF dédié, par utilisateur (`5/min`) et par IP (`10/min`),
+   volontairement bien en-deçà d'un usage humain normal — limite l'extraction massive même via un
+   compte admin compromis (un attaquant qui changerait de compte reste bloqué par l'IP, un
+   attaquant multi-IP reste bloqué par le compte).
+6. **Non-mise en cache de la réponse** : `Cache-Control: no-store` sur la réponse de révélation —
+   ni un proxy intermédiaire ni le navigateur ne doivent pouvoir la rejouer.
+
+### Arbitrage risque / bénéfice
+
+- **Bénéfice** : un dirigeant peut désormais agir avec l'information complète (vérifier une
+  réutilisation de mot de passe, transmettre la valeur exacte à un prestataire de remédiation) —
+  un besoin réel qu'un simple indicateur « un secret a fuité » ne couvre pas.
+- **Risque accepté** : une base compromise expose désormais des secrets tiers potentiellement
+  déchiffrables (si la clé `BREACH_SECRET_ENCRYPTION_KEY`, hors base, l'est aussi). Mesure
+  compensatoire : la clé vit exclusivement en variable d'environnement, jamais en base ni dans le
+  dépôt — une compromission de la seule base de données ne suffit pas à déchiffrer.
+- **Risque accepté** : un compte admin compromis (identifiants **et** second facteur) pourrait
+  révéler des secrets. Mesures compensatoires : rate limiting strict, traçabilité intégrale
+  (détection a posteriori), ré-authentification fraîche à chaque révélation (le vol du seul jeton
+  d'accès JWT ne suffit pas).
+- Le point 1 des « Conséquences » d'origine (« aucune fonctionnalité ne permet d'afficher un
+  secret en clair ») est donc explicitement révisé par cette mise à jour ; le reste des
+  Conséquences (back-office plateforme limité aux agrégats — désormais complété par le journal de
+  révélations agrégé, cf. point 4 ci-dessus — et test de propriété obligatoire pour tout nouveau
+  champ) reste en vigueur.

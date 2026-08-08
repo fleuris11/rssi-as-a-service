@@ -1376,3 +1376,132 @@ du prompt de mission). Corrections apportées à
 **Reste à faire, inchangé** : un smoke test avec la licence réelle demeure la seule façon de
 confirmer que ce mapping — construit à partir des schémas fournis, pas d'un appel réel à l'API —
 correspond exactement aux réponses effectives de Breachsense.
+
+---
+
+## 2026-08-08 (suite) — Chiffrement réversible et révélation privilégiée des secrets de fuite
+
+### Contexte
+Session de suite, même jour : le dirigeant a un besoin métier légitime que le masquage définitif
+d'ADR-014 ne couvre pas — retrouver la valeur exacte d'un mot de passe compromis (pas seulement
+savoir qu'il a fuité), par exemple pour vérifier une réutilisation ailleurs avant de le faire
+changer partout. Mission : remplacer le masquage définitif par un chiffrement réversible à accès
+privilégié, ré-authentifié et tracé, sans jamais persister le secret en clair.
+
+### Réalisé
+
+**Modèle et migration**
+- `BreachFinding.secret_seen` retiré, remplacé par `has_secret` (même rôle d'indicateur) et
+  `secret_encrypted` (`BinaryField`, blob Fernet). Migration volontairement `RemoveField` +
+  `AddField`, jamais un `RenameField` : `has_secret` doit refléter « un secret chiffré est
+  réellement disponible », pas hériter de la valeur de l'ancien indicateur pour des findings déjà
+  en base qui, eux, n'ont jamais eu de secret conservé — les deux valeurs par défaut (`False`/`b""`)
+  s'appliquent donc à toutes les lignes existantes, sans script de migration de données dédié.
+- Nouveau modèle `SecretRevealAudit` (tenant-scopé) : qui, quel finding, quel tenant, horodatage,
+  IP, user-agent, succès/refus et raison du refus — jamais le secret.
+
+**Chiffrement**
+- Clé Fernet dédiée `BREACH_SECRET_ENCRYPTION_KEY` (variable d'env, jamais commitée), distincte de
+  `TOTP_ENCRYPTION_KEY` et `AI_PSEUDONYMIZATION_KEY` — même principe de séparation déjà en place
+  dans le projet. `threat_intelligence.services.encrypt_secret`/`decrypt_secret`, mêmes conventions
+  que `apps.accounts.services`/`apps.ai_assistant.services`.
+- `normalizer.mask_payload` retourne désormais aussi la valeur en clair du secret représentatif
+  (celui qui produisait déjà `secret_masked`) — jamais journalisée, poppée et chiffrée
+  immédiatement par `services.ingest_raw_findings` avant tout appel à `BreachFinding.objects.create`.
+
+**Endpoint de révélation** (`POST /api/v1/threat-intelligence/findings/{id}/reveal/`)
+- Conditions cumulatives : rôle admin du tenant (ou `is_staff` s'il est déjà membre du tenant — pas
+  de mécanisme d'emprunt d'identité inter-tenant dans cette plateforme, limite de portée assumée et
+  documentée dans ADR-014) ; ré-authentification fraîche à **chaque** appel (mot de passe ou code
+  TOTP, réutilise directement les primitives 2FA d'`apps.accounts.services`) ; étanchéité tenant
+  stricte (`services.get_finding` reste filtré par `request.tenant`).
+- Le contrôle de rôle est fait **manuellement** dans la vue plutôt que via `permission_classes`,
+  précisément pour que chaque refus (y compris « rôle insuffisant ») soit tracé dans
+  `SecretRevealAudit` — le court-circuit habituel de DRF sur un `has_permission` figé ne l'aurait
+  pas permis.
+- Rate limiting dédié et strict (`5/min` par utilisateur, `10/min` par IP), plus serré que le
+  rate limiting générique par tenant — anti-extraction-massive même via un compte admin compromis.
+  Réponse `Cache-Control: no-store`.
+- Journal consultable par l'admin du tenant (ses propres tentatives, `GET /audit/reveals/`, gardé
+  par `IsTenantAdmin` strict) et par l'admin plateforme (agrégat toutes entreprises, ajouté à
+  `ThreatIntelligenceAdminStatusView`).
+
+**Frontend**
+- `CompromisesPage.jsx` : bouton « Révéler le mot de passe » sur les findings `has_secret`, visible
+  aux admins de tenant et aux utilisateurs plateforme ; panneau « Journal des révélations » (rôle
+  admin strict, chargement à la demande).
+- `RevealSecretModal.jsx` (nouveau) : ré-authentification (mot de passe ou code TOTP) puis
+  affichage éphémère du secret (masqué automatiquement après 30s ou à la fermeture), copie
+  presse-papier, bandeau de traçabilité — état local uniquement, jamais dans le contexte global,
+  jamais persisté côté client.
+- `AdminBreachsensePage.jsx` : nouvelle table « Journal des révélations de secrets » (agrégat
+  toutes entreprises).
+
+**Documentation**
+- ADR-014 : nouvelle section « Mise à jour — chiffrement réversible et révélation privilégiée »
+  documentant le revirement assumé (l'option A, initialement rejetée, est reconsidérée avec des
+  mesures compensatoires que la version initiale de l'ADR n'avait pas anticipées), l'arbitrage
+  bénéfice/risque, et la portée exacte du bypass `is_staff`.
+- `docs/security_review.md` : A01 (contrôle de rôle manuel + traçabilité, étanchéité tenant sur la
+  révélation), A02 (chiffrement réversible remplace la non-persistance, test de propriété étendu à
+  `secret_encrypted`), A07 (step-up authentication, rate limiting dédié), section RGPD Phase 7
+  (conservation chiffrée assumée, traçabilité des accès, minimisation inchangée pour le reste du
+  payload), synthèse finale.
+
+### Décisions
+- `has_secret` remplace `secret_seen` (rename sémantique, pas juste cosmétique) : les deux notions
+  ont cessé de coïncider avec ce changement (« un secret était présent à l'ingestion » vs. « un
+  secret chiffré est disponible pour révélation »).
+- Contrôle de rôle manuel plutôt que `permission_classes`, pour permettre l'audit complet de tous
+  les refus, y compris ceux qu'un `has_permission` DRF standard aurait court-circuités avant
+  d'atteindre le code de la vue.
+- Pas de session/jeton d'élévation mis en cache pour le step-up : chaque révélation exige une
+  preuve fraîche (mot de passe ou TOTP) fournie dans la requête elle-même, plus simple et sans
+  nouvelle surface d'état côté serveur qu'un mécanisme de « sudo mode » à durée de vie propre.
+- Portée du bypass `is_staff` limitée aux tenants dont l'utilisateur plateforme est déjà membre
+  (via une adhésion réelle, comme tout le reste de la plateforme) — pas de mécanisme d'emprunt
+  d'identité inter-tenant construit spécialement pour ce cas, choix documenté dans ADR-014 plutôt
+  que décidé silencieusement.
+
+### Difficultés rencontrées et solutions
+- Renommer `secret_seen` en `has_secret` cassait un appel cross-app non repéré au premier passage :
+  `apps.ai_assistant.services.build_assistant_context` lit `finding.secret_seen` pour le contexte
+  IA pseudonymisé (`secret_expose`). Trouvé par une recherche exhaustive de toutes les références au
+  champ avant de considérer le renommage terminé, pas seulement dans `threat_intelligence` lui-même
+  — corrigé, suite `test_pseudonymization.py` toujours verte ensuite (aucune fuite du secret réel
+  vers l'IA, propriété déjà couverte et non affectée par ce changement).
+- La fixture de clé Fernet de test (`BREACH_SECRET_ENCRYPTION_KEY`) placée initialement dans
+  `apps/threat_intelligence/tests/conftest.py` ne suffisait pas : `ingest_raw_findings` est aussi
+  appelé depuis `apps/ai_assistant/tests/test_pseudonymization.py` (portée de fixture pytest limitée
+  au sous-arbre de conftest), provoquant des échecs `ThreatIntelligenceError` dans un module qui
+  n'a pourtant rien à voir avec le chiffrement des secrets de fuite. Déplacée vers le `conftest.py`
+  racine (même endroit que `_fast_password_hashing`), qui s'applique à toute la suite — cohérent
+  avec le fait que ce chiffrement est désormais une dépendance transverse, pas propre à un seul app.
+- Test du step-up TOTP : une fois la 2FA confirmée pour un utilisateur de test, `LoginView` renvoie
+  un challenge MFA au lieu de jetons directement — le helper `_auth` standard (login mot de passe)
+  échouait avec un `KeyError` sur `access`. Résolu en émettant le JWT directement
+  (`RefreshToken.for_user`) pour ces tests spécifiques plutôt qu'en re-testant tout le flux de
+  connexion à deux étapes, déjà couvert par ailleurs (`apps.accounts.tests.test_two_factor`).
+- Vérification navigateur de bout en bout tentée (skill `run`) mais bloquée : le moteur Docker
+  Desktop, joignable en début de session (`docker compose ps` fonctionnait), est devenu injoignable
+  en cours de session (pipe Windows introuvable) sans action de ma part — probablement mis en veille
+  ou redémarré côté hôte. N'ayant pas relancé Docker Desktop moi-même (action système hors du
+  périmètre sûr de l'automatisation), la vérification visuelle du flux de révélation en conditions
+  réelles (bouton, modale, journal) n'a **pas** été faite cette session — seule la suite de tests
+  automatisée (501 tests verts, hors les 3 tests PDF WeasyPrint pré-existants sans rapport ;
+  17 dédiés à la révélation) et la compilation/lint frontend l'ont été. À refaire dès que
+  l'environnement Docker est disponible.
+
+### Reste à faire (sessions suivantes)
+- **Vérification navigateur end-to-end** du flux de révélation (bloquée cette session par
+  l'indisponibilité de Docker Desktop, voir ci-dessus).
+- **Suite Vitest** : CLAUDE.md prévoit des tests de composants frontend critiques, mais aucune suite
+  Vitest n'existe encore dans ce projet (ni dépendances, ni config) — `RevealSecretModal.jsx` reste
+  donc non couvert par des tests unitaires frontend, comme tout le reste du frontend à ce stade.
+  Mise en place de l'outillage Vitest hors périmètre de cette session (changement d'outillage
+  transverse, pas propre à cette fonctionnalité).
+- **Purge automatique planifiée des `BreachFinding`** (et donc de `secret_encrypted`) : toujours pas
+  implémentée (reste-à-faire déjà noté en Phase 7 initiale, inchangé par cette mise à jour).
+- **Rotation des clés Fernet** (dont la nouvelle `BREACH_SECRET_ENCRYPTION_KEY`) : toujours
+  manuelle, reste-à-faire déjà noté pour `TOTP_ENCRYPTION_KEY`/`AI_PSEUDONYMIZATION_KEY`
+  (`docs/security_review.md`, A02).
