@@ -9,16 +9,24 @@ filter, since Celery tasks have no ambient request context.
 import logging
 from urllib.parse import urlparse
 
+from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
+from apps.accounts import services as accounts_services
 from apps.monitoring import services as monitoring_services
 from apps.monitoring.models import Alert, Asset
 from apps.tenants import services as tenants_services
 
 from . import quota as quota_module
-from .models import BreachFinding, BreachIntelligenceUsage, BreachScanJob, MonitoredAsset
+from .models import (
+    BreachFinding,
+    BreachIntelligenceUsage,
+    BreachScanJob,
+    MonitoredAsset,
+    SecretRevealAudit,
+)
 from .providers import ProviderPoolFullError, get_provider
 from .providers.base import RawFinding
 from .providers.breachsense import normalizer
@@ -61,6 +69,96 @@ class WebhookNotConfiguredError(ThreatIntelligenceError):
     pass
 
 
+# --- Chiffrement des secrets de fuite (ADR-014, mise à jour) ----------------
+#
+# Clé dédiée (BREACH_SECRET_ENCRYPTION_KEY), distincte de TOTP_ENCRYPTION_KEY
+# et AI_PSEUDONYMIZATION_KEY — même principe de séparation des clés Fernet
+# que le reste du projet (apps.accounts.services._fernet,
+# apps.ai_assistant.services._fernet) : compromettre l'une ne doit pas
+# compromettre les autres.
+
+
+def _fernet() -> Fernet:
+    key = settings.BREACH_SECRET_ENCRYPTION_KEY
+    if not key:
+        raise ThreatIntelligenceError(
+            "BREACH_SECRET_ENCRYPTION_KEY n'est pas configurée : impossible de chiffrer un "
+            "secret de fuite."
+        )
+    return Fernet(key.encode() if isinstance(key, str) else key)
+
+
+def encrypt_secret(secret_plain: str) -> bytes:
+    if not secret_plain:
+        return b""
+    return _fernet().encrypt(secret_plain.encode())
+
+
+def decrypt_secret(encrypted: bytes) -> str:
+    try:
+        return _fernet().decrypt(bytes(encrypted)).decode()
+    except InvalidToken as exc:
+        raise ThreatIntelligenceError(
+            "Secret de fuite illisible (clé de chiffrement invalide ou donnée corrompue)."
+        ) from exc
+
+
+# --- Révélation privilégiée (ADR-014, mise à jour) --------------------------
+#
+# Ré-authentification fraîche à chaque révélation (« step-up ») : l'appelant
+# doit re-fournir son mot de passe de compte OU un code TOTP valide dans la
+# requête elle-même — jamais une session/élévation mise en cache, pour que
+# chaque révélation exige une preuve fraîche, pas seulement un token d'accès
+# déjà en poche (qui pourrait être volé sans que le mot de passe/2FA le
+# soient).
+
+
+def verify_step_up(*, user, password: str = "", totp_code: str = "") -> bool:
+    if password:
+        return user.check_password(password)
+    if totp_code:
+        credential = accounts_services.get_confirmed_credential(user)
+        return bool(credential and accounts_services.verify_totp_code(credential, totp_code))
+    return False
+
+
+def record_reveal_attempt(
+    *,
+    tenant,
+    finding: BreachFinding | None,
+    user,
+    success: bool,
+    denial_reason: str = "",
+    ip_address: str = "",
+    user_agent: str = "",
+) -> SecretRevealAudit:
+    """Traces every reveal attempt — granted or denied, for every denial
+    reason — never the secret itself (the model has no field for it)."""
+    return SecretRevealAudit.all_objects.create(
+        tenant=tenant,
+        finding=finding,
+        user=user,
+        success=success,
+        denial_reason=denial_reason,
+        ip_address=ip_address or None,
+        user_agent=user_agent[:255],
+    )
+
+
+def list_reveal_audits(tenant):
+    return SecretRevealAudit.all_objects.filter(tenant=tenant).select_related("finding", "user")
+
+
+def list_reveal_audits_all_tenants(limit: int = 100):
+    """Platform back-office (ADR-014 update): the reveal audit trail — who
+    attempted to reveal what, when, granted or denied — is aggregate enough
+    (no secret, no raw finding detail) to be shown platform-wide, unlike
+    BreachFinding detail itself (see ThreatIntelligenceAdminStatusView)."""
+    return SecretRevealAudit.all_objects.select_related("tenant", "finding", "user").order_by(
+        "-created_at"
+    )[:limit]
+
+
 # --- Résolution actif -> domaine Breachsense --------------------------------
 
 
@@ -101,6 +199,12 @@ def ingest_raw_findings(
         normalized = normalizer.normalize_finding(
             raw.endpoint, raw.payload, tenant_emails=tenant_emails
         )
+        # Popped immediately, never logged, never passed to create() as-is
+        # (BreachFinding has no such field) — encrypted in memory right
+        # here, the one hop between the normalizer and the encrypted
+        # column (ADR-014 update).
+        secret_plain = normalized.pop("secret_plain", "")
+        normalized["secret_encrypted"] = encrypt_secret(secret_plain) if secret_plain else b""
         finding, was_created = BreachFinding.all_objects.get_or_create(
             tenant=tenant,
             dedup_hash=normalized["dedup_hash"],

@@ -143,6 +143,14 @@ REST_FRAMEWORK = {
         "auth": "10/min",
         "tenant": "300/min",
         "tenant_ai": "20/min",
+        # ADR-014 (mise à jour) : révélation de secret de fuite — seuil
+        # volontairement strict (bien en-deçà du rythme d'usage humain
+        # normal), pour limiter l'extraction massive même via un compte
+        # admin compromis. Deux clés indépendantes (utilisateur + IP) :
+        # un attaquant qui changerait de compte reste bloqué par l'IP, un
+        # attaquant multi-IP reste bloqué par le compte.
+        "breach_secret_reveal_user": "5/min",
+        "breach_secret_reveal_ip": "10/min",
     },
 }
 
@@ -273,6 +281,16 @@ BREACHSENSE_WEBHOOK_CALLBACK_URL = env("BREACHSENSE_WEBHOOK_CALLBACK_URL", defau
 # (compromettre l'une ne doit pas compromettre l'autre). Générer avec
 # `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
 TOTP_ENCRYPTION_KEY = env("TOTP_ENCRYPTION_KEY", default="")
+
+# --- Secrets de fuite Breachsense (ADR-014, mise à jour) : clé Fernet
+# dédiée chiffrant au repos le secret (mot de passe/token/cookie/carte)
+# d'un BreachFinding — distincte de TOTP_ENCRYPTION_KEY et
+# AI_PSEUDONYMIZATION_KEY (compromettre l'une ne doit pas compromettre les
+# autres). Seul le endpoint de révélation privilégié et ré-authentifié
+# (BreachFindingRevealView) déchiffre, en mémoire, jamais persisté ni
+# journalisé. Générer avec :
+# `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+BREACH_SECRET_ENCRYPTION_KEY = env("BREACH_SECRET_ENCRYPTION_KEY", default="")
 
 # --- Journalisation (Phase 5, docs/security_review.md A09) ------------------
 #

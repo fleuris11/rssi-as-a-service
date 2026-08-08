@@ -19,9 +19,14 @@ from apps.tenants.models import TenantScopedModel
 
 
 class BreachFinding(TenantScopedModel):
-    """One normalized compromise finding — never stores a secret in clear
-    (ADR-014): ``secret_masked``/``secret_seen`` replace whatever password,
-    token or cookie the provider returned."""
+    """One normalized compromise finding. ADR-014 (updated): the secret a
+    provider returns (password, token, cookie, card...) is never written in
+    clear — it is Fernet-encrypted at ingestion (``secret_encrypted``, key
+    ``BREACH_SECRET_ENCRYPTION_KEY``, dedicated and distinct from every
+    other Fernet key in this codebase) and only ever decrypted in memory by
+    the privileged, re-authenticated reveal endpoint
+    (``BreachFindingRevealView``). ``secret_masked``/``has_secret`` remain
+    the non-reversible default-display form."""
 
     class SourceEndpoint(models.TextChoices):
         STEALER = "stealer", "Logs de malware voleur d'identifiants"
@@ -59,10 +64,19 @@ class BreachFinding(TenantScopedModel):
     identifier_plain = models.CharField(max_length=255, blank=True)
     identifier_masked = models.CharField(max_length=255, blank=True)
 
-    # ADR-014 §1/§2 : jamais le secret en clair — uniquement sa forme
-    # masquée non réversible, et un indicateur qu'un secret existait.
+    # ADR-014 §1/§2 : jamais le secret en clair en base — uniquement sa
+    # forme masquée non réversible pour l'affichage par défaut.
     secret_masked = models.CharField(max_length=32, blank=True)
-    secret_seen = models.BooleanField(default=False)
+    # ADR-014 (mise à jour) : chiffrement réversible à accès privilégié.
+    # Blob Fernet (clé BREACH_SECRET_ENCRYPTION_KEY, dédiée) — vide (b"")
+    # si aucun secret n'a été détecté, ou pour tout finding ingéré avant
+    # l'introduction de ce champ (voir migration : has_secret=False dans ce
+    # cas, jamais reconstruit rétroactivement à partir de secret_seen).
+    secret_encrypted = models.BinaryField(blank=True, default=b"")
+    # Vrai uniquement si secret_encrypted contient réellement un blob
+    # déchiffrable — pas un simple report de l'ancien indicateur
+    # "un secret a été vu à l'ingestion" (voir migration 0002).
+    has_secret = models.BooleanField(default=False)
 
     breach_date = models.DateField(null=True, blank=True)
     detected_at = models.DateTimeField(auto_now_add=True)
@@ -187,3 +201,42 @@ class BreachScanJob(TenantScopedModel):
 
     def __str__(self):
         return f"{self.status} — {self.tenant_id} ({self.triggered_by})"
+
+
+class SecretRevealAudit(TenantScopedModel):
+    """Audit trail for the privileged secret-reveal endpoint (ADR-014,
+    update: reversible encryption + re-authenticated reveal). Every attempt
+    — granted or denied, and for every denial reason — is recorded here,
+    never the secret itself. ``finding`` is nullable/``SET_NULL`` so the
+    audit trail outlives the finding it concerns (compliance record, not a
+    cache of it)."""
+
+    class DenialReason(models.TextChoices):
+        ROLE = "role", "Rôle administrateur requis"
+        STEP_UP = "step_up", "Ré-authentification invalide"
+        NO_SECRET = "no_secret", "Aucun secret chiffré disponible"
+        NOT_FOUND = "not_found", "Fuite introuvable ou hors périmètre du tenant"
+
+    finding = models.ForeignKey(
+        BreachFinding,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reveal_audits",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    success = models.BooleanField()
+    denial_reason = models.CharField(max_length=20, choices=DenialReason.choices, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["tenant", "-created_at"])]
+
+    def __str__(self):
+        outcome = "accordée" if self.success else f"refusée ({self.denial_reason})"
+        return f"Révélation {outcome} — {self.tenant_id} — {self.user_id}"

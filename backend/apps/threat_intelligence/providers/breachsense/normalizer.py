@@ -196,14 +196,18 @@ def _mask_secret_value(value) -> str:
     return f"{'•' * 6}{tail}"
 
 
-def mask_payload(payload: dict) -> tuple[dict, bool, str]:
+def mask_payload(payload: dict) -> tuple[dict, bool, str, str]:
     """Recursively masks every secret-like value found anywhere in
     ``payload`` (ADR-014 §2: applied on the whole tree, not just top-level
-    keys). Returns ``(masked_payload, secret_seen, first_secret_masked)``
-    — ``first_secret_masked`` feeds ``BreachFinding.secret_masked`` (one
-    representative masked value; the full — already masked — payload is
-    what's kept in ``raw_data``)."""
-    state = {"secret_seen": False, "first_masked": ""}
+    keys). Returns ``(masked_payload, secret_seen, first_secret_masked,
+    first_secret_plain)`` — ``first_secret_masked`` feeds
+    ``BreachFinding.secret_masked`` (one representative masked value; the
+    full — already masked — payload is what's kept in ``raw_data``).
+    ``first_secret_plain`` is the same representative value in clear: held
+    only in memory by the caller just long enough to be Fernet-encrypted
+    into ``BreachFinding.secret_encrypted`` (ADR-014 update) — never
+    logged, never itself persisted."""
+    state = {"secret_seen": False, "first_masked": "", "first_plain": ""}
 
     def _walk(node):
         if isinstance(node, dict):
@@ -216,6 +220,7 @@ def mask_payload(payload: dict) -> tuple[dict, bool, str]:
                     state["secret_seen"] = True
                     if not state["first_masked"]:
                         state["first_masked"] = masked
+                        state["first_plain"] = str(value)
                     result[key] = masked
                 else:
                     result[key] = value
@@ -225,7 +230,7 @@ def mask_payload(payload: dict) -> tuple[dict, bool, str]:
         return node
 
     masked = _walk(payload)
-    return masked, state["secret_seen"], state["first_masked"]
+    return masked, state["secret_seen"], state["first_masked"], state["first_plain"]
 
 
 def _first_present(payload: dict, fields: tuple[str, ...]) -> str | None:
@@ -296,9 +301,13 @@ def _compute_dedup_hash(*, endpoint: str, payload: dict, secret_masked: str) -> 
 
 def normalize_finding(endpoint: str, raw: dict, *, tenant_emails: set[str] | None = None) -> dict:
     """Returns a dict of kwargs ready for ``BreachFinding.all_objects.create``
-    (minus ``tenant``/``asset``, which the caller already knows)."""
+    (minus ``tenant``/``asset``, which the caller already knows) — plus a
+    transient ``secret_plain`` key the caller (``services.ingest_raw_findings``)
+    must pop and Fernet-encrypt (or discard) before calling ``create()``;
+    ``BreachFinding`` has no such field, it exists only to carry the
+    in-memory plaintext one call further without a second normalizer pass."""
     tenant_emails = {email.lower() for email in (tenant_emails or set())}
-    masked_payload, secret_seen, secret_masked = mask_payload(raw)
+    masked_payload, secret_seen, secret_masked, secret_plain = mask_payload(raw)
 
     identifier = _extract_identifier(endpoint, raw)
     identifier_plain = ""
@@ -320,7 +329,8 @@ def normalize_finding(endpoint: str, raw: dict, *, tenant_emails: set[str] | Non
         "identifier_plain": identifier_plain,
         "identifier_masked": identifier_masked,
         "secret_masked": secret_masked,
-        "secret_seen": secret_seen,
+        "has_secret": secret_seen,
+        "secret_plain": secret_plain,
         "breach_date": breach_date,
         "raw_data": masked_payload,
         "dedup_hash": _compute_dedup_hash(

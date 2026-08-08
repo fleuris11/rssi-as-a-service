@@ -536,7 +536,7 @@ def build_assistant_context(tenant) -> dict:
                 "type": finding.get_source_endpoint_display(),
                 "gravite": finding.get_severity_display(),
                 "identifiant": finding.identifier_plain or finding.identifier_masked,
-                "secret_expose": finding.secret_seen,
+                "secret_expose": finding.has_secret,
             }
             for finding in threat_intelligence_services.list_findings(
                 tenant, status=BreachFinding.Status.OPEN
