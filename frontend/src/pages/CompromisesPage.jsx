@@ -1,6 +1,7 @@
-import { AlertTriangle, Fingerprint, RefreshCw, ShieldAlert, ShieldOff } from 'lucide-react'
+import { AlertTriangle, Fingerprint, KeyRound, RefreshCw, ShieldAlert, ShieldOff } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { monitoringApi, threatIntelligenceApi } from '../api/endpoints'
+import RevealSecretModal from '../components/RevealSecretModal'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import Card, { CardHeader } from '../components/ui/Card'
@@ -8,6 +9,7 @@ import EmptyState from '../components/ui/EmptyState'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import Tabs from '../components/ui/Tabs'
 import { useToast } from '../components/ui/Toast'
+import { useAuth } from '../context/AuthContext'
 
 const SEVERITY_LABEL = { critical: 'Critique', high: 'Élevée', attention: 'Attention' }
 const SEVERITY_VARIANT = { critical: 'critical', high: 'critical', attention: 'warning' }
@@ -73,7 +75,7 @@ function usePolling(fetchJob) {
   )
 }
 
-function FindingCard({ finding, onUpdateStatus, updating }) {
+function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal }) {
   return (
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -87,7 +89,7 @@ function FindingCard({ finding, onUpdateStatus, updating }) {
               <Badge variant={SEVERITY_VARIANT[finding.severity]} dot>
                 {SEVERITY_LABEL[finding.severity]}
               </Badge>
-              {finding.secret_seen && (
+              {finding.has_secret && (
                 <Badge variant="neutral">
                   <Fingerprint className="size-3" aria-hidden="true" />
                   Secret exposé ({finding.secret_masked})
@@ -102,26 +104,33 @@ function FindingCard({ finding, onUpdateStatus, updating }) {
             </p>
           </div>
         </div>
-        {finding.status === 'open' && (
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={updating}
-              onClick={() => onUpdateStatus(finding.id, 'ignored')}
-            >
-              Ignorer
+        <div className="flex gap-2">
+          {finding.has_secret && canReveal && (
+            <Button variant="secondary" size="sm" icon={KeyRound} onClick={() => onReveal(finding.id)}>
+              Révéler le mot de passe
             </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={updating}
-              onClick={() => onUpdateStatus(finding.id, 'treated')}
-            >
-              Marquer traité
-            </Button>
-          </div>
-        )}
+          )}
+          {finding.status === 'open' && (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={updating}
+                onClick={() => onUpdateStatus(finding.id, 'ignored')}
+              >
+                Ignorer
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={updating}
+                onClick={() => onUpdateStatus(finding.id, 'treated')}
+              >
+                Marquer traité
+              </Button>
+            </>
+          )}
+        </div>
       </div>
       <p className="mt-3 rounded-md bg-ink-50 px-3 py-2 text-sm text-ink-700">
         {PLAIN_LANGUAGE_ADVICE[finding.source_endpoint] || PLAIN_LANGUAGE_ADVICE.webhook}
@@ -225,8 +234,74 @@ function MonitoredAssetsPanel({ assets, monitored, onRegister, onUnregister, poo
   )
 }
 
+function RevealAuditPanel({ audits, onLoad, loading }) {
+  return (
+    <Card>
+      <CardHeader
+        title="Journal des révélations"
+        action={
+          <Button variant="secondary" size="sm" onClick={onLoad} loading={loading}>
+            {audits === null ? 'Afficher' : 'Actualiser'}
+          </Button>
+        }
+      />
+      <p className="mb-3 text-xs text-ink-500">
+        Chaque tentative de révélation d’un mot de passe (accordée ou refusée) est tracée ici —
+        jamais le secret lui-même.
+      </p>
+      {audits !== null && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500">
+                <th className="py-2 pr-4 font-medium">Utilisateur</th>
+                <th className="py-2 pr-4 font-medium">Fuite</th>
+                <th className="py-2 pr-4 font-medium">Résultat</th>
+                <th className="py-2 font-medium">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {audits.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-3 text-ink-500">
+                    Aucune révélation enregistrée pour le moment.
+                  </td>
+                </tr>
+              ) : (
+                audits.map((row) => (
+                  <tr key={row.id} className="border-b border-ink-100 last:border-0">
+                    <td className="py-2 pr-4 text-ink-800">{row.user_email || '—'}</td>
+                    <td className="py-2 pr-4 text-ink-600">
+                      {row.finding_id != null ? `#${row.finding_id}` : '—'}
+                    </td>
+                    <td className="py-2 pr-4">
+                      <Badge variant={row.success ? 'ok' : 'critical'}>
+                        {row.success ? 'Accordée' : `Refusée (${row.denial_reason})`}
+                      </Badge>
+                    </td>
+                    <td className="py-2 text-ink-500">
+                      {new Date(row.created_at).toLocaleString('fr-FR')}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 export default function CompromisesPage() {
   const { showToast } = useToast()
+  const { user, currentTenant } = useAuth()
+  const isTenantAdmin = currentTenant?.role === 'admin'
+  // Le bouton "Révéler" suit la règle serveur (admin du tenant OU admin
+  // plateforme — voir BreachFindingRevealView) ; le journal d'audit du
+  // tenant, lui, reste réservé au rôle admin strict (pas de bypass staff),
+  // même règle que GET /audit/reveals/ côté API (IsTenantAdmin).
+  const canReveal = isTenantAdmin || Boolean(user?.is_staff)
   const [loading, setLoading] = useState(true)
   const [findings, setFindings] = useState([])
   const [activeTab, setActiveTab] = useState('open')
@@ -236,6 +311,9 @@ export default function CompromisesPage() {
   const [scanning, setScanning] = useState(false)
   const [updatingId, setUpdatingId] = useState(null)
   const [busyAssetId, setBusyAssetId] = useState(null)
+  const [revealFindingId, setRevealFindingId] = useState(null)
+  const [revealAudits, setRevealAudits] = useState(null)
+  const [loadingAudits, setLoadingAudits] = useState(false)
 
   const poll = usePolling(threatIntelligenceApi.getScanJob)
 
@@ -352,6 +430,18 @@ export default function CompromisesPage() {
     }
   }
 
+  async function loadRevealAudits() {
+    setLoadingAudits(true)
+    try {
+      const response = await threatIntelligenceApi.listRevealAudit()
+      setRevealAudits(response.data.results)
+    } catch {
+      showToast({ type: 'error', message: 'Impossible de charger le journal des révélations.' })
+    } finally {
+      setLoadingAudits(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -394,6 +484,8 @@ export default function CompromisesPage() {
               finding={finding}
               onUpdateStatus={handleUpdateStatus}
               updating={updatingId === finding.id}
+              canReveal={canReveal}
+              onReveal={setRevealFindingId}
             />
           ))}
         </div>
@@ -406,6 +498,16 @@ export default function CompromisesPage() {
         onUnregister={handleUnregister}
         poolStatus={status}
         busyId={busyAssetId}
+      />
+
+      {isTenantAdmin && (
+        <RevealAuditPanel audits={revealAudits} onLoad={loadRevealAudits} loading={loadingAudits} />
+      )}
+
+      <RevealSecretModal
+        open={revealFindingId !== null}
+        findingId={revealFindingId}
+        onClose={() => setRevealFindingId(null)}
       />
     </div>
   )

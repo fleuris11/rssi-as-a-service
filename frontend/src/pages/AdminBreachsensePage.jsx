@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { threatIntelligenceApi } from '../api/endpoints'
+import Badge from '../components/ui/Badge'
 import Card, { CardHeader } from '../components/ui/Card'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
@@ -52,7 +53,7 @@ export default function AdminBreachsensePage() {
   }
   if (!data) return null
 
-  const { quota, pool, recent_usage: recentUsage } = data
+  const { quota, pool, recent_usage: recentUsage, recent_reveal_audits: recentRevealAudits } = data
 
   return (
     <div className="space-y-6">
@@ -111,6 +112,50 @@ export default function AdminBreachsensePage() {
                     <td className="py-2 pr-4 text-ink-600">{row.requests_consumed}</td>
                     <td className="py-2 pr-4 text-ink-600">{row.findings_created}</td>
                     <td className="py-2 pr-4 text-ink-600">{row.remaining_after ?? '—'}</td>
+                    <td className="py-2 text-ink-500">
+                      {new Date(row.created_at).toLocaleString('fr-FR')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader title="Journal des révélations de secrets" />
+        <p className="mb-3 text-sm text-ink-500">
+          Chaque tentative de révélation d’un mot de passe de fuite (accordée ou refusée), toutes
+          entreprises confondues — jamais le secret lui-même.
+        </p>
+        {recentRevealAudits.length === 0 ? (
+          <p className="text-sm text-ink-500">Aucune révélation enregistrée pour le moment.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500">
+                  <th className="py-2 pr-4 font-medium">Entreprise</th>
+                  <th className="py-2 pr-4 font-medium">Utilisateur</th>
+                  <th className="py-2 pr-4 font-medium">Fuite</th>
+                  <th className="py-2 pr-4 font-medium">Résultat</th>
+                  <th className="py-2 font-medium">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentRevealAudits.map((row) => (
+                  <tr key={row.id} className="border-b border-ink-100 last:border-0">
+                    <td className="py-2 pr-4 text-ink-800">{row.tenant_name}</td>
+                    <td className="py-2 pr-4 text-ink-600">{row.user_email || '—'}</td>
+                    <td className="py-2 pr-4 text-ink-600">
+                      {row.finding_id != null ? `#${row.finding_id}` : '—'}
+                    </td>
+                    <td className="py-2 pr-4">
+                      <Badge variant={row.success ? 'ok' : 'critical'}>
+                        {row.success ? 'Accordée' : `Refusée (${row.denial_reason})`}
+                      </Badge>
+                    </td>
                     <td className="py-2 text-ink-500">
                       {new Date(row.created_at).toLocaleString('fr-FR')}
                     </td>

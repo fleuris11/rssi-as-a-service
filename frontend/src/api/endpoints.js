@@ -78,6 +78,14 @@ export const threatIntelligenceApi = {
     apiClient.get('/api/v1/threat-intelligence/findings/', { params: status ? { status } : {} }),
   updateFindingStatus: (id, status) =>
     apiClient.patch(`/api/v1/threat-intelligence/findings/${id}/`, { status }),
+  // Step-up re-authentication (ADR-014) : mot de passe OU code TOTP, jamais
+  // mis en cache côté client — chaque appel doit re-fournir l'un des deux.
+  revealFindingSecret: (id, { password = '', totpCode = '' } = {}) =>
+    apiClient.post(`/api/v1/threat-intelligence/findings/${id}/reveal/`, {
+      password,
+      totp_code: totpCode,
+    }),
+  listRevealAudit: () => apiClient.get('/api/v1/threat-intelligence/audit/reveals/'),
   listMonitoredAssets: () => apiClient.get('/api/v1/threat-intelligence/monitored-assets/'),
   registerMonitoredAsset: (assetId) =>
     apiClient.post('/api/v1/threat-intelligence/monitored-assets/', { asset_id: assetId }),
