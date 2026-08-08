@@ -1318,13 +1318,9 @@ remplacée, la M6 « Breachsense — intégré » ajoutée).
   côté Breachsense (`/account?action=add&creds=...`), inscrire un premier actif au pool, puis
   déclencher une alerte de test (`send_test_alert` / action `test`) pour confirmer la connectivité
   de bout en bout.
-- **Schéma exact des payloads Breachsense** : cette session s'appuie sur les informations fournies
-  dans le prompt de mission (auth par header `lic`, pagination `206`/`p`, webhook `ast`/`api`/
-  `test`) plutôt que sur la documentation complète du fournisseur — le normaliseur est conçu de
-  façon défensive (détection de secrets par sous-chaîne de nom de champ, pas une liste exacte par
-  endpoint) précisément pour rester robuste si le schéma réel diffère légèrement de ce qui a été
-  supposé, mais une vérification contre de vrais payloads (smoke test) reste nécessaire pour
-  confirmer que les champs `identifier`/`breach_date` sont bien extraits sous les noms attendus.
+- **Schéma exact des payloads Breachsense — résolu dans cette même phase** : voir l'addendum
+  ci-dessous. Un smoke test avec la licence réelle reste néanmoins recommandé pour confirmer que le
+  mapping construit à partir des schémas fournis correspond bien aux réponses réelles de l'API.
 - **Purge automatique planifiée des `BreachFinding`** (rétention 90 jours, ADR-014 §5) : la politique
   de rétention est documentée mais la tâche Celery Beat de purge n'est pas implémentée dans cette
   phase — livraison du flux d'ingestion et de l'affichage d'abord.
@@ -1334,3 +1330,49 @@ remplacée, la M6 « Breachsense — intégré » ajoutée).
   plutôt que par un vrai module `platform_admin` construit — cohérent avec le scaffold vide actuel
   de cette app (réservée à une phase ultérieure), mais à réconcilier si `platform_admin` est un jour
   développé pour de vrai (éviter deux back-offices parallèles).
+
+### Addendum (même jour) — schéma réel des endpoints Breachsense fourni par l'utilisateur
+
+Après la livraison initiale, l'utilisateur a communiqué le schéma JSON réel de chaque endpoint du
+palier Essentials (champs exacts par endpoint, jusque-là devinés à partir de la seule description
+du prompt de mission). Corrections apportées à
+`threat_intelligence/providers/breachsense/normalizer.py` :
+
+- **Mapping exact par endpoint** (`ENDPOINT_SCHEMAS`) pour l'extraction de l'identifiant, de la
+  date de fuite et du type de fuite — les noms de champs réels (`usr`/`eml`/`user_name`, `inf`/
+  `fnd`/`found`/`leak_date`, `mal`/`category`/`content_type`/`type`) sont propres à chaque endpoint
+  et ne correspondaient à aucune des clés génériques devinées initialement (`email`, `date`,
+  `type`). L'ancienne heuristique générique est conservée en **repli** (schémas non couverts,
+  dérive future), plus comme mécanisme principal.
+- **Deux vrais bugs de masquage corrigés**, trouvés en confrontant les sous-chaînes génériques
+  existantes au schéma réel :
+  - `val` (valeur du cookie de session, `/sessions`) n'était masqué par **aucune** règle
+    existante — un vrai gap de sécurité (le cookie de session, un secret au même titre qu'un mot
+    de passe, aurait été persisté en clair). Corrigé par correspondance exacte de nom de champ
+    (`EXACT_SECRET_FIELDS`), la sous-chaîne étant trop cryptique pour être fiable ici.
+  - `ccn`/`ccx` (carte bancaire) et `cwa` (wallet crypto), propres à `/stealer`, avaient le même
+    problème — mêmes corrections.
+  - À l'inverse, la sous-chaîne générique `cookie` masquait à tort `cookie_name`/`cookie_path`
+    (métadonnées, pas des secrets) et `hash` masquait à tort `file_hash` (`/docs`) et l'indicateur
+    0/1 `hash` de `/creds` (« haché ou déchiffré », pas un secret) — retirées des sous-chaînes
+    génériques.
+  - Ces deux dernières corrections (`cookie`, `hash` retirés) n'étaient pas des fuites de secret
+    (sur-masquage, pas sous-masquage) mais dégradaient la qualité de l'information affichée au
+    dirigeant (`cookie_name`/`file_hash` auraient été inutilement masqués) — corrigées dans le même
+    passage par souci de cohérence, pas seulement le gap `val`/`ccn`/`ccx`/`cwa` qui était le vrai
+    risque de sécurité.
+  - `asm.type == "pphish"` (typosquatting/phishing) élève désormais la sévérité à « élevé » plutôt
+    que le niveau « attention » par défaut des autres sous-types `asm` (ns/mx/ast, simple
+    inventaire de surface d'attaque).
+- Suite de tests étendue en conséquence : `test_normalizer.py` couvre désormais un payload
+  réaliste complet par endpoint (`REALISTIC_PAYLOADS`), avec des tests de non-régression explicites
+  pour les deux corrections de sur-masquage (`cookie_name`/`file_hash` non masqués) ;
+  `test_no_secret_persistence.py` utilise les vrais noms de champs secrets par endpoint, plus des
+  cas dédiés pour les champs financiers de `/stealer` et la confirmation que `/darkweb`, `/radar`
+  et `/asm` n'ont, par construction, aucun champ secret. ADR-014 mis à jour (§2, addendum) pour
+  documenter ce changement de mapping et sa raison. 348 tests rejoués verts (hors les 3 tests PDF
+  WeasyPrint pré-existants, limite d'environnement Windows local sans rapport).
+
+**Reste à faire, inchangé** : un smoke test avec la licence réelle demeure la seule façon de
+confirmer que ce mapping — construit à partir des schémas fournis, pas d'un appel réel à l'API —
+correspond exactement aux réponses effectives de Breachsense.

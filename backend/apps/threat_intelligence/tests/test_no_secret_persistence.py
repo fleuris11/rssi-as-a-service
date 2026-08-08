@@ -23,15 +23,21 @@ KNOWN_SECRETS = [
     "session-cookie-XyZ987654321",
 ]
 
+# Nom de champ RÉEL porteur de secret par endpoint (schéma Breachsense,
+# palier Essentials — fourni directement) : darkweb/radar/asm n'ont aucun
+# champ secret et sont volontairement absents de ce mapping. stealer a
+# PLUSIEURS champs secrets distincts (mot de passe + données financières) —
+# couvert séparément par TestNoSecretPersistence.test_stealer_financial_fields.
 ENDPOINTS_WITH_SECRET_FIELDS = {
-    "stealer": "password",
-    "combo": "password",
-    "creds": "password",
-    "sessions": "cookie",
+    "stealer": "pwd",
+    "combo": "pwd",
+    "creds": "pwd",
+    "sessions": "val",
     "nhi": "token",
-    "darkweb": "password",
-    "docs": "credential",
+    "docs": "password",
 }
+
+STEALER_EXTRA_SECRET_FIELDS = ["ccn", "ccx", "cwa"]
 
 
 def _row_text_blob(finding_id: int) -> str:
@@ -57,11 +63,7 @@ class TestNoSecretPersistence:
         self, endpoint, secret_field, tenant, website_asset
     ):
         for secret in KNOWN_SECRETS:
-            payload = {
-                "email": "victime@example.com",
-                secret_field: secret,
-                "id": f"finding-{hash(secret) % 10_000}",
-            }
+            payload = {"email": "victime@example.com", secret_field: secret}
             raw = RawFinding(endpoint=endpoint, payload=payload)
             created = services.ingest_raw_findings(
                 tenant=tenant, asset=website_asset, raw_findings=[raw]
@@ -72,9 +74,44 @@ class TestNoSecretPersistence:
             blob = _row_text_blob(finding.id)
             assert secret not in blob, f"secret trouvé en clair dans la ligne ({endpoint})"
 
+    @pytest.mark.parametrize("secret_field", STEALER_EXTRA_SECRET_FIELDS)
+    def test_stealer_financial_fields_never_persisted(self, secret_field, tenant, website_asset):
+        """stealer expose aussi des données financières (carte bancaire,
+        wallet crypto) — des secrets au même titre qu'un mot de passe, sur
+        des noms de champs qu'aucune sous-chaîne générique ne peut deviner
+        (ADR-014 §2) : couverts par correspondance exacte de nom de champ."""
+        for secret in KNOWN_SECRETS:
+            payload = {"usr": "victime", secret_field: secret}
+            raw = RawFinding(endpoint="stealer", payload=payload)
+            created = services.ingest_raw_findings(
+                tenant=tenant, asset=website_asset, raw_findings=[raw]
+            )
+            assert created
+            blob = _row_text_blob(created[0].id)
+            assert secret not in blob, (
+                f"secret trouvé en clair dans la ligne (stealer.{secret_field})"
+            )
+
+    def test_darkweb_and_radar_and_asm_have_no_secret_field(self, tenant, website_asset):
+        """Ces trois endpoints n'ont, par construction du schéma réel,
+        aucun champ secret — vérifie que secret_seen reste False plutôt que
+        de masquer quelque chose par erreur (faux positif)."""
+        for endpoint, payload in (
+            ("darkweb", {"data": "example.com", "site": "ForumX", "found": "2026-01-01"}),
+            ("radar", {"data": "example.com", "src": "scan", "found": "2026-01-01"}),
+            ("asm", {"dom": "mail.example.com", "type": "mx", "found": "2026-01-01"}),
+        ):
+            raw = RawFinding(endpoint=endpoint, payload=payload)
+            created = services.ingest_raw_findings(
+                tenant=tenant, asset=website_asset, raw_findings=[raw]
+            )
+            assert created
+            assert created[0].secret_seen is False
+            assert created[0].secret_masked == ""
+
     def test_secret_absent_even_from_json_raw_data_field(self, tenant, website_asset):
         secret = "TotallyLeakedPassword42"
-        raw = RawFinding(endpoint="stealer", payload={"email": "x@example.com", "password": secret})
+        raw = RawFinding(endpoint="creds", payload={"eml": "x@example.com", "pwd": secret})
         services.ingest_raw_findings(tenant=tenant, asset=website_asset, raw_findings=[raw])
 
         finding = BreachFinding.all_objects.get(tenant=tenant)
@@ -82,3 +119,27 @@ class TestNoSecretPersistence:
         assert finding.secret_seen is True
         assert finding.secret_masked != ""
         assert secret not in finding.secret_masked
+
+    def test_cookie_metadata_fields_survive_unmasked_only_val_is_masked(
+        self, tenant, website_asset
+    ):
+        """Non-regression for the "cookie" marker removal (see
+        test_normalizer.py): cookie_name/cookie_path are structural
+        metadata, not secrets — only "val" (the actual cookie) must be
+        masked, the rest should remain usable for the tenant."""
+        raw = RawFinding(
+            endpoint="sessions",
+            payload={
+                "user_name": "victime",
+                "cookie_name": "session_id",
+                "cookie_path": "/account",
+                "val": "TopSecretCookieValue123",
+            },
+        )
+        created = services.ingest_raw_findings(
+            tenant=tenant, asset=website_asset, raw_findings=[raw]
+        )
+        finding = created[0]
+        assert finding.raw_data["cookie_name"] == "session_id"
+        assert finding.raw_data["cookie_path"] == "/account"
+        assert "TopSecretCookieValue123" not in json.dumps(finding.raw_data)

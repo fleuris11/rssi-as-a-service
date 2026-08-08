@@ -40,10 +40,18 @@ identifier *lequel* compte est concerné parmi plusieurs, sans exposer le secret
 
 2. **Masquage au moment de la normalisation, avant toute écriture** :
    `threat_intelligence.providers.breachsense.normalizer` masque chaque valeur reconnue comme
-   secrète (détection par nom de champ — `password`, `pass`, `pwd`, `secret`, `token`, `cookie`,
-   `session`, `hash`, `credential`, `api_key`/`apikey`, `auth` — appliquée récursivement sur
-   tout le payload, pas seulement les clés de premier niveau, pour rester robuste face à des
-   schémas hétérogènes selon l'endpoint) et calcule :
+   secrète, par **deux mécanismes complémentaires** :
+   - **Correspondance exacte de nom de champ** (`EXACT_SECRET_FIELDS`), pour les champs du schéma
+     réel Breachsense (palier Essentials — obtenu du fournisseur *après* la rédaction initiale de
+     cet ADR, voir « Mise à jour » ci-dessous) dont le nom est trop abrégé/cryptique pour être fiable
+     via une sous-chaîne générique : `val` (valeur du cookie de session, endpoint `/sessions`), `ccn`/
+     `ccx` (numéro/données de carte bancaire, `/stealer`), `cwa` (wallet crypto, `/stealer`).
+   - **Sous-chaînes génériques** (`SECRET_KEY_MARKERS` : `password`, `pass`, `pwd`, `secret`,
+     `token`, `credential`, `api_key`/`apikey`, `auth`), appliquées récursivement sur tout le
+     payload, pas seulement les clés de premier niveau — ceinture de sécurité pour un champ non
+     prévu par le mapping exact (schéma non encore documenté, endpoint futur), pas le mécanisme
+     principal pour les endpoints déjà connus.
+   Calcule dans tous les cas :
    - `secret_masked` : forme tronquée non réversible (ex. `••••••23`, les 2 derniers
      caractères seulement, jamais assez pour reconstituer le secret) ;
    - `secret_seen` : booléen, vrai si un secret était présent dans la charge d'origine — le
@@ -51,6 +59,20 @@ identifier *lequel* compte est concerné parmi plusieurs, sans exposer le secret
      base.
    Le payload brut persisté (`BreachFinding.raw_data`, JSON) est le payload **déjà masqué** —
    jamais le payload d'origine.
+
+   **Mise à jour (même phase, après réception du schéma réel des endpoints)** : la version
+   initiale de cet ADR listait aussi `cookie`, `session` et `hash` comme sous-chaînes génériques.
+   Elles ont été retirées après réception du schéma exact des réponses Breachsense : `cookie`
+   aurait masqué à tort `cookie_name`/`cookie_path` (métadonnées structurelles de l'endpoint
+   `/sessions`, pas des secrets — seul le champ `val` en est un) et `hash` aurait masqué à tort
+   `file_hash` (empreinte du fichier fuité, endpoint `/docs`) et le champ `hash` de `/creds`
+   (indicateur 0/1 « haché ou déchiffré », pas un secret lui-même). Le mapping exact par endpoint
+   (`ENDPOINT_SCHEMAS` dans `normalizer.py`) pilote désormais aussi l'extraction de l'identifiant
+   et de la date de fuite (les noms de champs réels — `usr`, `eml`, `user_name`, `inf`, `fnd`,
+   `found`, `leak_date`... — diffèrent significativement d'un endpoint à l'autre et ne
+   correspondaient à aucune des clés génériques devinées initialement) ; l'ancienne heuristique
+   générique reste en repli pour tout endpoint non couvert par le mapping exact (dérive de schéma,
+   nouvel endpoint), jamais comme mécanisme principal pour un endpoint déjà documenté.
 
 3. **Test de propriété obligatoire** (CLAUDE.md §Tests, cadrage §9) : un test dédié
    (`test_no_secret_persistence.py`) génère des payloads simulés contenant des secrets connus
