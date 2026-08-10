@@ -1,6 +1,7 @@
 import { AlertTriangle, Fingerprint, KeyRound, RefreshCw, ShieldAlert, ShieldOff } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { monitoringApi, threatIntelligenceApi } from '../api/endpoints'
+import PreIncidentRadar from '../components/PreIncidentRadar'
 import RevealSecretModal from '../components/RevealSecretModal'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
@@ -314,6 +315,7 @@ export default function CompromisesPage() {
   const [revealFindingId, setRevealFindingId] = useState(null)
   const [revealAudits, setRevealAudits] = useState(null)
   const [loadingAudits, setLoadingAudits] = useState(false)
+  const [preIncident, setPreIncident] = useState(null)
 
   const poll = usePolling(threatIntelligenceApi.getScanJob)
 
@@ -328,16 +330,18 @@ export default function CompromisesPage() {
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [findingsRes, statusRes, assetsRes, monitoredRes] = await Promise.all([
+      const [findingsRes, statusRes, assetsRes, monitoredRes, preIncidentRes] = await Promise.all([
         threatIntelligenceApi.listFindings(activeTab),
         threatIntelligenceApi.status(),
         monitoringApi.listAssets(),
         threatIntelligenceApi.listMonitoredAssets(),
+        threatIntelligenceApi.preIncident(),
       ])
       setFindings(findingsRes.data.results)
       setStatus(statusRes.data)
       setAssets(assetsRes.data.results)
       setMonitored(monitoredRes.data.results)
+      setPreIncident(preIncidentRes.data)
     } catch {
       showToast({
         type: 'error',
@@ -463,6 +467,8 @@ export default function CompromisesPage() {
       </div>
 
       <ScanStatusBar status={status} onScan={handleScan} scanning={scanning} />
+
+      <PreIncidentRadar summary={preIncident} />
 
       <Tabs tabs={TABS} activeId={activeTab} onChange={setActiveTab} />
 
