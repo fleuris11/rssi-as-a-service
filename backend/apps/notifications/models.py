@@ -39,6 +39,11 @@ class EmailLog(TenantScopedModel):
     class Kind(models.TextChoices):
         WEATHER = "weather", "Météo cyber"
         REALTIME_ALERT = "realtime_alert", "Alerte temps réel"
+        # Phase 8A : signal d'exposition publique (radar/dark web) — un
+        # canal distinct de REALTIME_ALERT parce que le message dit
+        # explicitement l'inverse ("rien n'a encore fuité"), et qu'on doit
+        # pouvoir les distinguer dans le journal d'envoi.
+        PRE_INCIDENT_SIGNAL = "pre_incident", "Signal avant-coureur"
 
     kind = models.CharField(max_length=20, choices=Kind.choices)
     recipient = models.EmailField()

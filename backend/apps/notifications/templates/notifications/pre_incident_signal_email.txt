@@ -1,0 +1,14 @@
+{% autoescape off %}👁️ Signal avant-coureur — {{ tenant_name }}
+
+{{ signal_label }} : {{ detail }}
+Actif concerné : {{ asset_value }}
+
+{{ plain_language }}
+
+À ce stade, aucune donnée de votre entreprise n'a fuité — nous continuons à
+surveiller et vous préviendrons immédiatement si la situation évolue.
+
+Voir le détail : {{ compromissions_url }}
+
+— RSSI as a Service
+{% endautoescape %}

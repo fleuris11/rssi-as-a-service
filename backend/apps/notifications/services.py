@@ -276,3 +276,47 @@ def send_realtime_alert_email(alert: Alert):
         html_body=html_body,
         details={"alert_id": alert.id, "alert_type": alert.alert_type},
     )
+
+
+# --- Signaux avant-coureurs (Phase 8A) ---------------------------------------
+
+
+def send_pre_incident_signal_email(finding: BreachFinding):
+    """Deliberately a different message from ``send_realtime_alert_email``:
+    a pre-incident signal means "we're watching, nothing has leaked yet",
+    and telling a business owner "🔴 Alerte" for a look-alike domain
+    registration would train them to ignore the alerts that DO mean a real
+    leak. Gated by the same ``realtime_alerts_enabled`` preference — it's
+    still a real-time push, just a calmer one."""
+    tenant = finding.tenant
+    prefs = get_or_create_preferences(tenant)
+    if not prefs.realtime_alerts_enabled:
+        return None
+    recipients = list_recipient_emails(tenant)
+    if not recipients:
+        return None
+
+    signal_type = threat_intelligence_services.classify_pre_incident_signal(finding)
+    definition = threat_intelligence_services.pre_incident_definition(signal_type)
+
+    context = {
+        "tenant_name": tenant.name,
+        "signal_label": definition["label"],
+        "plain_language": definition["plain_language"],
+        "detail": threat_intelligence_services.pre_incident_detail(finding),
+        "asset_value": finding.asset.value,
+        "compromissions_url": f"{settings.FRONTEND_BASE_URL}/compromissions",
+    }
+    subject = f"👁️ Signal avant-coureur — {tenant.name} — {definition['label']}"
+    text_body = render_to_string("notifications/pre_incident_signal_email.txt", context)
+    html_body = render_to_string("notifications/pre_incident_signal_email.html", context)
+
+    return _send_email(
+        tenant=tenant,
+        kind=EmailLog.Kind.PRE_INCIDENT_SIGNAL,
+        recipients=recipients,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+        details={"finding_id": finding.id, "signal_type": signal_type},
+    )

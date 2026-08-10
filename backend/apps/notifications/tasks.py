@@ -51,3 +51,19 @@ def send_realtime_alert_email(self, alert_id):
     except Exception as exc:  # noqa: BLE001
         raise self.retry(exc=exc) from exc
     return bool(message)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+def send_pre_incident_signal_email(self, finding_id):
+    from apps.threat_intelligence.models import BreachFinding
+
+    finding = (
+        BreachFinding.all_objects.filter(id=finding_id).select_related("asset", "tenant").first()
+    )
+    if finding is None:
+        return None
+    try:
+        message = services.send_pre_incident_signal_email(finding)
+    except Exception as exc:  # noqa: BLE001
+        raise self.retry(exc=exc) from exc
+    return bool(message)

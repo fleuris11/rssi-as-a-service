@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+  <body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;padding:24px 16px;">
+      <tr>
+        <td>
+          <p style="font-size:24px;margin:0 0 8px;">👁️</p>
+          <h1 style="font-size:18px;margin:0 0 4px;">Signal avant-coureur — {{ tenant_name }}</h1>
+          <p style="font-size:13px;color:#64748b;margin:0 0 16px;">
+            Nous surveillons votre exposition publique. Rien n'a encore fuité.
+          </p>
+
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;margin-bottom:16px;">
+            <tr><td style="padding:4px 0;color:#64748b;">Signal</td><td style="padding:4px 0;"><strong>{{ signal_label }}</strong></td></tr>
+            <tr><td style="padding:4px 0;color:#64748b;">Détail</td><td style="padding:4px 0;">{{ detail }}</td></tr>
+            <tr><td style="padding:4px 0;color:#64748b;">Actif concerné</td><td style="padding:4px 0;">{{ asset_value }}</td></tr>
+          </table>
+
+          <p style="margin:0 0 16px;padding:12px 14px;background:#fffbeb;border-left:3px solid #f59e0b;font-size:13px;line-height:1.5;">
+            {{ plain_language }}
+          </p>
+
+          <p style="margin:0 0 20px;font-size:13px;color:#475569;">
+            À ce stade, aucune donnée de votre entreprise n'a fuité — nous continuons à surveiller
+            et vous préviendrons immédiatement si la situation évolue.
+          </p>
+
+          <p style="margin:0 0 20px;">
+            <a href="{{ compromissions_url }}" style="display:inline-block;background:#0f172a;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;font-size:13px;">
+              Voir le détail
+            </a>
+          </p>
+
+          <p style="margin:0;font-size:11px;color:#94a3b8;">RSSI as a Service</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
