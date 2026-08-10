@@ -26,6 +26,7 @@ from .serializers import (
     BreachScanTriggerSerializer,
     MonitoredAssetCreateSerializer,
     MonitoredAssetSerializer,
+    PreIncidentSummarySerializer,
     SecretRevealAuditAdminSerializer,
     SecretRevealAuditSerializer,
     SecretRevealRequestSerializer,
@@ -174,6 +175,20 @@ class BreachFindingRevealView(APIView):
         # côté affichage).
         response["Cache-Control"] = "no-store"
         return response
+
+
+class PreIncidentRadarView(APIView):
+    """GET /api/v1/threat-intelligence/pre-incident/ — les signaux
+    d'exposition publique (radar, dark web, surface d'attaque) du tenant,
+    groupés par nature, avec pour chacun une phrase de vulgarisation et un
+    niveau d'urgence. Distinct de la liste des fuites : c'est du
+    pré-incident (« nous surveillons »), pas un constat (« ça a fuité »)."""
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
+
+    def get(self, request):
+        summary = services.build_pre_incident_summary(request.tenant)
+        return Response(PreIncidentSummarySerializer(summary).data)
 
 
 class SecretRevealAuditListView(generics.ListAPIView):

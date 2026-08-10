@@ -439,8 +439,34 @@ def ingest_webhook_payload(payload: list[dict]) -> dict:
             tenant_emails=tenant_member_emails(monitored.tenant),
         )
         total_created += len(created)
+        _notify_pre_incident_signals(created)
 
     return {"findings_created": total_created, "unmatched_refs": unmatched_refs}
+
+
+def _notify_pre_incident_signals(findings: list[BreachFinding]) -> None:
+    """Pushes a "signal avant-coureur" email for webhook-delivered radar/
+    darkweb/attack-surface findings (Phase 8A). Deliberately webhook-only:
+    a diagnostic scan surfaces a whole backlog of pre-existing signals at
+    once, and mailing all of them would be noise — the value of this
+    notification is that something *changed* in the tenant's public exposure
+    just now. Import is deferred (like apps.monitoring.tasks does) to keep
+    the notifications -> threat_intelligence dependency one-way at import
+    time."""
+    pre_incident = [f for f in findings if f.source_endpoint in PRE_INCIDENT_ENDPOINTS]
+    if not pre_incident:
+        return
+    from apps.notifications.tasks import send_pre_incident_signal_email
+
+    for finding in pre_incident:
+        try:
+            send_pre_incident_signal_email.delay(finding.id)
+        except Exception:  # noqa: BLE001 - l'ingestion ne doit jamais échouer à cause de l'email
+            logger.warning(
+                "Impossible de planifier la notification de signal avant-coureur pour %s",
+                finding.id,
+                exc_info=True,
+            )
 
 
 # --- Findings : consultation & traitement -----------------------------------
@@ -470,3 +496,155 @@ def count_critical_open_findings(tenant) -> int:
     return BreachFinding.all_objects.filter(
         tenant=tenant, status=BreachFinding.Status.OPEN, severity=BreachFinding.Severity.CRITICAL
     ).count()
+
+
+# --- Radar pré-incident (Phase 8A) ------------------------------------------
+#
+# Un signal "avant-coureur" est une observation sur l'exposition PUBLIQUE du
+# tenant (domaine ressemblant déposé, mention sur un forum, surface d'attaque)
+# — pas le constat qu'une donnée a fuité. La distinction est produit, pas
+# cosmétique : elle change ce que le dirigeant doit faire (surveiller /
+# prévenir ses équipes) et le ton du message (« rien n'a encore fuité »).
+
+PRE_INCIDENT_ENDPOINTS = (
+    BreachFinding.SourceEndpoint.RADAR,
+    BreachFinding.SourceEndpoint.DARKWEB,
+    BreachFinding.SourceEndpoint.ASM,
+)
+
+# Nature du signal -> (libellé, explication grand public, urgence).
+# L'explication est délibérément en une phrase, sans jargon : c'est ce que
+# lit un dirigeant de TPE/PME, pas un analyste.
+SIGNAL_TYPOSQUAT = "typosquat"
+SIGNAL_DARKWEB = "darkweb"
+SIGNAL_PUBLIC_MENTION = "public_mention"
+SIGNAL_ATTACK_SURFACE = "attack_surface"
+
+_SIGNAL_DEFINITIONS = {
+    SIGNAL_TYPOSQUAT: {
+        "label": "Nom de domaine imitant le vôtre",
+        "plain_language": (
+            "Quelqu'un a déposé une adresse internet très proche de la vôtre — c'est souvent "
+            "le préparatif d'un faux email demandant un virement ou un mot de passe. Prévenez "
+            "vos équipes (surtout la comptabilité) de vérifier l'adresse exacte de l'expéditeur."
+        ),
+        "urgency": "high",
+    },
+    SIGNAL_DARKWEB: {
+        "label": "Mention sur le dark web",
+        "plain_language": (
+            "Le nom de votre entreprise a été repéré dans un espace fréquenté par des attaquants. "
+            "Rien n'indique qu'une donnée a fuité, mais cela peut signaler un intérêt pour vous : "
+            "c'est le bon moment pour vérifier vos sauvegardes et la double authentification."
+        ),
+        "urgency": "high",
+    },
+    SIGNAL_PUBLIC_MENTION: {
+        "label": "Mention publique repérée",
+        "plain_language": (
+            "Votre entreprise a été mentionnée publiquement dans un espace surveillé. C'est une "
+            "information de veille : à connaître, sans action urgente de votre part."
+        ),
+        "urgency": "info",
+    },
+    SIGNAL_ATTACK_SURFACE: {
+        "label": "Élément exposé sur internet",
+        "plain_language": (
+            "Un élément technique de votre entreprise est visible publiquement sur internet. "
+            "C'est normal pour la plupart des services, mais cela fait partie de ce qu'un "
+            "attaquant regarde en premier — à garder à jour."
+        ),
+        "urgency": "info",
+    },
+}
+
+
+def classify_pre_incident_signal(finding: BreachFinding) -> str:
+    """Maps a finding onto the nature of the *signal* it represents, which
+    doesn't map 1:1 onto ``source_endpoint``: ``radar`` covers both a
+    look-alike domain registration (actionable, high urgency) and a plain
+    public mention (informational), and only the phishing sub-type of
+    ``asm`` is a real pre-incident signal rather than inventory."""
+    if finding.source_endpoint == BreachFinding.SourceEndpoint.DARKWEB:
+        return SIGNAL_DARKWEB
+    if finding.source_endpoint == BreachFinding.SourceEndpoint.ASM:
+        return (
+            SIGNAL_TYPOSQUAT
+            if finding.finding_type == normalizer.ASM_PHISHING_TYPE
+            else SIGNAL_ATTACK_SURFACE
+        )
+    # radar : un domaine ressemblant déposé est un signal de préparation
+    # d'attaque, pas une simple mention — distingué par la sévérité "élevée"
+    # calculée à l'ingestion, ou par la source annoncée par le fournisseur.
+    source = str(finding.raw_data.get("src", "")).lower()
+    if "domaine" in source or "domain" in source:
+        return SIGNAL_TYPOSQUAT
+    return SIGNAL_PUBLIC_MENTION
+
+
+def list_pre_incident_findings(tenant):
+    """Only OPEN findings: a signal the tenant has already treated/ignored
+    shouldn't keep shouting at them from the top of the page."""
+    return (
+        BreachFinding.all_objects.filter(
+            tenant=tenant,
+            status=BreachFinding.Status.OPEN,
+            source_endpoint__in=PRE_INCIDENT_ENDPOINTS,
+        )
+        .select_related("asset")
+        .order_by("-detected_at")
+    )
+
+
+def build_pre_incident_summary(tenant) -> dict:
+    """Groups the tenant's open pre-incident findings by signal nature, each
+    with its plain-language explanation and urgency — the shape the
+    "Signaux avant-coureurs" card renders directly."""
+    groups: dict[str, list] = {}
+    for finding in list_pre_incident_findings(tenant):
+        groups.setdefault(classify_pre_incident_signal(finding), []).append(finding)
+
+    signals = []
+    for signal_type, definition in _SIGNAL_DEFINITIONS.items():
+        findings = groups.get(signal_type, [])
+        if not findings:
+            continue
+        signals.append(
+            {
+                "signal_type": signal_type,
+                "label": definition["label"],
+                "plain_language": definition["plain_language"],
+                "urgency": definition["urgency"],
+                "count": len(findings),
+                "items": [
+                    {
+                        "id": finding.id,
+                        "asset_value": finding.asset.value,
+                        "detail": pre_incident_detail(finding),
+                        "detected_at": finding.detected_at,
+                        "breach_date": finding.breach_date,
+                    }
+                    for finding in findings
+                ],
+            }
+        )
+
+    return {"signals": signals, "total": sum(s["count"] for s in signals)}
+
+
+def pre_incident_detail(finding: BreachFinding) -> str:
+    """The one concrete observed value worth showing (the look-alike domain,
+    the mentioned domain) — read from the already-masked ``raw_data``, never
+    from anything sensitive."""
+    for key in ("dom", "data", "cname"):
+        value = finding.raw_data.get(key)
+        if value:
+            return str(value)
+    return finding.asset.value
+
+
+def pre_incident_definition(signal_type: str) -> dict:
+    """Label/vulgarisation/urgence for one signal nature — the single source
+    of truth shared by the API and the notification email, so the wording a
+    tenant reads is identical in both places."""
+    return _SIGNAL_DEFINITIONS[signal_type]

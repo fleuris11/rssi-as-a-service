@@ -83,6 +83,33 @@ class SecretRevealAuditSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class PreIncidentItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    asset_value = serializers.CharField()
+    detail = serializers.CharField()
+    detected_at = serializers.DateTimeField()
+    breach_date = serializers.DateField(allow_null=True)
+
+
+class PreIncidentSignalSerializer(serializers.Serializer):
+    """Radar pré-incident (Phase 8A) : un signal d'exposition publique, pas
+    un constat de fuite — d'où la phrase de vulgarisation et le niveau
+    d'urgence, tous deux calculés côté serveur pour que le frontend n'ait
+    aucune règle métier à dupliquer."""
+
+    signal_type = serializers.CharField()
+    label = serializers.CharField()
+    plain_language = serializers.CharField()
+    urgency = serializers.CharField()
+    count = serializers.IntegerField()
+    items = PreIncidentItemSerializer(many=True)
+
+
+class PreIncidentSummarySerializer(serializers.Serializer):
+    signals = PreIncidentSignalSerializer(many=True)
+    total = serializers.IntegerField()
+
+
 class SecretRevealAuditAdminSerializer(SecretRevealAuditSerializer):
     """Platform back-office variant — adds which tenant, same aggregate-only
     spirit as ``BreachIntelligenceUsageSerializer`` (no finding detail beyond
