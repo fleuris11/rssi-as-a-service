@@ -251,6 +251,23 @@ AI_DEFAULT_MONTHLY_TOKEN_LIMIT = env.int("AI_DEFAULT_MONTHLY_TOKEN_LIMIT", defau
 # NullProvider — utile en dev/CI sans licence.
 BREACHSENSE_LICENSE_KEY = env("BREACHSENSE_LICENSE_KEY", default="")
 BREACHSENSE_BASE_URL = env("BREACHSENSE_BASE_URL", default="https://api.breachsense.com")
+# Mode de fourniture des données CTI (Phase 8A, ADR-015) :
+#   - "live"   : appels réels à l'API Breachsense (consomme le quota précieux
+#                de 1000 req/mois partagé) — JAMAIS le défaut, à activer
+#                explicitement (record_breachsense_cassette, smoke test) ;
+#   - "replay" : sert des cassettes enregistrées (tests/fixtures/breachsense/),
+#                AUCUN appel réseau — mode voulu en dev/CI et pour la démo ;
+#   - "null"   : NullProvider (aucune donnée, aucun appel).
+# "auto" (défaut) : "replay" si des cassettes existent, sinon "null". JAMAIS
+# "live" par défaut, même quand une licence est configurée — c'est
+# précisément le point : le quota est précieux, aucun appel réel ne doit
+# partir par accident en développement courant ni en test (ADR-015). Passer
+# "live" doit être un acte explicite (variable d'environnement).
+BREACHSENSE_MODE = env("BREACHSENSE_MODE", default="auto")
+# Répertoire des cassettes (mode "replay"). Vide = emplacement par défaut,
+# apps/threat_intelligence/tests/fixtures/breachsense/ — surchargé surtout
+# par les tests, pour isoler chaque cas de son propre répertoire.
+BREACHSENSE_CASSETTE_DIR = env("BREACHSENSE_CASSETTE_DIR", default="")
 # Redis dédié au token-bucket (clé globale, pas par tenant — la licence est
 # unique) ; par défaut le même index que le cache Django, namespacé par clé.
 BREACHSENSE_THROTTLE_REDIS_URL = env(

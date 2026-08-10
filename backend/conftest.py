@@ -16,6 +16,14 @@ def _fast_password_hashing(settings):
 
 
 @pytest.fixture(autouse=True)
+def _breachsense_mode_null_by_default(settings):
+    # Deterministic default for the whole suite (ADR-015): tests must never
+    # depend on which cassettes happen to be committed, and must never make
+    # a real API call. Tests that exercise replay/live opt in explicitly.
+    settings.BREACHSENSE_MODE = "null"
+
+
+@pytest.fixture(autouse=True)
 def _breach_secret_encryption_key(settings):
     # Fixed, valid Fernet key so tests don't depend on
     # BREACH_SECRET_ENCRYPTION_KEY being set in the environment — global

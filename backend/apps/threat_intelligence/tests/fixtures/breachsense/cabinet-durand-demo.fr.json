@@ -1,0 +1,135 @@
+{
+  "domain": "cabinet-durand-demo.fr",
+  "endpoints": {
+    "asm": [
+      {
+        "cname": "",
+        "dom": "cabinet-durand-demo.co",
+        "found": "2026-08-04",
+        "ip": "203.0.113.42",
+        "type": "pphish"
+      }
+    ],
+    "combo": [
+      {
+        "cnt": 4,
+        "fle": "combo_fr.txt",
+        "fnd": "2026-06-07",
+        "pwd": "••••••0!",
+        "src": "Liste combo 2025-Q4",
+        "usr": "paul.leroy@cabinet-durand-demo.fr"
+      }
+    ],
+    "creds": [
+      {
+        "atr": "—",
+        "eml": "sophie.marchand@cabinet-durand-demo.fr",
+        "fnd": "2026-04-04",
+        "hash": 0,
+        "pwd": "••••••2!",
+        "src": "Fuite plateforme comptable 2023"
+      },
+      {
+        "atr": "—",
+        "eml": "contact@cabinet-durand-demo.fr",
+        "fnd": "2026-03-08",
+        "hash": 1,
+        "pwd": "••••••1#",
+        "src": "Fuite prestataire RH 2022"
+      }
+    ],
+    "darkweb": [
+      {
+        "data": "cabinet-durand-demo.fr",
+        "desc": "Mention du cabinet dans une liste de cibles potentielles",
+        "found": "2026-07-20",
+        "name": "Cabinet Comptable Durand",
+        "site": "ForumDemo",
+        "src": "veille-darkweb",
+        "tadesc": "Groupe opportuniste"
+      }
+    ],
+    "docs": [
+      {
+        "company_name": "Cabinet Comptable Durand",
+        "content_type": "application/pdf",
+        "doc_id": "demo-doc-4471",
+        "domain_name": "cabinet-durand-demo.fr",
+        "extraction_timestamp": "2026-05-29",
+        "file_hash": "9f2c4d7e1a8b6c3d5e0f7a9b2c4d6e8f",
+        "file_name": "liasse_fiscale_client_2024.pdf",
+        "file_size": 842000,
+        "leak_date": "2026-05-27",
+        "threat_actor": "LeakSite-Demo",
+        "url_main_post": "https://exemple-leaksite.invalid/post/demo"
+      }
+    ],
+    "nhi": [
+      {
+        "category": "service-account",
+        "fnd": "2026-07-14",
+        "platform": "AWS",
+        "prefix": "AKIA",
+        "pth": "C:/Users/paul/.aws/credentials",
+        "source_type": "stealer",
+        "src": "RedLine Stealer log",
+        "token": "••••••00",
+        "token_type": "••••••ey",
+        "usr": "svc-sauvegarde"
+      }
+    ],
+    "radar": [
+      {
+        "data": "cabinet-durrand-demo.fr",
+        "found": "2026-08-06",
+        "src": "Enregistrement de domaine similaire"
+      },
+      {
+        "data": "cabinet-durand-demo.fr",
+        "found": "2026-07-25",
+        "src": "Mention sur un forum spécialisé"
+      }
+    ],
+    "sessions": [
+      {
+        "cookie_name": "ESTSAUTHPERSISTENT",
+        "cookie_path": "/",
+        "dom": "login.microsoftonline.com",
+        "expires": "2026-08-30",
+        "fnd": "2026-08-01",
+        "inf": "2026-07-29",
+        "mal": "RedLine",
+        "user_name": "marie.durand@cabinet-durand-demo.fr",
+        "val": "••••••00"
+      }
+    ],
+    "stealer": [
+      {
+        "fle": "passwords.txt",
+        "fnd": "2026-07-03",
+        "inf": "2026-06-30",
+        "mal": "RedLine",
+        "nme": "PC-COMPTA-01",
+        "os": "Windows 11",
+        "pwd": "••••••nd",
+        "src": "RedLine Stealer log",
+        "usr": "marie.durand@cabinet-durand-demo.fr"
+      },
+      {
+        "fle": "logins.txt",
+        "fnd": "2026-05-10",
+        "inf": "2026-05-06",
+        "mal": "Vidar",
+        "nme": "PORTABLE-PL",
+        "os": "Windows 10",
+        "pwd": "••••••3*",
+        "src": "Vidar Stealer log",
+        "usr": "paul.leroy@cabinet-durand-demo.fr"
+      }
+    ]
+  },
+  "recorded_at": "2026-08-10T12:35:10.456667+00:00",
+  "requests_consumed": 0,
+  "secrets_masked": true,
+  "synthetic": true
+}

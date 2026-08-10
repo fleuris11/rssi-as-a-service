@@ -139,14 +139,67 @@ class TestNullProvider:
 
 
 class TestProviderFactory:
-    def test_empty_license_key_returns_null_provider(self, settings):
+    """Phase 8A (ADR-015): the mode, not the mere presence of a licence key,
+    decides which provider is in use — a configured licence is a capability,
+    not an instruction to spend the shared query budget."""
+
+    def test_explicit_live_mode_with_license_returns_breachsense_provider(self, settings):
         from apps.threat_intelligence.providers import get_provider
 
+        settings.BREACHSENSE_MODE = "live"
+        settings.BREACHSENSE_LICENSE_KEY = "some-key"
+        assert isinstance(get_provider(), BreachsenseProvider)
+
+    def test_live_mode_without_license_degrades_to_null_not_error(self, settings):
+        from apps.threat_intelligence.providers import get_provider
+
+        settings.BREACHSENSE_MODE = "live"
         settings.BREACHSENSE_LICENSE_KEY = ""
         assert isinstance(get_provider(), NullProvider)
 
-    def test_configured_license_key_returns_breachsense_provider(self, settings):
+    def test_replay_mode_returns_replay_provider(self, settings):
+        from apps.threat_intelligence.providers import ReplayProvider, get_provider
+
+        settings.BREACHSENSE_MODE = "replay"
+        settings.BREACHSENSE_LICENSE_KEY = "some-key"
+        assert isinstance(get_provider(), ReplayProvider)
+
+    def test_null_mode_returns_null_provider(self, settings):
         from apps.threat_intelligence.providers import get_provider
 
+        settings.BREACHSENSE_MODE = "null"
         settings.BREACHSENSE_LICENSE_KEY = "some-key"
-        assert isinstance(get_provider(), BreachsenseProvider)
+        assert isinstance(get_provider(), NullProvider)
+
+    def test_auto_mode_never_goes_live_even_with_a_license(self, settings, tmp_path):
+        """The whole point of ADR-015: a licensed environment must not start
+        spending the shared 1000 req/month budget by default."""
+        from apps.threat_intelligence.providers import get_provider
+
+        settings.BREACHSENSE_MODE = "auto"
+        settings.BREACHSENSE_LICENSE_KEY = "some-key"
+        settings.BREACHSENSE_CASSETTE_DIR = str(tmp_path)
+        assert not isinstance(get_provider(), BreachsenseProvider)
+
+    def test_auto_mode_uses_replay_when_cassettes_exist(self, settings, tmp_path):
+        from apps.threat_intelligence.providers import ReplayProvider, get_provider
+
+        (tmp_path / "example.com.json").write_text('{"endpoints": {}}', encoding="utf-8")
+        settings.BREACHSENSE_MODE = "auto"
+        settings.BREACHSENSE_CASSETTE_DIR = str(tmp_path)
+        assert isinstance(get_provider(), ReplayProvider)
+
+    def test_auto_mode_falls_back_to_null_without_cassettes(self, settings, tmp_path):
+        from apps.threat_intelligence.providers import get_provider
+
+        settings.BREACHSENSE_MODE = "auto"
+        settings.BREACHSENSE_CASSETTE_DIR = str(tmp_path / "vide")
+        assert isinstance(get_provider(), NullProvider)
+
+    def test_unknown_mode_is_treated_as_auto_never_live(self, settings, tmp_path):
+        from apps.threat_intelligence.providers import get_provider
+
+        settings.BREACHSENSE_MODE = "n-importe-quoi"
+        settings.BREACHSENSE_LICENSE_KEY = "some-key"
+        settings.BREACHSENSE_CASSETTE_DIR = str(tmp_path / "vide")
+        assert isinstance(get_provider(), NullProvider)
