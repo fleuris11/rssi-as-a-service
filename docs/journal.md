@@ -1542,3 +1542,115 @@ L'utilisateur a redémarré Docker Desktop ; la vérification différée ci-dess
 - **Rotation des clés Fernet** (dont la nouvelle `BREACH_SECRET_ENCRYPTION_KEY`) : toujours
   manuelle, reste-à-faire déjà noté pour `TOTP_ENCRYPTION_KEY`/`AI_PSEUDONYMIZATION_KEY`
   (`docs/security_review.md`, A02).
+
+---
+
+## 2026-08-10 — Phase 8A : socle de démonstration client + radar pré-incident
+
+### Contexte
+Le produit va être présenté en démo live (écran partagé) à des prospects. Deux contraintes
+structurantes : la démo ne doit jamais dépendre d'un appel API Breachsense en direct, et le quota
+de la licence réelle (1000 requêtes/mois, partagé par toute la plateforme) ne doit être consommé
+ni par les tests ni par le développement courant.
+
+### Réalisé
+
+**Modes CTI et cassettes rejouables (ADR-015)**
+- Nouveau réglage `BREACHSENSE_MODE` : `live` / `replay` / `null` / `auto` (défaut).
+- Nouveau `ReplayProvider` : sert des cassettes JSON depuis
+  `apps/threat_intelligence/tests/fixtures/breachsense/`, **zéro appel réseau**, et renvoie
+  `requests_consumed=0` (un rejeu ne doit pas gonfler les compteurs d'usage d'une dépense qui n'a
+  pas eu lieu).
+- `get_provider()` sélectionne désormais sur le **mode**, plus sur la simple présence d'une clé de
+  licence — et le défaut ne bascule **jamais** en `live`, même licence configurée. C'est le cœur
+  de l'ADR-015 : disposer d'une licence est une capacité, pas une instruction de la dépenser.
+- `record_breachsense_cassette --domain X --confirm-live-call` : seule commande du dépôt qui appelle
+  délibérément l'API réelle (elle instancie `BreachsenseProvider` directement, sans passer par
+  `get_provider()` — contourner le mode configuré est précisément son rôle). Les payloads passent
+  par `normalizer.mask_payload` **avant** écriture : l'ADR-014 s'applique aux fixtures comme à la
+  base, une cassette ne contient jamais de secret en clair et est donc committable.
+- `apps/threat_intelligence/README.md` documente les modes et la procédure d'enregistrement.
+
+**Tenant de démonstration**
+- `seed_demo_tenant` (idempotente, `--reset`, garde-fou `--allow-production` si `DEBUG=False`) :
+  crée « Demo — Cabinet Comptable Durand » avec 3 utilisateurs, 4 actifs (domaine, site, VPN,
+  webmail) et 12 fuites couvrant **tous** les `source_endpoint`, dates étalées sur ~6 mois.
+- Les fuites sont créées via `services.ingest_raw_findings`, donc à travers le pipeline **réel**
+  (masquage, chiffrement du secret, dédoublonnage, ouverture d'alerte) — pas une insertion directe
+  en base qui divergerait silencieusement du comportement de production. C'est aussi ce qui rend la
+  commande naturellement idempotente : mêmes payloads donnent mêmes `dedup_hash`, donc aucun doublon.
+- Données de démo non confondables avec du réel : slug réservé `demo-cabinet-durand`, préfixe de nom
+  « Demo — », et « mots de passe » manifestement factices mais crédibles à l'écran
+  (`Hiver2024!durand`).
+
+**Radar pré-incident**
+- `GET /api/v1/threat-intelligence/pre-incident/` : les findings `radar`/`darkweb`/`asm` **ouverts**
+  du tenant, groupés par **nature de signal** — une classification qui ne recouvre pas 1:1 les
+  `source_endpoint` : `radar` mélange un dépôt de domaine ressemblant (actionnable, urgence élevée)
+  et une simple mention publique (informationnel), et seul le sous-type phishing d'`asm` est un vrai
+  signal pré-incident plutôt que de l'inventaire. Chaque groupe porte une phrase de vulgarisation
+  (une phrase, sans jargon) et un niveau d'urgence, calculés côté serveur pour que le frontend n'ait
+  aucune règle métier à dupliquer.
+- Frontend : carte « Signaux avant-coureurs » en haut de la page Compromissions, visuellement
+  distincte (fond et bordure « veille », icône radar, **pas de rouge** — le rouge reste réservé aux
+  compromissions avérées, sinon on habitue le dirigeant à ignorer les vraies alertes). État vide
+  soigné : « Aucun signal avant-coureur détecté — votre exposition publique est calme ».
+- Notification dédiée : un signal `radar`/`darkweb`/`asm` arrivant **par webhook** déclenche un email
+  « signal avant-coureur » (nouveau `EmailLog.Kind`, templates dédiés) au ton délibérément différent
+  d'une alerte de compromission — il dit explicitement qu'aucune donnée n'a fuité. Volontairement
+  webhook-only : un scan de diagnostic remonte d'un coup tout l'historique de signaux, les mailer
+  tous serait du bruit — la valeur de cette notification est que quelque chose vient de *changer*.
+
+### Décisions
+- Le défaut `auto` ne résout jamais vers `live` (ADR-015 §2) : c'est la décision structurante de la
+  phase, elle ferme par construction — pas par discipline — le risque d'épuisement silencieux du
+  quota partagé.
+- La suite de tests force `BREACHSENSE_MODE=null` par défaut (conftest racine) : le résultat des
+  tests ne doit jamais dépendre des cassettes qui se trouvent committées, ni pouvoir partir sur le
+  réseau. Les tests de rejeu s'y inscrivent explicitement, avec leur propre répertoire de cassettes.
+- Seed via le pipeline réel plutôt qu'en insertion directe (voir ci-dessus) — option explicitement
+  pesée et tranchée dans l'ADR-015 (« Options étudiées », B).
+- `--reset` efface les données CTI/alertes du tenant de démo mais **pas** le tenant, ses
+  utilisateurs ni ses actifs : rejouer la commande juste avant une démo ne doit pas invalider une
+  session déjà ouverte à l'écran.
+
+### Difficultés rencontrées et solutions
+- **Échappement HTML dans un email en texte brut** : le rendu Django applique l'autoescape à
+  **tous** les templates, extension `.txt` comprise. La phrase de vulgarisation contenant une
+  apostrophe (« Quelqu'un a déposé... »), l'email texte affichait `Quelqu&#x27;un`. Invisible
+  jusqu'ici parce qu'aucun template texte existant n'interpolait de valeur contenant une apostrophe
+  (uniquement des URL d'actifs et des libellés). Corrigé par `{% autoescape off %}` sur le template
+  texte (le HTML garde l'échappement, qui y est correct). Trouvé par un test qui comparait la phrase
+  rendue à la constante source — une assertion « le texte affiché est bien celui qu'on a écrit »,
+  pas seulement « un email est parti ».
+- **Garde-fou de production vs. suite de tests** : la suite tourne avec `DEBUG=False`, donc le
+  garde-fou de `seed_demo_tenant` faisait échouer tous les cas nominaux. Résolu par une fixture
+  locale activant `DEBUG=True`, le garde-fou lui-même restant testé à part — plutôt que d'affaiblir
+  la condition côté commande pour arranger les tests.
+- **Assertion de démo trop spécifique** : le scénario Playwright visait le premier bouton
+  « Révéler » en attendant le mot de passe du finding *stealer*, alors que les fuites sont triées
+  par détection décroissante — le premier finding porteur de secret est le cookie de session M365.
+  La fonctionnalité était correcte, l'attente du test ne l'était pas. Corrigé en visant la valeur
+  réellement attendue (et c'est le meilleur cas à montrer en premier en démo : le cookie qui
+  contourne la double authentification).
+
+### Vérification
+- 549 tests backend verts (49 nouveaux : modes/rejeu, seed, radar pré-incident, notification), hors
+  les 3 tests PDF WeasyPrint pré-existants (limite d'environnement Windows local, sans rapport).
+  `ruff check` propre.
+- Lint frontend propre (2 avertissements pré-existants sans rapport).
+- Scénario de démo déroulé en navigateur réel (Playwright) sur le tenant seedé : connexion,
+  Compromissions, carte Radar (les 3 natures de signal affichées avec leur vulgarisation), liste
+  des fuites, révélation d'un secret seedé avec ré-authentification. Vert.
+
+### Reste à faire (sessions suivantes)
+- **Doublon d'affichage assumé, à arbitrer** : les findings `radar`/`darkweb`/`asm` apparaissent à
+  la fois dans la carte « Signaux avant-coureurs » et dans la liste des fuites en dessous. C'est
+  actuellement nécessaire — seule la liste porte les actions « Ignorer »/« Marquer traité », donc
+  les retirer rendrait ces signaux impossibles à traiter et ils resteraient indéfiniment dans la
+  carte. À trancher au niveau produit : soit porter les actions dans la carte et filtrer la liste,
+  soit assumer le doublon (résumé + détail).
+- **Purge planifiée** et **rotation des clés Fernet** : reste-à-faire inchangés (Phases 7 et 8).
+- **Smoke test avec la licence réelle** : toujours à faire, et c'est désormais le moment naturel
+  pour enregistrer les premières vraies cassettes (`record_breachsense_cassette`), qui remplaceront
+  la cassette synthétique de démo actuellement committée.
