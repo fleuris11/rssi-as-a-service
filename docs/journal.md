@@ -1654,3 +1654,124 @@ ni par les tests ni par le développement courant.
 - **Smoke test avec la licence réelle** : toujours à faire, et c'est désormais le moment naturel
   pour enregistrer les premières vraies cassettes (`record_breachsense_cassette`), qui remplaceront
   la cassette synthétique de démo actuellement committée.
+
+---
+
+## 2026-08-11 — Phase 8B : fil d'exposition priorisé (« le médecin, pas la chemise de résultats »)
+
+### Contexte
+La Phase 8A livrait une page Compromissions correcte mais qui laissait au dirigeant tout le travail
+d'interprétation : une liste plate de fuites, sans hiérarchie ni conduite à tenir. Objectif de cette
+phase : passer d'un rendu de résultats à un avis — quoi regarder en premier, ce que ça veut dire,
+quoi faire — et trancher au passage le doublon d'affichage laissé ouvert en 8A.
+
+### Réalisé
+
+**Tâche 0 — arbitrage 8A tranché**
+- La carte « Signaux avant-coureurs » porte désormais « Marquer traité » / « Ignorer » (mêmes
+  transitions de statut, mêmes permissions que la liste) et un lien « Voir les signaux traités ».
+- `services.list_findings` exclut par défaut les endpoints pré-incident : la liste Compromissions
+  ne montre plus que des fuites avérées. Le paramètre `include_pre_incident=True` restitue la vue
+  complète pour les appelants qui raisonnent sur l'exposition d'un actif et non sur une liste.
+- ADR-013 amendé en conséquence (la sémantique de la liste qu'il documentait a changé).
+
+**Tâche 1 — score d'exposition (ADR-016)**
+- Calcul entièrement déterministe (`exposure.py`), sans aucun appel IA : sévérité (40/22/8),
+  fraîcheur (×1,0 à ×0,35), secret réellement récupérable (+10), statut ouvert uniquement.
+  Contributions décroissantes (×0,6 par rang) et plafond à 100, pour que dix broutilles anciennes ne
+  passent jamais devant une fuite critique fraîche.
+- Le calcul renvoie **toujours** ses composantes avec le total : l'API les expose, l'interface les
+  affiche sous « Comment ce score est calculé ». Un score qu'on ne peut pas justifier devant un
+  client ne vaut rien — c'est le cœur de l'ADR-016.
+- Seuils des quatre niveaux en configuration (`EXPOSURE_LEVEL_THRESHOLDS`), pas en dur.
+
+**Tâche 2 — vulgarisation déterministe**
+- Module dédié `plain_language.py` : pour chaque `source_endpoint` (et le sous-type phishing d'ASM),
+  « ce que ça veut dire » + « l'action à mener », en français simple, vouvoyé, sans jargon nu.
+  Aucun appel IA : ces phrases s'affichent immédiatement, sans latence ni quota.
+- Exposées par l'API sur chaque finding (`meaning` / `recommended_action`), donc identiques partout.
+  Le tableau de textes qui existait **en dur dans le frontend** depuis la Phase 7 a été supprimé au
+  profit de ces champs : il commençait déjà à diverger de ce que le backend racontait ailleurs.
+
+**Tâche 3 — fil d'exposition**
+- `GET /threat-intelligence/exposure-feed/` : fuites ouvertes groupées par actif, chaque groupe avec
+  son score, ses composantes et ses findings triés par (sévérité, fraîcheur) ; groupes triés par
+  score décroissant.
+- Nouvelle page frontend « Exposition », placée au-dessus de Compromissions dans la navigation.
+  Cartes par actif avec cadran de score, dépliables sur le détail. La carte Radar de 8A y a été
+  déplacée (tout en haut). C'est cette page qu'on ouvre en démonstration.
+
+**Tâche 4 — synthèse IA contextuelle**
+- Modèle `ExposureSynthesis` (une ligne par tenant : c'est un cache, pas une piste d'audit —
+  `AIUsageLog` trace déjà chaque appel), job asynchrone (pattern ADR-011), routage Haiku (ADR-004),
+  quota par tenant existant.
+- Pipeline ADR-005 complet : pseudonymisation avant appel, ré-injection après. Le contexte transmis
+  exclut délibérément jusqu'au `secret_masked` — « ••••••23 » n'aide en rien une mise en relation, et
+  le laisser partir ouvrirait une discussion inutile sur ce qui sort chez le fournisseur.
+- Invalidation à chaque création de fuite et à chaque changement de statut. La synthèse est marquée
+  **obsolète** plutôt que supprimée : on peut ainsi afficher « antérieure à vos dernières actions »
+  au lieu de faire disparaître le bandeau sans explication.
+- La page est complète sans synthèse : aucun spinner bloquant, aucun état d'erreur, le bandeau est
+  simplement absent. Cooldown de 10 min sur le bouton « Actualiser l'analyse ».
+- `seed_demo_tenant` pose une synthèse pré-générée (texte fixe, jamais un appel IA au seed), rédigée
+  pour correspondre exactement aux fuites seedées — même principe que les cassettes de l'ADR-015.
+
+### Décisions
+- **Score déterministe, jamais IA** (ADR-016) : reproductibilité et justifiabilité priment sur la
+  finesse. L'IA lit l'exposition, elle ne la mesure pas — deux modules distincts, aucune dépendance.
+- **Vulgarisation en module Python**, ni en base ni en templates : ce sont des constantes produit à
+  relire et versionner comme du texte éditorial, et les tests peuvent assertir dessus.
+- **Synthèse marquée obsolète plutôt que supprimée** : dire « cette analyse date d'avant vos
+  dernières actions » est plus honnête que faire disparaître le bandeau.
+- **Actions dans la carte AVANT de filtrer la liste** : l'ordre comptait. Retirer les signaux de la
+  liste sans leur donner d'actions ailleurs les aurait rendus intraitables et bloqués à vie dans la
+  carte.
+
+### Difficultés rencontrées et solutions
+- **Un défaut plus restrictif rétrécit silencieusement les appelants existants** : passer
+  `list_findings` à « fuites avérées seulement » a modifié, sans erreur ni test rouge, le contexte
+  envoyé à l'assistant IA et à la météo quotidienne — qui voyaient depuis la Phase 7 l'ensemble des
+  findings. Repéré en relisant les appelants avant de considérer le changement terminé, pas signalé
+  par la suite de tests (aucun test n'affirmait que la météo voit les signaux radar). Les deux
+  appels ont été explicitement passés à `include_pre_incident=True`.
+- **Page bloquée sur son squelette de chargement, API saine** : symptôme d'un serveur Vite en état
+  HMR incohérent après une longue session d'édition — déjà rencontré et consigné lors d'une session
+  précédente. Diagnostiqué en mesurant les endpoints directement (`exposure-feed` : 200 en 0,19 s)
+  avant de suspecter le code ; résolu en redémarrant proprement le serveur de dev. Réflexe à garder :
+  « le front tourne en rond mais l'API répond » pointe vers le processus, pas vers le code.
+- **Assertion Playwright trop courte face à un coût de sécurité voulu** : la révélation d'un secret
+  vérifie le mot de passe avec le hasher de production (PBKDF2, 1 000 000 d'itérations) — ~1,6 s
+  mesuré en isolation, davantage sous charge, ce qui dépassait le délai par défaut de 5 s. Ce n'est
+  pas une lenteur à corriger mais le coût assumé du step-up : délai du test porté à 20 s, avec le
+  commentaire expliquant pourquoi.
+- **Une assertion de test qui matchait le texte d'introduction de la page** : la vérification « la
+  liste ne contient plus de signaux dark web » tombait sur la phrase d'introduction que je venais
+  d'écrire, laquelle mentionne ces catégories à dessein. Corrigé en ciblant les libellés des cartes
+  de fuite plutôt que le texte libre — la fonctionnalité était correcte depuis le début.
+- **« +0 » dans l'explication du score** : la 7e fuite d'un actif contribue ~0,37 point, donc « +0 »
+  à l'affichage — honnête, mais se lit comme un bug côté client. Rendu « moins de 1 » plutôt que
+  d'arrondir à 1 (ce qui aurait faussé la somme affichée) ou de masquer la ligne (ce qui aurait
+  rendu l'explication incomplète).
+
+### Vérification
+- 639 tests backend verts (90 nouveaux : score et ses cas limites, vulgarisation et sa couverture
+  éditoriale, fil d'exposition et étanchéité tenant, filtrage de la liste, historique des signaux,
+  cache/invalidation de la synthèse, non-fuite d'identifiants vers le fournisseur). Hors les 3 tests
+  PDF WeasyPrint pré-existants (limite d'environnement Windows local, sans rapport). `ruff` propre.
+- Lint frontend propre (2 avertissements pré-existants sans rapport).
+- Scénario de démonstration déroulé en navigateur réel (Playwright) sur le tenant Durand : connexion,
+  page Exposition, bandeau de synthèse, carte Radar, traitement d'un signal depuis la carte,
+  historique des signaux traités, dépliage d'un actif, explication du score, vulgarisation, révélation
+  d'un secret avec ré-authentification, et vérification que la liste Compromissions ne contient plus
+  que des fuites avérées. Vert.
+
+### Reste à faire (sessions suivantes)
+- **Tests de propriété sur la vulgarisation** : la couverture éditoriale est testée (chaque endpoint
+  a une entrée, ton vouvoyé, pas de jargon listé), mais rien ne garantit qu'une entrée future reste
+  *compréhensible* — cela demanderait une relecture humaine, pas un test.
+- **Pondération par type d'actif** dans le score (un VPN vaut-il plus qu'un site vitrine ?) : non
+  couvert, tous les actifs déclarés sont à égalité. À rouvrir sur retour client (ADR-016).
+- **Suite Vitest** : toujours absente du projet ; `ExposurePage`/`PreIncidentRadar` restent sans
+  tests unitaires frontend, comme le reste du frontend.
+- **Purge planifiée**, **rotation des clés Fernet**, **smoke test licence réelle** : reste-à-faire
+  inchangés des phases précédentes.
