@@ -62,6 +62,12 @@ export default function RevealSecretModal({ open, onClose, findingId }) {
 
   async function handleSubmit(event) {
     event.preventDefault()
+    // Garde anti-double-soumission : la vérification côté serveur prend
+    // ~1,5 s (PBKDF2, 1 000 000 d'itérations — un coût de sécurité voulu),
+    // largement de quoi laisser un second clic partir. Deux tentatives pour
+    // un seul geste compteraient double dans le journal d'audit et contre
+    // le rate limit de révélation.
+    if (submitting) return
     setSubmitting(true)
     setError('')
     try {
@@ -154,12 +160,32 @@ export default function RevealSecretModal({ open, onClose, findingId }) {
 
           {error && <p className="text-sm text-critical-strong">{error}</p>}
 
+          {/* Le serveur met ~1,5 s à vérifier le mot de passe (PBKDF2). Sans
+              message explicite, la modale paraît figée — en démonstration
+              comme à l'usage, c'est le moment où l'on croit que ça a planté. */}
+          {submitting && (
+            <p className="text-sm text-ink-500" role="status" aria-live="polite">
+              Vérification de votre identité…
+            </p>
+          )}
+
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" type="button" onClick={handleClose}>
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={handleClose}
+              disabled={submitting}
+            >
               Annuler
             </Button>
-            <Button variant="primary" type="submit" icon={KeyRound} loading={submitting}>
-              Vérifier et révéler
+            <Button
+              variant="primary"
+              type="submit"
+              icon={KeyRound}
+              loading={submitting}
+              disabled={submitting}
+            >
+              {submitting ? 'Vérification de votre identité…' : 'Vérifier et révéler'}
             </Button>
           </div>
         </form>
