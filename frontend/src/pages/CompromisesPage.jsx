@@ -1,7 +1,6 @@
 import { AlertTriangle, Fingerprint, KeyRound, RefreshCw, ShieldAlert, ShieldOff } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { monitoringApi, threatIntelligenceApi } from '../api/endpoints'
-import PreIncidentRadar from '../components/PreIncidentRadar'
 import RevealSecretModal from '../components/RevealSecretModal'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
@@ -28,23 +27,12 @@ const SOURCE_LABELS = {
   webhook: 'Notification temps réel',
 }
 
-const PLAIN_LANGUAGE_ADVICE = {
-  stealer:
-    'Un poste ou un compte de votre entreprise a probablement été infecté par un logiciel malveillant qui vole les identifiants. Changez immédiatement le mot de passe concerné et activez la double authentification.',
-  combo:
-    'Un identifiant lié à votre entreprise circule dans une liste de comptes compromis. Changez ce mot de passe dès que possible.',
-  creds:
-    'Un identifiant lié à votre entreprise a été exposé publiquement. Changez ce mot de passe et vérifiez qu’il n’est pas réutilisé ailleurs.',
-  sessions:
-    'Une session de connexion active a été compromise (cookie volé). Déconnectez toutes les sessions de ce compte et changez le mot de passe.',
-  nhi: 'Une clé ou un jeton technique (pas un compte humain) a été exposé. Révoquez-le et régénérez-en un nouveau immédiatement.',
-  darkweb:
-    'Une mention de votre entreprise a été détectée sur le dark web. Vérifiez les comptes concernés et renforcez leur sécurité.',
-  docs: 'Un document lié à votre entreprise a fuité. Identifiez son contenu et évaluez s’il contient des informations sensibles.',
-  asm: 'Une faiblesse a été détectée sur votre surface d’exposition publique (par exemple une tentative de phishing usurpant votre nom).',
-  radar: 'Une mention publique liée à votre entreprise mérite votre attention.',
-  webhook: 'Une compromission a été détectée en temps réel par la surveillance continue.',
-}
+// Phase 8B : la vulgarisation ne vit plus ici. Elle est calculée côté
+// serveur (apps/threat_intelligence/plain_language.py) et renvoyée par
+// l'API sur chaque finding (`meaning` / `recommended_action`), pour que le
+// texte lu par le dirigeant soit identique partout — page Exposition, liste
+// Compromissions, email de notification — au lieu d'exister en double ici
+// et là, avec le risque de diverger silencieusement.
 
 const TABS = [
   { id: 'open', label: 'Ouvertes' },
@@ -133,8 +121,10 @@ function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal })
           )}
         </div>
       </div>
-      <p className="mt-3 rounded-md bg-ink-50 px-3 py-2 text-sm text-ink-700">
-        {PLAIN_LANGUAGE_ADVICE[finding.source_endpoint] || PLAIN_LANGUAGE_ADVICE.webhook}
+      <p className="mt-3 rounded-md bg-ink-50 px-3 py-2 text-sm text-ink-700">{finding.meaning}</p>
+      <p className="mt-2 rounded-md bg-accent-100/50 px-3 py-2 text-sm text-accent-900">
+        <span className="font-semibold">À faire : </span>
+        {finding.recommended_action}
       </p>
     </Card>
   )
@@ -315,7 +305,6 @@ export default function CompromisesPage() {
   const [revealFindingId, setRevealFindingId] = useState(null)
   const [revealAudits, setRevealAudits] = useState(null)
   const [loadingAudits, setLoadingAudits] = useState(false)
-  const [preIncident, setPreIncident] = useState(null)
 
   const poll = usePolling(threatIntelligenceApi.getScanJob)
 
@@ -330,18 +319,16 @@ export default function CompromisesPage() {
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [findingsRes, statusRes, assetsRes, monitoredRes, preIncidentRes] = await Promise.all([
+      const [findingsRes, statusRes, assetsRes, monitoredRes] = await Promise.all([
         threatIntelligenceApi.listFindings(activeTab),
         threatIntelligenceApi.status(),
         monitoringApi.listAssets(),
         threatIntelligenceApi.listMonitoredAssets(),
-        threatIntelligenceApi.preIncident(),
       ])
       setFindings(findingsRes.data.results)
       setStatus(statusRes.data)
       setAssets(assetsRes.data.results)
       setMonitored(monitoredRes.data.results)
-      setPreIncident(preIncidentRes.data)
     } catch {
       showToast({
         type: 'error',
@@ -461,14 +448,13 @@ export default function CompromisesPage() {
       <div>
         <h1 className="font-display text-2xl font-semibold text-ink-900">Compromissions</h1>
         <p className="mt-1 text-sm text-ink-500">
-          Détection de fuites de données et d’identifiants liés à vos actifs, via renseignement sur
-          la menace (Breachsense).
+          Le détail de chaque fuite avérée liée à vos actifs. Pour une lecture priorisée, voir la
+          page Exposition — les signaux avant-coureurs (domaine ressemblant, mention dark web) y
+          sont regroupés dans leur propre carte.
         </p>
       </div>
 
       <ScanStatusBar status={status} onScan={handleScan} scanning={scanning} />
-
-      <PreIncidentRadar summary={preIncident} />
 
       <Tabs tabs={TABS} activeId={activeTab} onChange={setActiveTab} />
 

@@ -1,5 +1,6 @@
 import {
   ClipboardCheck,
+  Crosshair,
   KanbanSquare,
   LayoutDashboard,
   MessageSquareText,
@@ -16,6 +17,10 @@ export const NAV_ITEMS = [
   { to: '/diagnostic', label: 'Diagnostic', icon: ClipboardCheck },
   { to: '/plan-action', label: 'Plan d’action', icon: KanbanSquare },
   { to: '/surveillance', label: 'Surveillance', icon: Radar },
+  // Phase 8B : « Exposition » est la vue principale du volet menace (le
+  // médecin), « Compromissions » reste la liste exhaustive des fuites
+  // avérées (la chemise de résultats) — d'où cet ordre.
+  { to: '/exposition', label: 'Exposition', icon: Crosshair },
   { to: '/compromissions', label: 'Compromissions', icon: ShieldAlert },
   { to: '/documents', label: 'Documents', icon: ScrollText },
   { to: '/assistant', label: 'Assistant', icon: MessageSquareText },

@@ -91,7 +91,13 @@ export const threatIntelligenceApi = {
       { password, totp_code: totpCode },
       { skipAuthRetry: true }
     ),
-  preIncident: () => apiClient.get('/api/v1/threat-intelligence/pre-incident/'),
+  preIncident: (status) =>
+    apiClient.get('/api/v1/threat-intelligence/pre-incident/', {
+      params: status ? { status } : {},
+    }),
+  exposureFeed: () => apiClient.get('/api/v1/threat-intelligence/exposure-feed/'),
+  refreshExposureSynthesis: () =>
+    apiClient.post('/api/v1/threat-intelligence/exposure-feed/synthesis/'),
   listRevealAudit: () => apiClient.get('/api/v1/threat-intelligence/audit/reveals/'),
   listMonitoredAssets: () => apiClient.get('/api/v1/threat-intelligence/monitored-assets/'),
   registerMonitoredAsset: (assetId) =>

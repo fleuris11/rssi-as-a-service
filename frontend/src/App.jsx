@@ -9,6 +9,7 @@ import CompromisesPage from './pages/CompromisesPage'
 import DashboardPage from './pages/DashboardPage'
 import DiagnosticPage from './pages/DiagnosticPage'
 import DocumentsPage from './pages/DocumentsPage'
+import ExposurePage from './pages/ExposurePage'
 import LoginPage from './pages/LoginPage'
 import NotificationPreferencesPage from './pages/NotificationPreferencesPage'
 import RegisterPage from './pages/RegisterPage'
@@ -30,6 +31,7 @@ function App() {
           <Route path="/resultats/:assessmentId" element={<ResultsPage />} />
           <Route path="/plan-action" element={<ActionPlanPage />} />
           <Route path="/surveillance" element={<SurveillancePage />} />
+          <Route path="/exposition" element={<ExposurePage />} />
           <Route path="/compromissions" element={<CompromisesPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/assistant" element={<AssistantPage />} />

@@ -1,5 +1,6 @@
-import { Eye, Radar, ShieldCheck } from 'lucide-react'
+import { Eye, History, Radar, ShieldCheck } from 'lucide-react'
 import Badge from './ui/Badge'
+import Button from './ui/Button'
 import Card from './ui/Card'
 
 // Visuellement distinct de la liste des fuites (bordure et fond "veille",
@@ -10,7 +11,7 @@ import Card from './ui/Card'
 const URGENCY_LABEL = { high: 'À traiter', info: 'Pour information' }
 const URGENCY_VARIANT = { high: 'warning', info: 'neutral' }
 
-function SignalRow({ signal }) {
+function SignalRow({ signal, onUpdateStatus, busyId, readOnly }) {
   return (
     <li className="rounded-md border border-ink-200/70 bg-surface px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -18,58 +19,98 @@ function SignalRow({ signal }) {
         <Badge variant={URGENCY_VARIANT[signal.urgency] || 'neutral'} dot>
           {URGENCY_LABEL[signal.urgency] || signal.urgency}
         </Badge>
-        {signal.count > 1 && (
-          <span className="text-xs text-ink-500">{signal.count} détections</span>
-        )}
+        {signal.count > 1 && <span className="text-xs text-ink-500">{signal.count} détections</span>}
       </div>
-      <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+      <p className="mt-2 text-sm leading-relaxed text-ink-700">{signal.plain_language}</p>
+      <ul className="mt-2 space-y-1.5">
         {signal.items.map((item) => (
-          <li key={item.id} className="font-mono text-xs text-ink-600">
-            {item.detail}
+          <li key={item.id} className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-mono text-xs text-ink-600">{item.detail}</span>
+            {!readOnly && (
+              <span className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busyId === item.id}
+                  onClick={() => onUpdateStatus(item.id, 'ignored')}
+                >
+                  Ignorer
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busyId === item.id}
+                  onClick={() => onUpdateStatus(item.id, 'treated')}
+                >
+                  Marquer traité
+                </Button>
+              </span>
+            )}
           </li>
         ))}
       </ul>
-      <p className="mt-2 text-sm leading-relaxed text-ink-700">{signal.plain_language}</p>
     </li>
   )
 }
 
-export default function PreIncidentRadar({ summary }) {
+export default function PreIncidentRadar({
+  summary,
+  onUpdateStatus,
+  busyId,
+  showingHistory = false,
+  onToggleHistory,
+}) {
   if (!summary) return null
-  const isCalm = summary.total === 0
+  const isEmpty = summary.total === 0
 
   return (
     <Card className="border-brand-200 bg-brand-50/40">
-      <div className="mb-4 flex items-start gap-3">
-        <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-brand-100 text-brand-800">
-          {isCalm ? (
-            <ShieldCheck className="size-5" aria-hidden="true" />
-          ) : (
-            <Radar className="size-5" aria-hidden="true" />
-          )}
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-brand-100 text-brand-800">
+            {isEmpty && !showingHistory ? (
+              <ShieldCheck className="size-5" aria-hidden="true" />
+            ) : (
+              <Radar className="size-5" aria-hidden="true" />
+            )}
+          </div>
+          <div>
+            <h2 className="font-display text-lg font-semibold text-ink-900">
+              {showingHistory ? 'Signaux traités' : 'Signaux avant-coureurs'}
+            </h2>
+            <p className="mt-0.5 text-sm text-ink-600">
+              {showingHistory
+                ? 'Signaux que vous avez déjà traités ou ignorés.'
+                : 'Ce que l’on observe sur votre exposition publique — avant qu’une fuite ne se produise.'}
+            </p>
+          </div>
         </div>
-        <div>
-          <h2 className="font-display text-lg font-semibold text-ink-900">
-            Signaux avant-coureurs
-          </h2>
-          <p className="mt-0.5 text-sm text-ink-600">
-            Ce que l’on observe sur votre exposition publique — avant qu’une fuite ne se produise.
-          </p>
-        </div>
+        {onToggleHistory && (
+          <Button variant="ghost" size="sm" icon={History} onClick={onToggleHistory}>
+            {showingHistory ? 'Revenir aux signaux actifs' : 'Voir les signaux traités'}
+          </Button>
+        )}
       </div>
 
-      {isCalm ? (
+      {isEmpty ? (
         <div className="flex items-start gap-2 rounded-md bg-ok-subtle px-4 py-3">
           <Eye className="mt-0.5 size-4 shrink-0 text-ok-strong" aria-hidden="true" />
           <p className="text-sm text-ok-strong">
-            Aucun signal avant-coureur détecté — votre exposition publique est calme. Nous
-            continuons à surveiller en permanence.
+            {showingHistory
+              ? 'Aucun signal traité pour le moment.'
+              : 'Aucun signal avant-coureur détecté — votre exposition publique est calme. Nous continuons à surveiller en permanence.'}
           </p>
         </div>
       ) : (
         <ul className="space-y-3">
           {summary.signals.map((signal) => (
-            <SignalRow key={signal.signal_type} signal={signal} />
+            <SignalRow
+              key={signal.signal_type}
+              signal={signal}
+              onUpdateStatus={onUpdateStatus}
+              busyId={busyId}
+              readOnly={showingHistory}
+            />
           ))}
         </ul>
       )}
