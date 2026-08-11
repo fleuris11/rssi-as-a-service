@@ -28,6 +28,7 @@ from .serializers import (
     MonitoredAssetCreateSerializer,
     MonitoredAssetSerializer,
     PreIncidentSummarySerializer,
+    SecretPurgeRunSerializer,
     SecretRevealAuditAdminSerializer,
     SecretRevealAuditSerializer,
     SecretRevealRequestSerializer,
@@ -401,6 +402,12 @@ class ThreatIntelligenceAdminStatusView(APIView):
                 # cette vue.
                 "recent_reveal_audits": SecretRevealAuditAdminSerializer(
                     recent_reveal_audits, many=True
+                ).data,
+                # Phase 8C : la politique de rétention ne vaut que si l'on
+                # peut constater qu'elle tourne réellement.
+                "retention_policy": services.retention_policy(),
+                "recent_purge_runs": SecretPurgeRunSerializer(
+                    services.list_purge_runs(limit=20), many=True
                 ).data,
             }
         )

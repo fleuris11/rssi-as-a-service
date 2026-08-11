@@ -3,9 +3,11 @@ import {
   ChevronRight,
   Info,
   KeyRound,
+  Link2,
   RefreshCw,
   ShieldCheck,
   Sparkles,
+  Trash2,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { aiApi, threatIntelligenceApi } from '../api/endpoints'
@@ -102,7 +104,7 @@ function ScoreExplanation({ components }) {
   )
 }
 
-function FindingRow({ finding, canReveal, onReveal }) {
+function FindingRow({ finding, canReveal, onReveal, retentionDays }) {
   return (
     <li className="rounded-md border border-ink-200/70 bg-surface px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -110,6 +112,15 @@ function FindingRow({ finding, canReveal, onReveal }) {
         <Badge variant={SEVERITY_VARIANT[finding.severity] || 'neutral'} dot>
           {finding.severity_label}
         </Badge>
+        {/* Badge de corrélation : formulation venue du serveur, jamais
+            reformulée ici — le vocabulaire « possible / à vérifier » est une
+            contrainte produit, pas un choix d'affichage (ADR-017). */}
+        {finding.reuse_signals?.length > 0 && (
+          <Badge variant="warning">
+            <Link2 className="size-3" aria-hidden="true" />
+            Réutilisation possible
+          </Badge>
+        )}
         {finding.identifier && (
           <span className="font-mono text-xs text-ink-600">{finding.identifier}</span>
         )}
@@ -120,6 +131,17 @@ function FindingRow({ finding, canReveal, onReveal }) {
         )}
       </div>
       <p className="mt-2 text-sm leading-relaxed text-ink-700">{finding.meaning}</p>
+
+      {finding.reuse_signals?.map((signal) => (
+        <p
+          key={signal.signal_type}
+          className="mt-2 rounded-md border-l-2 border-warning-strong bg-warning-subtle px-3 py-2 text-sm text-warning-strong"
+        >
+          <span className="font-semibold">{signal.label} — </span>
+          {signal.explanation}
+        </p>
+      ))}
+
       <div className="mt-2 flex flex-wrap items-start justify-between gap-2 rounded-md bg-accent-100/50 px-3 py-2">
         <p className="text-sm text-accent-900">
           <span className="font-semibold">À faire : </span>
@@ -131,11 +153,58 @@ function FindingRow({ finding, canReveal, onReveal }) {
           </Button>
         )}
       </div>
+
+      {/* Second état du cycle de vie : la fuite reste, son mot de passe non.
+          Le dire explicitement évite de laisser croire qu'il n'y en a jamais
+          eu (ADR-014). */}
+      {finding.secret_purged_at && (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-500">
+          <Trash2 className="size-3.5" aria-hidden="true" />
+          Mot de passe effacé le{' '}
+          {new Date(finding.secret_purged_at).toLocaleDateString('fr-FR')}, conformément à la
+          politique de conservation ({retentionDays} jours).
+        </p>
+      )}
     </li>
   )
 }
 
-function AssetCard({ group, canReveal, onReveal, expanded, onToggle }) {
+function ReuseSection({ signals }) {
+  // Section dédiée en tête de la carte : la corrélation est l'information la
+  // plus actionnable de l'actif, elle ne doit pas se découvrir en dépliant
+  // chaque fuite une par une.
+  const unique = []
+  const seen = new Set()
+  for (const signal of signals) {
+    const key = `${signal.signal_type}:${signal.identifier}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      unique.push(signal)
+    }
+  }
+  if (unique.length === 0) return null
+
+  return (
+    <div className="mt-3 rounded-md border border-warning-strong/30 bg-warning-subtle px-3 py-2">
+      <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-warning-strong">
+        <Link2 className="size-3.5" aria-hidden="true" />
+        Réutilisation possible — à vérifier
+      </p>
+      <ul className="space-y-1">
+        {unique.map((signal) => (
+          <li key={`${signal.signal_type}:${signal.identifier}`} className="text-xs text-ink-700">
+            <span className="font-mono">{signal.identifier}</span> — {signal.label}
+            {signal.external_service && (
+              <span className="text-ink-600"> ({signal.external_service})</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function AssetCard({ group, canReveal, onReveal, expanded, onToggle, retentionDays }) {
   return (
     <Card>
       <button
@@ -168,6 +237,8 @@ function AssetCard({ group, canReveal, onReveal, expanded, onToggle }) {
         </span>
       </button>
 
+      <ReuseSection signals={group.reuse_signals || []} />
+
       {expanded && (
         <>
           <ScoreExplanation components={group.components} />
@@ -178,6 +249,7 @@ function AssetCard({ group, canReveal, onReveal, expanded, onToggle }) {
                 finding={finding}
                 canReveal={canReveal}
                 onReveal={onReveal}
+                retentionDays={retentionDays}
               />
             ))}
           </ul>
@@ -343,6 +415,7 @@ export default function ExposurePage() {
               onToggle={() =>
                 setExpandedAssetId(expandedAssetId === group.asset_id ? null : group.asset_id)
               }
+              retentionDays={feed?.retention_policy?.secret_retention_days}
             />
           ))}
         </div>
@@ -352,6 +425,20 @@ export default function ExposurePage() {
           title="Aucune exposition détectée"
           description="Aucune fuite ouverte sur vos actifs surveillés. Nous continuons à surveiller en permanence."
         />
+      )}
+
+      {/* La promesse de conservation limitée n'est crédible que si le client
+          peut la lire dans le produit, pas seulement dans un contrat. */}
+      {feed?.retention_policy && (
+        <p className="flex items-start gap-2 px-1 text-xs text-ink-500">
+          <Trash2 className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          <span>
+            Conservation : les mots de passe issus des fuites sont chiffrés et effacés
+            automatiquement au bout de {feed.retention_policy.secret_retention_days} jours. La fuite
+            elle-même reste dans votre historique. Le journal des révélations est conservé{' '}
+            {feed.retention_policy.reveal_audit_retention_days} jours.
+          </span>
+        </p>
       )}
 
       <RevealSecretModal

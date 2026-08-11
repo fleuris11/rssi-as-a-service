@@ -124,6 +124,21 @@ class PreIncidentSummarySerializer(serializers.Serializer):
     total = serializers.IntegerField()
 
 
+class ReuseSignalSerializer(serializers.Serializer):
+    """Corrélation « réutilisation possible » (ADR-017). Le vocabulaire est
+    imposé côté serveur (module correlation.py) : le frontend n'invente ni
+    libellé ni formulation, pour qu'aucune interface ne puisse laisser croire
+    qu'une réutilisation a été *vérifiée*."""
+
+    signal_type = serializers.CharField()
+    label = serializers.CharField()
+    explanation = serializers.CharField()
+    identifier = serializers.CharField()
+    related_finding_ids = serializers.ListField(child=serializers.IntegerField())
+    occurrences = serializers.IntegerField(required=False)
+    external_service = serializers.CharField(required=False)
+
+
 class ExposureFindingSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     source_endpoint = serializers.CharField()
@@ -134,10 +149,12 @@ class ExposureFindingSerializer(serializers.Serializer):
     identifier = serializers.CharField(allow_blank=True)
     secret_masked = serializers.CharField(allow_blank=True)
     has_secret = serializers.BooleanField()
+    secret_purged_at = serializers.DateTimeField(allow_null=True)
     breach_date = serializers.DateField(allow_null=True)
     detected_at = serializers.DateTimeField()
     meaning = serializers.CharField()
     recommended_action = serializers.CharField()
+    reuse_signals = ReuseSignalSerializer(many=True)
 
 
 class ExposureScoreComponentSerializer(serializers.Serializer):
@@ -161,6 +178,23 @@ class ExposureAssetGroupSerializer(serializers.Serializer):
     findings_count = serializers.IntegerField()
     components = ExposureScoreComponentSerializer(many=True)
     findings = ExposureFindingSerializer(many=True)
+    reuse_signals = ReuseSignalSerializer(many=True)
+
+
+class RetentionPolicySerializer(serializers.Serializer):
+    """Affichée au client : la promesse de rétention n'est crédible que s'il
+    peut la lire dans le produit (ADR-014)."""
+
+    secret_retention_days = serializers.IntegerField()
+    reveal_audit_retention_days = serializers.IntegerField()
+
+
+class SecretPurgeRunSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    started_at = serializers.DateTimeField()
+    retention_days = serializers.IntegerField()
+    secrets_purged = serializers.IntegerField()
+    reveal_audits_deleted = serializers.IntegerField()
 
 
 class ExposureSynthesisSerializer(serializers.Serializer):
@@ -173,6 +207,7 @@ class ExposureFeedSerializer(serializers.Serializer):
     assets = ExposureAssetGroupSerializer(many=True)
     total_findings = serializers.IntegerField()
     highest_score = serializers.IntegerField()
+    retention_policy = RetentionPolicySerializer()
     # Absent (null) quand aucune synthèse n'a été générée ou que l'IA est
     # indisponible : la page doit être complète sans elle.
     synthesis = ExposureSynthesisSerializer(allow_null=True)

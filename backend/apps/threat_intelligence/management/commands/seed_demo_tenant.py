@@ -185,6 +185,42 @@ def demo_findings_payloads() -> list[tuple[str, dict, int]]:
             },
             1,
         ),
+        # --- Le cas « réutilisation possible » de la démo (Phase 8C) ---------
+        # L'adresse professionnelle de Marie Durand apparaît ici dans la fuite
+        # d'un service EXTERNE, alors qu'elle apparaît déjà dans le log de
+        # malware ci-dessus. Les deux signaux de corrélation se déclenchent
+        # donc ensemble sur ce finding, qui porte en plus un mot de passe
+        # récupérable : c'est l'enchaînement montré en démonstration
+        # (corrélation -> hypothèse -> révélation pour la lever).
+        (
+            "creds",
+            {
+                "eml": f"marie.durand@{DEMO_DOMAIN}",
+                "pwd": "Hiver2024!durand",
+                "dom": "boutique-loisirs.example",
+                "src": "Fuite boutique-loisirs.example 2025",
+                "fnd": _d(58),
+                "atr": "—",
+                "hash": 0,
+            },
+            1,
+        ),
+        # --- Fuite ancienne dont le secret a dépassé la rétention -----------
+        # Purgée par la commande après création (voir _simulate_purged_secret)
+        # pour montrer à l'écran le second état du cycle de vie : la fuite
+        # reste, son mot de passe non.
+        (
+            "combo",
+            {
+                "usr": f"sophie.marchand@{DEMO_DOMAIN}",
+                "pwd": "Archive2019!",
+                "src": "Liste combo 2019",
+                "fle": "combo_ancien.txt",
+                "fnd": _d(400),
+                "cnt": 2,
+            },
+            1,
+        ),
         # --- combo ----------------------------------------------------------
         (
             "combo",
@@ -379,7 +415,16 @@ class Command(BaseCommand):
             )
 
         self._spread_detection_dates(tenant)
+        self._simulate_purged_secret(tenant)
         return created
+
+    def _simulate_purged_secret(self, tenant: Tenant) -> None:
+        """Applique la vraie purge (services.purge_expired_secrets) plutôt que
+        de bricoler l'état à la main : la fuite « combo 2019 » est datée
+        au-delà du délai de rétention, elle est donc effacée par le même code
+        qui tourne en production. La démo montre ainsi un état réel, pas une
+        mise en scène."""
+        services.purge_expired_secrets()
 
     def _ensure_synthesis(self, tenant: Tenant) -> None:
         """Synthèse pré-générée (texte fixe) : la démo doit pouvoir montrer le

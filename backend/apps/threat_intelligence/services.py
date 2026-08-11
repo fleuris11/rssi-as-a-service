@@ -11,7 +11,7 @@ import logging
 from datetime import timedelta
 from urllib.parse import urlparse
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
@@ -21,7 +21,7 @@ from apps.monitoring import services as monitoring_services
 from apps.monitoring.models import Alert, Asset
 from apps.tenants import services as tenants_services
 
-from . import exposure, plain_language
+from . import correlation, exposure, plain_language
 from . import quota as quota_module
 from .models import (
     BreachFinding,
@@ -29,6 +29,7 @@ from .models import (
     BreachScanJob,
     ExposureSynthesis,
     MonitoredAsset,
+    SecretPurgeRun,
     SecretRevealAudit,
 )
 from .providers import ProviderPoolFullError, get_provider
@@ -82,14 +83,37 @@ class WebhookNotConfiguredError(ThreatIntelligenceError):
 # compromettre les autres.
 
 
-def _fernet() -> Fernet:
-    key = settings.BREACH_SECRET_ENCRYPTION_KEY
-    if not key:
+# Rotation (Phase 8C) : MultiFernet. La PREMIÈRE clé de la liste chiffre ;
+# toutes les clés de la liste déchiffrent. Ajouter une nouvelle clé en tête
+# permet donc de tourner sans coupure — les secrets déjà en base restent
+# lisibles avec l'ancienne clé le temps que la commande de rotation les
+# re-chiffre. Voir `rotate_breach_secret_key` et le README de l'app.
+
+
+def _encryption_keys() -> list[str]:
+    """Clés actives, de la plus récente à la plus ancienne. Accepte l'ancienne
+    forme (une seule clé dans ``BREACH_SECRET_ENCRYPTION_KEY``) pour qu'un
+    déploiement existant continue de fonctionner sans changement de config."""
+    keys = [k for k in getattr(settings, "BREACH_SECRET_ENCRYPTION_KEYS", []) if k]
+    if keys:
+        return keys
+    single = settings.BREACH_SECRET_ENCRYPTION_KEY
+    return [single] if single else []
+
+
+def _fernet() -> MultiFernet:
+    keys = _encryption_keys()
+    if not keys:
         raise ThreatIntelligenceError(
             "BREACH_SECRET_ENCRYPTION_KEY n'est pas configurée : impossible de chiffrer un "
             "secret de fuite."
         )
-    return Fernet(key.encode() if isinstance(key, str) else key)
+    try:
+        return MultiFernet([Fernet(k.encode() if isinstance(k, str) else k) for k in keys])
+    except (ValueError, TypeError) as exc:
+        raise ThreatIntelligenceError(
+            "Clé de chiffrement des secrets de fuite invalide (format Fernet attendu)."
+        ) from exc
 
 
 def encrypt_secret(secret_plain: str) -> bytes:
@@ -104,6 +128,21 @@ def decrypt_secret(encrypted: bytes) -> str:
     except InvalidToken as exc:
         raise ThreatIntelligenceError(
             "Secret de fuite illisible (clé de chiffrement invalide ou donnée corrompue)."
+        ) from exc
+
+
+def rotate_secret_ciphertext(encrypted: bytes) -> bytes:
+    """Re-chiffre un blob avec la clé courante sans jamais exposer le clair
+    en dehors de cet appel (``MultiFernet.rotate`` déchiffre et rechiffre en
+    une opération). Traduit l'exception de la librairie en erreur métier,
+    comme ``decrypt_secret`` : l'appelant (commande de rotation) ne doit pas
+    avoir à connaître `cryptography` pour distinguer un secret illisible
+    d'une panne."""
+    try:
+        return _fernet().rotate(bytes(encrypted))
+    except InvalidToken as exc:
+        raise ThreatIntelligenceError(
+            "Secret de fuite illisible avec les clés configurées : rotation impossible."
         ) from exc
 
 
@@ -612,9 +651,7 @@ def list_pre_incident_findings(tenant, *, status: str = BreachFinding.Status.OPE
     status backs the « Voir les signaux traités » history view (Phase 8B) —
     the card now carries the treat/ignore actions, so treated signals need
     somewhere to still be consultable."""
-    qs = BreachFinding.all_objects.filter(
-        tenant=tenant, source_endpoint__in=PRE_INCIDENT_ENDPOINTS
-    )
+    qs = BreachFinding.all_objects.filter(tenant=tenant, source_endpoint__in=PRE_INCIDENT_ENDPOINTS)
     if status:
         qs = qs.filter(status=status)
     return qs.select_related("asset").order_by("-detected_at")
@@ -682,8 +719,14 @@ def pre_incident_definition(signal_type: str) -> dict:
 # fuite, ce que ça veut dire et ce qu'il faut faire.
 
 
-def serialize_finding_for_feed(finding: BreachFinding) -> dict:
+def serialize_finding_for_feed(finding: BreachFinding, reuse_signals: list | None = None) -> dict:
     explanation = plain_language.explain(finding)
+    reuse_signals = reuse_signals or []
+    action = explanation["action"]
+    if reuse_signals:
+        # C'est ici que la révélation prend son sens : une réutilisation
+        # possible est une hypothèse, et le mot de passe permet de la lever.
+        action = f"{action} {correlation.recommended_verification(finding)}"
     return {
         "id": finding.id,
         "source_endpoint": finding.source_endpoint,
@@ -694,11 +737,13 @@ def serialize_finding_for_feed(finding: BreachFinding) -> dict:
         "identifier": finding.identifier_plain or finding.identifier_masked,
         "secret_masked": finding.secret_masked,
         "has_secret": finding.has_secret,
+        "secret_purged_at": finding.secret_purged_at,
         "breach_date": finding.breach_date,
         "detected_at": finding.detected_at,
         # Vulgarisation déterministe (Tâche 2) : immédiate, sans appel IA.
         "meaning": explanation["meaning"],
-        "recommended_action": explanation["action"],
+        "recommended_action": action,
+        "reuse_signals": reuse_signals,
     }
 
 
@@ -717,6 +762,14 @@ def build_exposure_feed(tenant) -> dict:
         ).select_related("asset")
     )
 
+    # Corrélation calculée sur l'ENSEMBLE des fuites du tenant, pas par actif :
+    # une réutilisation possible se voit précisément quand le même identifiant
+    # traverse plusieurs actifs (ADR-017).
+    assets = list(monitoring_services.list_assets(tenant))
+    reuse_by_finding = correlation.correlate(
+        findings, tenant_emails=tenant_member_emails(tenant), assets=assets
+    )
+
     by_asset: dict[int, list[BreachFinding]] = {}
     for finding in findings:
         by_asset.setdefault(finding.asset_id, []).append(finding)
@@ -726,13 +779,19 @@ def build_exposure_feed(tenant) -> dict:
         asset = asset_findings[0].asset
         score = exposure.compute_exposure_score(asset_findings)
         asset_findings.sort(key=exposure.freshness_sort_key)
+        serialized = [
+            serialize_finding_for_feed(f, reuse_by_finding.get(f.id)) for f in asset_findings
+        ]
         groups.append(
             {
                 "asset_id": asset.id,
                 "asset_value": asset.value,
                 "asset_type_label": asset.get_type_display(),
                 **score.as_dict(),
-                "findings": [serialize_finding_for_feed(f) for f in asset_findings],
+                "findings": serialized,
+                # Section dédiée de la carte de l'actif : la synthèse des
+                # réutilisations possibles qui le concernent.
+                "reuse_signals": [signal for f in serialized for signal in f["reuse_signals"]],
             }
         )
 
@@ -744,6 +803,7 @@ def build_exposure_feed(tenant) -> dict:
         "assets": groups,
         "total_findings": len(findings),
         "highest_score": groups[0]["score"] if groups else 0,
+        "retention_policy": retention_policy(),
     }
 
 
@@ -795,6 +855,59 @@ def save_exposure_synthesis(tenant, content: str) -> ExposureSynthesis:
         },
     )
     return synthesis
+
+
+# --- Purge des secrets à échéance (Phase 8C, ADR-014) -----------------------
+#
+# On purge le SECRET, pas la fuite. Supprimer le BreachFinding ferait perdre
+# l'historique de conformité (« cette fuite a été traitée le … »), qui est
+# précisément ce qu'un tenant doit pouvoir montrer. Seule la valeur
+# récupérable expire.
+
+
+def purge_expired_secrets(*, now=None) -> SecretPurgeRun:
+    """Efface les secrets chiffrés au-delà du délai de rétention, sur tous les
+    tenants. Idempotente : une seconde exécution ne trouve plus rien à purger
+    (le filtre porte sur ``has_secret=True``), et ``secret_purged_at`` n'est
+    donc jamais réécrit."""
+    now = now or timezone.now()
+    retention_days = settings.BREACH_SECRET_RETENTION_DAYS
+    cutoff = now - timedelta(days=retention_days)
+
+    expired = BreachFinding.all_objects.filter(has_secret=True, detected_at__lt=cutoff)
+    secrets_purged = expired.update(secret_encrypted=b"", has_secret=False, secret_purged_at=now)
+
+    audit_cutoff = now - timedelta(days=settings.BREACH_REVEAL_AUDIT_RETENTION_DAYS)
+    reveal_audits_deleted, _details = SecretRevealAudit.all_objects.filter(
+        created_at__lt=audit_cutoff
+    ).delete()
+
+    run = SecretPurgeRun.objects.create(
+        retention_days=retention_days,
+        secrets_purged=secrets_purged,
+        reveal_audits_deleted=reveal_audits_deleted,
+    )
+    logger.info(
+        "Purge des secrets de fuite : %s secret(s) effacé(s), %s entrée(s) d'audit supprimée(s) "
+        "(rétention %s jours).",
+        secrets_purged,
+        reveal_audits_deleted,
+        retention_days,
+    )
+    return run
+
+
+def list_purge_runs(limit: int = 50):
+    return SecretPurgeRun.objects.all()[:limit]
+
+
+def retention_policy() -> dict:
+    """Politique de rétention affichable au client — ce qui rend la promesse
+    crédible en démonstration, c'est qu'il puisse la LIRE dans le produit."""
+    return {
+        "secret_retention_days": settings.BREACH_SECRET_RETENTION_DAYS,
+        "reveal_audit_retention_days": settings.BREACH_REVEAL_AUDIT_RETENTION_DAYS,
+    }
 
 
 def refresh_exposure_synthesis(tenant) -> ExposureSynthesis:
