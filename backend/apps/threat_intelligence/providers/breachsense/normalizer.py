@@ -306,12 +306,19 @@ def normalize_finding(endpoint: str, raw: dict, *, tenant_emails: set[str] | Non
     must pop and Fernet-encrypt (or discard) before calling ``create()``;
     ``BreachFinding`` has no such field, it exists only to carry the
     in-memory plaintext one call further without a second normalizer pass."""
-    tenant_emails = {email.lower() for email in (tenant_emails or set())}
+    # Comparaison sur des valeurs normalisées des DEUX côtés (casse ET espaces
+    # de bord) : un payload fournisseur arrivant avec une espace parasite
+    # (« " marie@exemple.fr" ») ne doit pas faire échouer la reconnaissance
+    # d'un membre du tenant — l'identifiant serait alors masqué à tort, et le
+    # tenant perdrait la capacité d'agir directement dessus (ADR-014 §4).
+    tenant_emails = {email.strip().lower() for email in (tenant_emails or set())}
     masked_payload, secret_seen, secret_masked, secret_plain = mask_payload(raw)
 
     identifier = _extract_identifier(endpoint, raw)
     identifier_plain = ""
     identifier_masked = ""
+    if identifier:
+        identifier = identifier.strip()
     if identifier:
         if identifier.lower() in tenant_emails:
             identifier_plain = identifier
