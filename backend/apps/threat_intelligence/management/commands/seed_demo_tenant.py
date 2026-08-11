@@ -32,6 +32,7 @@ from apps.threat_intelligence.models import (
     BreachFinding,
     BreachIntelligenceUsage,
     BreachScanJob,
+    ExposureSynthesis,
     MonitoredAsset,
     SecretRevealAudit,
 )
@@ -54,6 +55,26 @@ DEMO_USERS = [
     (f"paul.leroy@{DEMO_DOMAIN}", "Paul", "Leroy", Membership.Role.CONTRIBUTOR),
     (f"sophie.marchand@{DEMO_DOMAIN}", "Sophie", "Marchand", Membership.Role.READER),
 ]
+
+# Synthèse d'exposition pré-générée (Phase 8B) : texte FIXE, jamais un appel
+# IA au moment du seed — la démo ne doit dépendre ni de l'API Anthropic ni du
+# quota du tenant. Rédigée pour correspondre exactement aux fuites seedées
+# ci-dessous (mêmes comptes, mêmes actifs) : une synthèse qui ne collerait pas
+# aux données affichées se verrait immédiatement à l'écran.
+DEMO_SYNTHESIS = (
+    "Votre exposition est concentrée sur deux points : le compte de Marie Durand, "
+    "qui apparaît dans trois fuites distinctes, et votre webmail, dont une session "
+    "active a été compromise. "
+    "Ces trois fuites autour du même compte suggèrent un poste infecté plutôt que "
+    "trois incidents séparés — le mot de passe a probablement été recopié une fois, "
+    "puis a circulé. "
+    "La priorité de la semaine est le cookie de session du webmail : il permet "
+    "d'entrer dans la messagerie sans mot de passe ni code de vérification, donc "
+    "déconnecter toutes les sessions de ce compte est plus urgent que le changement "
+    "de mot de passe lui-même. "
+    "La clé de service AWS exposée vient juste après : elle reste utilisable tant "
+    "qu'elle n'a pas été révoquée."
+)
 
 DEMO_ASSETS = [
     (Asset.Type.WEBSITE, f"https://www.{DEMO_DOMAIN}"),
@@ -272,6 +293,7 @@ class Command(BaseCommand):
             admin = self._ensure_users(tenant)
             assets = self._ensure_assets(tenant, admin)
             created = self._ensure_findings(tenant, assets)
+            self._ensure_synthesis(tenant)
 
         total = BreachFinding.all_objects.filter(tenant=tenant).count()
         self.stdout.write(
@@ -308,6 +330,7 @@ class Command(BaseCommand):
         BreachIntelligenceUsage.all_objects.filter(tenant=tenant).delete()
         BreachScanJob.all_objects.filter(tenant=tenant).delete()
         MonitoredAsset.all_objects.filter(tenant=tenant).delete()
+        ExposureSynthesis.all_objects.filter(tenant=tenant).delete()
         Alert.all_objects.filter(tenant=tenant).delete()
 
     def _ensure_users(self, tenant: Tenant):
@@ -357,6 +380,15 @@ class Command(BaseCommand):
 
         self._spread_detection_dates(tenant)
         return created
+
+    def _ensure_synthesis(self, tenant: Tenant) -> None:
+        """Synthèse pré-générée (texte fixe) : la démo doit pouvoir montrer le
+        bandeau « Analyse » sans dépendre de l'API Anthropic — même principe
+        que les cassettes CTI (ADR-015). Écrite en base par le service normal,
+        donc affichée exactement comme une vraie synthèse. Marquée non
+        obsolète : les fuites viennent d'être (re)créées, l'analyse décrit
+        bien l'état courant."""
+        services.save_exposure_synthesis(tenant, DEMO_SYNTHESIS)
 
     def _spread_detection_dates(self, tenant: Tenant) -> None:
         """``detected_at`` est un ``auto_now_add`` : sans ce rattrapage, toutes

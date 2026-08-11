@@ -50,6 +50,32 @@ def generate_document_task(self, job_id: int):
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
+def generate_exposure_synthesis_task(self, job_id: int):
+    """Phase 8B. Le résultat est mis en cache côté threat_intelligence
+    (ExposureSynthesis) plutôt que pointé par ``result_ref`` : la page
+    d'exposition l'affiche sans connaître le job, et un job perdu n'empêche
+    jamais de lire la dernière synthèse valide."""
+    from apps.threat_intelligence import services as threat_intelligence_services
+
+    job = AIJob.all_objects.filter(id=job_id).select_related("tenant").first()
+    if job is None or job.status in (AIJob.Status.DONE, AIJob.Status.FAILED):
+        return None
+    services.mark_job_running(job)
+
+    try:
+        threat_intelligence_services.refresh_exposure_synthesis(job.tenant)
+    except Exception as exc:  # noqa: BLE001 - retry on anything unexpected
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc) from exc
+        logger.warning("Échec définitif de la synthèse d'exposition (job %s) : %s", job.id, exc)
+        services.mark_job_failed(job, str(exc))
+        return None
+
+    services.mark_job_done(job)
+    return job.id
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=30)
 def generate_assistant_reply_task(self, job_id: int):
     job = AIJob.all_objects.filter(id=job_id).select_related("tenant").first()
     if job is None or job.status in (AIJob.Status.DONE, AIJob.Status.FAILED):

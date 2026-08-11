@@ -203,6 +203,39 @@ class BreachScanJob(TenantScopedModel):
         return f"{self.status} — {self.tenant_id} ({self.triggered_by})"
 
 
+class ExposureSynthesis(TenantScopedModel):
+    """Cached AI reading of the tenant's current exposure (Phase 8B, tâche 4).
+
+    Cached rather than computed on read for two reasons: an AI call costs
+    tokens against the tenant's monthly quota (cadrage §8), and the exposure
+    page must render instantly and completely **without** it — the synthesis
+    is a layer on top, never a prerequisite. ``is_stale`` is flipped when a
+    finding is created or its status changes, so the banner can say "cette
+    analyse date d'avant vos dernières actions" instead of silently showing
+    a reading that no longer matches the page under it.
+
+    One row per tenant (the latest reading replaces the previous one): this
+    is a cache, not an audit trail — ``AIUsageLog`` already records every
+    call for traceability.
+    """
+
+    content = models.TextField()
+    generated_at = models.DateTimeField(auto_now=True)
+    is_stale = models.BooleanField(default=False)
+    # Empreinte de l'état des fuites au moment de la génération — permet de
+    # ne pas régénérer si rien n'a bougé, même si le tenant clique.
+    findings_fingerprint = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["tenant"], name="unique_exposure_synthesis_per_tenant"),
+        ]
+
+    def __str__(self):
+        state = "obsolète" if self.is_stale else "à jour"
+        return f"Synthèse d'exposition — {self.tenant_id} ({state})"
+
+
 class SecretRevealAudit(TenantScopedModel):
     """Audit trail for the privileged secret-reveal endpoint (ADR-014,
     update: reversible encryption + re-authenticated reveal). Every attempt

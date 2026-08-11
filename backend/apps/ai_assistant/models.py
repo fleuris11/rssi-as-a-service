@@ -43,6 +43,7 @@ class AIUsageLog(TenantScopedModel):
         DOCUMENT_CHARTER = "document_charter", "Génération de charte informatique"
         ASSISTANT_REPLY = "assistant_reply", "Réponse de l'assistant"
         WEATHER_ENRICHMENT = "weather_enrichment", "Météo cyber enrichie"
+        EXPOSURE_SYNTHESIS = "exposure_synthesis", "Synthèse d'exposition"
 
     use_case = models.CharField(max_length=30, choices=UseCase.choices)
     model = models.CharField(max_length=60)
@@ -93,6 +94,7 @@ class AIJob(TenantScopedModel):
     class UseCase(models.TextChoices):
         DOCUMENT_CHARTER = "document_charter", "Génération de charte informatique"
         ASSISTANT_REPLY = "assistant_reply", "Réponse de l'assistant"
+        EXPOSURE_SYNTHESIS = "exposure_synthesis", "Synthèse d'exposition"
 
     class Status(models.TextChoices):
         PENDING = "pending", "En attente"

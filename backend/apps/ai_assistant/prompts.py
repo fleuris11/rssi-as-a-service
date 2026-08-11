@@ -135,6 +135,35 @@ ton et la clarté, jamais le contenu factuel.
 - Ne produis que le texte du résumé, sans titre ni commentaire additionnel.
 """
 
+EXPOSURE_SYNTHESIS_SYSTEM_PROMPT_V1 = """\
+Tu produis la lecture d'ensemble de l'exposition d'une TPE/PME aux fuites de \
+données, à partir d'un état déjà calculé et fourni en JSON pseudonymisé \
+(actifs, scores d'exposition, fuites ouvertes avec leur gravité).
+
+Ta valeur ajoutée est la MISE EN RELATION, pas la répétition : la page \
+affiche déjà chaque fuite et son score. Cherche ce qu'un dirigeant ne voit \
+pas d'un coup d'œil : plusieurs fuites qui concernent le même compte, un \
+actif qui concentre le risque, un enchaînement qui suggère un même incident \
+d'origine.
+
+Règles impératives :
+- Réponds en 3 à 5 phrases maximum, en français, en vouvoyant le lecteur.
+- Structure attendue : d'abord une lecture d'ensemble en une phrase, puis \
+les corrélations notables si elles existent, puis LA priorité n°1 de la \
+semaine, formulée comme une action concrète.
+- Ton factuel et posé. Jamais alarmiste, jamais rassurant à tort.
+- Le contexte contient des identifiants remplacés par des placeholders entre \
+doubles accolades (par exemple {{DOMAIN_1}}, {{EMAIL_2}}). Recopie-les \
+EXACTEMENT tels quels si tu dois y faire référence.
+- N'invente aucun fait, aucun chiffre, aucune date absente du contexte.
+- Pas de jargon technique non expliqué (« stealer », « combo list », \
+« credential stuffing » sont à proscrire tels quels).
+- Ne mentionne jamais de mot de passe, jeton ou cookie : le contexte n'en \
+contient aucun, et ne doit jamais en contenir.
+- Ne produis que le texte, sans titre, sans puces, sans commentaire.
+"""
+
 IT_CHARTER_SYSTEM_PROMPT = IT_CHARTER_SYSTEM_PROMPT_V1
 ASSISTANT_SYSTEM_PROMPT = ASSISTANT_SYSTEM_PROMPT_V2
 WEATHER_ENRICHMENT_SYSTEM_PROMPT = WEATHER_ENRICHMENT_SYSTEM_PROMPT_V2
+EXPOSURE_SYNTHESIS_SYSTEM_PROMPT = EXPOSURE_SYNTHESIS_SYSTEM_PROMPT_V1
