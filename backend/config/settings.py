@@ -293,6 +293,25 @@ BREACHSENSE_WEBHOOK_PASSWORD = env("BREACHSENSE_WEBHOOK_PASSWORD", default="")
 # (docs/journal.md : protocole de smoke test au déploiement).
 BREACHSENSE_WEBHOOK_CALLBACK_URL = env("BREACHSENSE_WEBHOOK_CALLBACK_URL", default="")
 
+# --- Score d'exposition par actif (Phase 8B, ADR-016) ----------------------
+#
+# Seuils des quatre niveaux, en configuration et non en dur : ce sont des
+# curseurs produit, susceptibles d'être ajustés après retours clients sans
+# toucher au code de calcul. Un score STRICTEMENT inférieur au seuil suivant
+# reste dans le niveau courant (calme < 20 <= à surveiller < 50 <=
+# préoccupant < 75 <= critique).
+EXPOSURE_LEVEL_THRESHOLDS = {
+    "watch": env.int("EXPOSURE_THRESHOLD_WATCH", default=20),
+    "concerning": env.int("EXPOSURE_THRESHOLD_CONCERNING", default=50),
+    "critical": env.int("EXPOSURE_THRESHOLD_CRITICAL", default=75),
+}
+# Délai minimal entre deux générations de synthèse IA d'exposition pour un
+# même tenant (anti-rebond du bouton « Actualiser l'analyse » — le quota IA
+# par tenant reste le plafond réel, ceci évite juste les clics répétés).
+EXPOSURE_SYNTHESIS_COOLDOWN_MINUTES = env.int(
+    "EXPOSURE_SYNTHESIS_COOLDOWN_MINUTES", default=10
+)
+
 # --- 2FA TOTP (Phase 5, US-1.3, cadrage §6) : clé Fernet chiffrant le
 # secret TOTP au repos — dédiée, distincte de AI_PSEUDONYMIZATION_KEY
 # (compromettre l'une ne doit pas compromettre l'autre). Générer avec
