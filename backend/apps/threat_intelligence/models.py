@@ -77,6 +77,12 @@ class BreachFinding(TenantScopedModel):
     # déchiffrable — pas un simple report de l'ancien indicateur
     # "un secret a été vu à l'ingestion" (voir migration 0002).
     has_secret = models.BooleanField(default=False)
+    # Phase 8C : horodatage de la purge du secret (rétention configurable).
+    # On purge le SECRET, jamais la fuite : les métadonnées, le statut et
+    # l'historique de traitement restent, seule la valeur récupérable
+    # disparaît. Renseigné => l'interface affiche « secret purgé après X
+    # jours » au lieu de laisser croire qu'il n'y en a jamais eu.
+    secret_purged_at = models.DateTimeField(null=True, blank=True)
 
     breach_date = models.DateField(null=True, blank=True)
     detected_at = models.DateTimeField(auto_now_add=True)
@@ -234,6 +240,32 @@ class ExposureSynthesis(TenantScopedModel):
     def __str__(self):
         state = "obsolète" if self.is_stale else "à jour"
         return f"Synthèse d'exposition — {self.tenant_id} ({state})"
+
+
+class SecretPurgeRun(models.Model):
+    """Trace d'une exécution de la purge des secrets (Phase 8C).
+
+    Délibérément **non** tenant-scopé : la purge est une tâche plateforme qui
+    balaie tous les tenants en une passe, et son journal sert au back-office
+    plateforme (« la politique de rétention tourne-t-elle réellement ? »).
+    Ne contient jamais de secret ni d'identifiant — seulement des compteurs,
+    ce qui est précisément ce qu'on veut pouvoir montrer à un client ou à un
+    auditeur.
+    """
+
+    started_at = models.DateTimeField(auto_now_add=True)
+    retention_days = models.PositiveIntegerField()
+    secrets_purged = models.PositiveIntegerField(default=0)
+    reveal_audits_deleted = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-started_at"]
+
+    def __str__(self):
+        return (
+            f"Purge du {self.started_at:%Y-%m-%d %H:%M} — "
+            f"{self.secrets_purged} secret(s), {self.reveal_audits_deleted} entrée(s) d'audit"
+        )
 
 
 class SecretRevealAudit(TenantScopedModel):

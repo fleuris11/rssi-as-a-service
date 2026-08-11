@@ -33,4 +33,12 @@ app.conf.beat_schedule = {
         "task": "apps.notifications.tasks.send_due_weather_emails",
         "schedule": crontab(minute="*/15"),
     },
+    # Politique de rétention des secrets de fuite (Phase 8C, ADR-014). Une
+    # fois par jour suffit : le délai se compte en dizaines de jours, et la
+    # tâche est idempotente (une seconde passe ne trouve plus rien).
+    # Heure creuse volontairement, la purge fait un UPDATE de masse.
+    "threat-intelligence-purge-expired-secrets": {
+        "task": "apps.threat_intelligence.tasks.purge_expired_secrets_task",
+        "schedule": crontab(hour="3", minute="30"),
+    },
 }

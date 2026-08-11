@@ -30,6 +30,18 @@ from .models import BreachScanJob
 logger = logging.getLogger(__name__)
 
 
+@shared_task
+def purge_expired_secrets_task():
+    """Beat quotidien : applique la politique de rétention (ADR-014).
+    Naturellement idempotente — une seconde exécution le même jour ne trouve
+    plus rien à purger — donc sûre en cas de redélivrance."""
+    run = services.purge_expired_secrets()
+    return {
+        "secrets_purged": run.secrets_purged,
+        "reveal_audits_deleted": run.reveal_audits_deleted,
+    }
+
+
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
 def run_breach_scan_task(self, tenant_id, asset_id=None, triggered_by="manual", job_id=None):
     tenant = tenants_services.get_tenant(tenant_id)

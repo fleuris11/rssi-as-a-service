@@ -293,6 +293,21 @@ BREACHSENSE_WEBHOOK_PASSWORD = env("BREACHSENSE_WEBHOOK_PASSWORD", default="")
 # (docs/journal.md : protocole de smoke test au déploiement).
 BREACHSENSE_WEBHOOK_CALLBACK_URL = env("BREACHSENSE_WEBHOOK_CALLBACK_URL", default="")
 
+# --- Rétention des secrets de fuite (Phase 8C, ADR-014) --------------------
+#
+# Au-delà de ce délai, le secret chiffré d'un BreachFinding est effacé et
+# has_secret repasse à False — la FUITE, elle, est conservée (métadonnées,
+# statut, historique de traitement) : c'est son secret qui expire, pas son
+# existence. Compté depuis la détection.
+BREACH_SECRET_RETENTION_DAYS = env.int("BREACH_SECRET_RETENTION_DAYS", default=90)
+# Rétention du journal des révélations. Volontairement PLUS LONGUE que celle
+# des secrets : c'est une piste d'audit de sécurité (qui a consulté quoi), sa
+# valeur est justement de survivre à la donnée qu'elle protège. Ne contient
+# aucun secret (ADR-014).
+BREACH_REVEAL_AUDIT_RETENTION_DAYS = env.int(
+    "BREACH_REVEAL_AUDIT_RETENTION_DAYS", default=365
+)
+
 # --- Score d'exposition par actif (Phase 8B, ADR-016) ----------------------
 #
 # Seuils des quatre niveaux, en configuration et non en dur : ce sont des
@@ -327,6 +342,12 @@ TOTP_ENCRYPTION_KEY = env("TOTP_ENCRYPTION_KEY", default="")
 # journalisé. Générer avec :
 # `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
 BREACH_SECRET_ENCRYPTION_KEY = env("BREACH_SECRET_ENCRYPTION_KEY", default="")
+# Rotation (Phase 8C) : liste ORDONNÉE de clés, la première chiffre, toutes
+# déchiffrent (MultiFernet). Permet de tourner la clé sans coupure — on
+# ajoute la nouvelle en tête, on lance `rotate_breach_secret_key`, puis on
+# retire l'ancienne une fois la commande terminée. Vide => on retombe sur
+# BREACH_SECRET_ENCRYPTION_KEY seule (déploiements existants inchangés).
+BREACH_SECRET_ENCRYPTION_KEYS = env.list("BREACH_SECRET_ENCRYPTION_KEYS", default=[])
 
 # --- Journalisation (Phase 5, docs/security_review.md A09) ------------------
 #
