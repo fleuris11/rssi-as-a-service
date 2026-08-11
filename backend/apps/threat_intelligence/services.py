@@ -6,7 +6,9 @@ asset and consistently uses ``all_objects`` with an explicit tenant
 filter, since Celery tasks have no ambient request context.
 """
 
+import hashlib
 import logging
+from datetime import timedelta
 from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -19,11 +21,13 @@ from apps.monitoring import services as monitoring_services
 from apps.monitoring.models import Alert, Asset
 from apps.tenants import services as tenants_services
 
+from . import exposure, plain_language
 from . import quota as quota_module
 from .models import (
     BreachFinding,
     BreachIntelligenceUsage,
     BreachScanJob,
+    ExposureSynthesis,
     MonitoredAsset,
     SecretRevealAudit,
 )
@@ -228,6 +232,10 @@ def ingest_raw_findings(
         )
         finding.alert = alert
         finding.save(update_fields=["alert"])
+
+    if created:
+        # L'analyse en cache décrit un état des fuites qui vient de changer.
+        mark_synthesis_stale(tenant)
 
     return created
 
@@ -472,8 +480,22 @@ def _notify_pre_incident_signals(findings: list[BreachFinding]) -> None:
 # --- Findings : consultation & traitement -----------------------------------
 
 
-def list_findings(tenant, *, status: str | None = None):
+def list_findings(tenant, *, status: str | None = None, include_pre_incident: bool = False):
+    """Fuites **avérées** du tenant. Depuis la Phase 8B, les signaux
+    pré-incident (radar/dark web/surface d'attaque) en sont exclus par
+    défaut : ils vivent dans la carte « Signaux avant-coureurs », qui porte
+    désormais ses propres actions de traitement. Mélanger les deux dans une
+    même liste affichait deux fois la même chose et diluait la distinction
+    entre « ça a fuité » et « on surveille ».
+
+    ``include_pre_incident=True`` reste disponible pour les usages qui ont
+    besoin de la vue complète — notamment le fil d'exposition et les
+    contextes IA/météo, où l'utilisateur ne lit pas une liste mais une
+    synthèse par actif.
+    """
     qs = BreachFinding.all_objects.filter(tenant=tenant).select_related("asset")
+    if not include_pre_incident:
+        qs = qs.exclude(source_endpoint__in=PRE_INCIDENT_ENDPOINTS)
     if status:
         qs = qs.filter(status=status)
     return qs
@@ -489,6 +511,8 @@ def set_finding_status(finding: BreachFinding, *, status: str, user=None) -> Bre
         finding.treated_by = user
         finding.treated_at = timezone.now()
     finding.save(update_fields=["status", "treated_by", "treated_at"])
+    # Traiter une fuite change le score et donc la lecture d'ensemble.
+    mark_synthesis_stale(finding.tenant)
     return finding
 
 
@@ -582,26 +606,26 @@ def classify_pre_incident_signal(finding: BreachFinding) -> str:
     return SIGNAL_PUBLIC_MENTION
 
 
-def list_pre_incident_findings(tenant):
-    """Only OPEN findings: a signal the tenant has already treated/ignored
-    shouldn't keep shouting at them from the top of the page."""
-    return (
-        BreachFinding.all_objects.filter(
-            tenant=tenant,
-            status=BreachFinding.Status.OPEN,
-            source_endpoint__in=PRE_INCIDENT_ENDPOINTS,
-        )
-        .select_related("asset")
-        .order_by("-detected_at")
+def list_pre_incident_findings(tenant, *, status: str = BreachFinding.Status.OPEN):
+    """Defaults to OPEN: a signal the tenant has already treated/ignored
+    shouldn't keep shouting at them from the top of the page. Passing another
+    status backs the « Voir les signaux traités » history view (Phase 8B) —
+    the card now carries the treat/ignore actions, so treated signals need
+    somewhere to still be consultable."""
+    qs = BreachFinding.all_objects.filter(
+        tenant=tenant, source_endpoint__in=PRE_INCIDENT_ENDPOINTS
     )
+    if status:
+        qs = qs.filter(status=status)
+    return qs.select_related("asset").order_by("-detected_at")
 
 
-def build_pre_incident_summary(tenant) -> dict:
-    """Groups the tenant's open pre-incident findings by signal nature, each
-    with its plain-language explanation and urgency — the shape the
-    "Signaux avant-coureurs" card renders directly."""
+def build_pre_incident_summary(tenant, *, status: str = BreachFinding.Status.OPEN) -> dict:
+    """Groups the tenant's pre-incident findings by signal nature, each with
+    its plain-language explanation and urgency — the shape the "Signaux
+    avant-coureurs" card renders directly."""
     groups: dict[str, list] = {}
-    for finding in list_pre_incident_findings(tenant):
+    for finding in list_pre_incident_findings(tenant, status=status):
         groups.setdefault(classify_pre_incident_signal(finding), []).append(finding)
 
     signals = []
@@ -648,3 +672,137 @@ def pre_incident_definition(signal_type: str) -> dict:
     of truth shared by the API and the notification email, so the wording a
     tenant reads is identical in both places."""
     return _SIGNAL_DEFINITIONS[signal_type]
+
+
+# --- Fil d'exposition (Phase 8B) --------------------------------------------
+#
+# La vue principale du produit : « le médecin, pas la chemise de résultats ».
+# On ne montre plus une liste plate de fuites, mais les actifs du tenant
+# classés par exposition, chacun avec un score explicable et, pour chaque
+# fuite, ce que ça veut dire et ce qu'il faut faire.
+
+
+def serialize_finding_for_feed(finding: BreachFinding) -> dict:
+    explanation = plain_language.explain(finding)
+    return {
+        "id": finding.id,
+        "source_endpoint": finding.source_endpoint,
+        "source_label": finding.get_source_endpoint_display(),
+        "finding_type": finding.finding_type,
+        "severity": finding.severity,
+        "severity_label": finding.get_severity_display(),
+        "identifier": finding.identifier_plain or finding.identifier_masked,
+        "secret_masked": finding.secret_masked,
+        "has_secret": finding.has_secret,
+        "breach_date": finding.breach_date,
+        "detected_at": finding.detected_at,
+        # Vulgarisation déterministe (Tâche 2) : immédiate, sans appel IA.
+        "meaning": explanation["meaning"],
+        "recommended_action": explanation["action"],
+    }
+
+
+def build_exposure_feed(tenant) -> dict:
+    """Fuites ouvertes groupées par actif, chaque groupe portant son score
+    d'exposition et ses composantes, groupes triés par score décroissant.
+
+    Inclut les signaux pré-incident (``include_pre_incident=True``) : ici on
+    ne lit pas une liste mais l'exposition d'un actif, et un domaine
+    ressemblant déposé fait bien partie de son exposition — la séparation
+    liste/carte de la Tâche 0 est une distinction d'affichage, pas de fond.
+    """
+    findings = list(
+        list_findings(
+            tenant, status=BreachFinding.Status.OPEN, include_pre_incident=True
+        ).select_related("asset")
+    )
+
+    by_asset: dict[int, list[BreachFinding]] = {}
+    for finding in findings:
+        by_asset.setdefault(finding.asset_id, []).append(finding)
+
+    groups = []
+    for asset_findings in by_asset.values():
+        asset = asset_findings[0].asset
+        score = exposure.compute_exposure_score(asset_findings)
+        asset_findings.sort(key=exposure.freshness_sort_key)
+        groups.append(
+            {
+                "asset_id": asset.id,
+                "asset_value": asset.value,
+                "asset_type_label": asset.get_type_display(),
+                **score.as_dict(),
+                "findings": [serialize_finding_for_feed(f) for f in asset_findings],
+            }
+        )
+
+    # Score décroissant, puis nombre de fuites — deux actifs à score égal se
+    # départagent par le volume, pour un ordre stable d'un appel à l'autre.
+    groups.sort(key=lambda g: (-g["score"], -g["findings_count"], g["asset_value"]))
+
+    return {
+        "assets": groups,
+        "total_findings": len(findings),
+        "highest_score": groups[0]["score"] if groups else 0,
+    }
+
+
+# --- Synthèse IA d'exposition (Phase 8B, tâche 4) ---------------------------
+#
+# Couche AU-DESSUS du fil d'exposition : la page est complète sans elle. Elle
+# est mise en cache (un appel IA coûte du quota) et marquée obsolète dès
+# qu'une fuite est créée ou change de statut — plutôt que supprimée, pour
+# pouvoir afficher « cette analyse date d'avant vos dernières actions » au
+# lieu de faire disparaître le bandeau sans explication.
+
+
+def findings_fingerprint(tenant) -> str:
+    """Empreinte de l'état des fuites ouvertes : si elle n'a pas changé,
+    régénérer produirait la même analyse pour le même coût en tokens."""
+    rows = (
+        BreachFinding.all_objects.filter(tenant=tenant, status=BreachFinding.Status.OPEN)
+        .order_by("id")
+        .values_list("id", "status")
+    )
+    payload = "|".join(f"{finding_id}:{status}" for finding_id, status in rows)
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def get_exposure_synthesis(tenant) -> ExposureSynthesis | None:
+    return ExposureSynthesis.all_objects.filter(tenant=tenant).first()
+
+
+def mark_synthesis_stale(tenant) -> None:
+    """Appelée à chaque création de fuite et à chaque changement de statut."""
+    ExposureSynthesis.all_objects.filter(tenant=tenant, is_stale=False).update(is_stale=True)
+
+
+def synthesis_cooldown_active(tenant) -> bool:
+    synthesis = get_exposure_synthesis(tenant)
+    if synthesis is None:
+        return False
+    cooldown = timedelta(minutes=settings.EXPOSURE_SYNTHESIS_COOLDOWN_MINUTES)
+    return timezone.now() - synthesis.generated_at < cooldown
+
+
+def save_exposure_synthesis(tenant, content: str) -> ExposureSynthesis:
+    synthesis, _created = ExposureSynthesis.all_objects.update_or_create(
+        tenant=tenant,
+        defaults={
+            "content": content,
+            "is_stale": False,
+            "findings_fingerprint": findings_fingerprint(tenant),
+        },
+    )
+    return synthesis
+
+
+def refresh_exposure_synthesis(tenant) -> ExposureSynthesis:
+    """Génère et met en cache la synthèse. Import différé d'ai_assistant :
+    threat_intelligence ne dépend pas de l'IA au chargement du module (et
+    ai_assistant importe déjà threat_intelligence — l'inverse au niveau
+    module créerait un cycle)."""
+    from apps.ai_assistant import services as ai_services
+
+    content = ai_services.generate_exposure_synthesis(tenant=tenant)
+    return save_exposure_synthesis(tenant, content)

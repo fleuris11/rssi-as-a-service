@@ -171,7 +171,7 @@ def build_weather_context(tenant) -> dict:
             "identifier": finding.identifier_plain or finding.identifier_masked,
         }
         for finding in threat_intelligence_services.list_findings(
-            tenant, status=BreachFinding.Status.OPEN
+            tenant, status=BreachFinding.Status.OPEN, include_pre_incident=True
         ).select_related("asset")[:20]
     ]
 

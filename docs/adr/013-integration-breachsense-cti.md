@@ -135,3 +135,28 @@ diagnostic** ponctuel (déclenché à la déclaration d'un actif, ou manuellemen
   HTTP et dans le cadrage (roadmap) comme extension future.
 - Le cadrage §3.2 est mis à jour : Breachsense remplace HIBP dans la roadmap, qui passe de
   « architecturée, non développée » à « intégrée ».
+
+## Amendement (Phase 8B) — séparation « fuite avérée » / « signal avant-coureur »
+
+Le point 5 ci-dessus rattache tout `BreachFinding` à un actif déclaré, sans distinguer ce qui est
+un **constat** (une donnée a fuité) de ce qui est un **signal** (l'exposition publique bouge). La
+Phase 8A avait introduit cette distinction à l'affichage (carte « Signaux avant-coureurs ») tout en
+laissant les mêmes findings dans la liste des compromissions — donc affichés deux fois, ce qui
+diluait la distinction au lieu de la porter.
+
+La Phase 8B tranche :
+
+- **`services.list_findings` exclut désormais par défaut** les endpoints pré-incident (`radar`,
+  `darkweb`, `asm`). La liste « Compromissions » ne montre plus que des fuites avérées.
+- La carte « Signaux avant-coureurs » porte ses **propres actions** de traitement (mêmes
+  transitions de statut, mêmes permissions que la liste) et un historique des signaux traités —
+  c'était la condition pour pouvoir les retirer de la liste sans les rendre intraitables.
+- Le paramètre `include_pre_incident=True` restitue la vue complète pour les usages qui raisonnent
+  sur l'exposition d'un actif et non sur une liste : le fil d'exposition (ADR-016), le contexte de
+  l'assistant IA et celui de la météo quotidienne. Ces trois appelants ont été explicitement mis à
+  jour lors du changement — le défaut plus restrictif aurait sinon rétréci silencieusement ce que
+  l'IA et la météo voient.
+
+Le modèle de données est inchangé : c'est une décision de **présentation et de vocabulaire**, pas
+de stockage. Un signal radar reste un `BreachFinding` rattaché à un actif déclaré, exactement comme
+le prévoyait le point 5.

@@ -83,11 +83,17 @@ USE_CASE_MODELS = {
     AIUsageLog.UseCase.DOCUMENT_CHARTER: "claude-sonnet-5",
     AIUsageLog.UseCase.ASSISTANT_REPLY: "claude-haiku-4-5",
     AIUsageLog.UseCase.WEATHER_ENRICHMENT: "claude-haiku-4-5",
+    # Synthèse d'exposition (Phase 8B) : Haiku — c'est une mise en relation
+    # courte sur un contexte déjà calculé et borné (quelques actifs, 3-5
+    # phrases attendues), exactement le profil pour lequel ADR-004 réserve
+    # Haiku. Sonnet resterait pour de la génération documentaire longue.
+    AIUsageLog.UseCase.EXPOSURE_SYNTHESIS: "claude-haiku-4-5",
 }
 USE_CASE_MAX_TOKENS = {
     AIUsageLog.UseCase.DOCUMENT_CHARTER: 4000,
     AIUsageLog.UseCase.ASSISTANT_REPLY: 1024,
     AIUsageLog.UseCase.WEATHER_ENRICHMENT: 400,
+    AIUsageLog.UseCase.EXPOSURE_SYNTHESIS: 500,
 }
 # Tarifs Anthropic indicatifs (USD / million de tokens) au moment de
 # l'implémentation — à réviser si les tarifs évoluent (cadrage §8 : suivi
@@ -539,7 +545,7 @@ def build_assistant_context(tenant) -> dict:
                 "secret_expose": finding.has_secret,
             }
             for finding in threat_intelligence_services.list_findings(
-                tenant, status=BreachFinding.Status.OPEN
+                tenant, status=BreachFinding.Status.OPEN, include_pre_incident=True
             ).select_related("asset")[:20]
         ],
     }
@@ -686,3 +692,76 @@ def enrich_weather_summary(*, tenant, deterministic_context: dict) -> str | None
             "Échec de l'enrichissement IA de la météo pour le tenant %s", tenant.id, exc_info=True
         )
         return None
+
+
+# --- Cas d'usage 4 : synthèse d'exposition (Phase 8B) ----------------------
+
+
+def build_exposure_synthesis_context(tenant) -> dict:
+    """Contexte minimal pour la synthèse : l'état déjà calculé par
+    ``threat_intelligence.services.build_exposure_feed`` (actifs, scores,
+    fuites ouvertes), réduit aux seuls champs utiles au raisonnement.
+
+    Aucun secret n'y figure — ni en clair, ni chiffré, ni masqué : le champ
+    ``secret_masked`` lui-même est délibérément exclu. Il n'apporte rien à
+    une mise en relation (« ••••••23 » n'aide pas à corréler), et le laisser
+    entrer ici ouvrirait une discussion inutile sur ce qui part chez le
+    fournisseur. Seul le booléen « un mot de passe est récupérable » est
+    transmis.
+    """
+    feed = threat_intelligence_services.build_exposure_feed(tenant)
+    return {
+        "raison_sociale": tenant.name,
+        "secteur": tenant.sector or "non renseigné",
+        "nombre_total_de_fuites_ouvertes": feed["total_findings"],
+        "actifs": [
+            {
+                "actif": group["asset_value"],
+                "type": group["asset_type_label"],
+                "score_exposition": group["score"],
+                "niveau": group["level_label"],
+                "fuites": [
+                    {
+                        "type": finding["source_label"],
+                        "gravite": finding["severity_label"],
+                        "identifiant": finding["identifier"],
+                        "date_de_fuite": (
+                            finding["breach_date"].isoformat() if finding["breach_date"] else None
+                        ),
+                        "mot_de_passe_recuperable": finding["has_secret"],
+                    }
+                    for finding in group["findings"]
+                ],
+            }
+            for group in feed["assets"]
+        ],
+    }
+
+
+def generate_exposure_synthesis(*, tenant) -> str:
+    """3-5 phrases de lecture d'ensemble, via le pipeline complet d'ADR-005
+    (pseudonymisation avant appel, ré-injection après). Lève une AIError si
+    l'IA est désactivée ou le quota dépassé — l'appelant
+    (threat_intelligence) traite l'échec comme « pas de bandeau », jamais
+    comme une erreur bloquante pour la page."""
+    ensure_ai_enabled(tenant)
+    ensure_quota_available(tenant)
+
+    mapping = collect_sensitive_values(tenant)
+    pattern = _build_pattern(mapping)
+    context = pseudonymize_value(build_exposure_synthesis_context(tenant), mapping, pattern)
+
+    text = call_claude(
+        tenant=tenant,
+        use_case=AIUsageLog.UseCase.EXPOSURE_SYNTHESIS,
+        system_prompt=prompts.EXPOSURE_SYNTHESIS_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": json.dumps(context, ensure_ascii=False)}],
+    )
+    return rehydrate_text(text, mapping)
+
+
+def preview_exposure_synthesis_context(tenant) -> dict:
+    """Ce qui partirait réellement chez le fournisseur — sert la transparence
+    « données transmises » (US-4.3) et le test de propriété anti-fuite."""
+    mapping = collect_sensitive_values(tenant)
+    return pseudonymize_value(build_exposure_synthesis_context(tenant), mapping)

@@ -16,7 +16,7 @@ from apps.tenants.permissions import IsTenantAdmin, IsTenantMember, IsTenantMemb
 
 from . import quota as quota_module
 from . import services
-from .models import BreachIntelligenceUsage, SecretRevealAudit
+from .models import BreachFinding, BreachIntelligenceUsage, SecretRevealAudit
 from .reveal_throttle import RevealIPRateThrottle, RevealUserRateThrottle
 from .serializers import (
     BreachFindingSerializer,
@@ -24,6 +24,7 @@ from .serializers import (
     BreachIntelligenceUsageSerializer,
     BreachScanJobSerializer,
     BreachScanTriggerSerializer,
+    ExposureFeedSerializer,
     MonitoredAssetCreateSerializer,
     MonitoredAssetSerializer,
     PreIncidentSummarySerializer,
@@ -116,8 +117,8 @@ class BreachFindingRevealView(APIView):
             )
             return Response({"detail": detail}, status=http_status)
 
-        is_admin_or_platform_staff = (
-            request.membership.role == Membership.Role.ADMIN or bool(request.user.is_staff)
+        is_admin_or_platform_staff = request.membership.role == Membership.Role.ADMIN or bool(
+            request.user.is_staff
         )
         if not is_admin_or_platform_staff:
             return _deny(
@@ -182,13 +183,80 @@ class PreIncidentRadarView(APIView):
     d'exposition publique (radar, dark web, surface d'attaque) du tenant,
     groupés par nature, avec pour chacun une phrase de vulgarisation et un
     niveau d'urgence. Distinct de la liste des fuites : c'est du
-    pré-incident (« nous surveillons »), pas un constat (« ça a fuité »)."""
+    pré-incident (« nous surveillons »), pas un constat (« ça a fuité »).
+
+    ``?status=treated|ignored`` sert la vue d'historique « Voir les signaux
+    traités » — depuis la Phase 8B la carte porte ses propres actions de
+    traitement, donc un signal traité doit rester consultable quelque part."""
 
     permission_classes = [permissions.IsAuthenticated, IsTenantMember]
 
     def get(self, request):
-        summary = services.build_pre_incident_summary(request.tenant)
+        status_filter = request.query_params.get("status") or BreachFinding.Status.OPEN
+        summary = services.build_pre_incident_summary(request.tenant, status=status_filter)
         return Response(PreIncidentSummarySerializer(summary).data)
+
+
+class ExposureFeedView(APIView):
+    """GET /api/v1/threat-intelligence/exposure-feed/ — la vue principale du
+    produit (Phase 8B) : les fuites ouvertes groupées par actif, chaque
+    groupe portant son score d'exposition explicable et, pour chaque fuite,
+    sa vulgarisation et l'action recommandée. Groupes triés par score
+    décroissant : ce qu'il faut regarder en premier arrive en premier.
+
+    La synthèse IA est jointe si elle existe, mais n'est jamais générée ici
+    (aucun appel IA dans le cycle requête/réponse — CLAUDE.md) : sa présence
+    est optionnelle, la page est complète sans elle."""
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
+
+    def get(self, request):
+        feed = services.build_exposure_feed(request.tenant)
+        synthesis = services.get_exposure_synthesis(request.tenant)
+        feed["synthesis"] = (
+            {
+                "content": synthesis.content,
+                "generated_at": synthesis.generated_at,
+                "is_stale": synthesis.is_stale,
+            }
+            if synthesis
+            else None
+        )
+        return Response(ExposureFeedSerializer(feed).data)
+
+
+class ExposureSynthesisRefreshView(APIView):
+    """POST — déclenche la (re)génération de la synthèse via le pattern job
+    asynchrone (ADR-011) : réponse 202 + id de job, le frontend sonde
+    ``GET /api/v1/ai/jobs/{id}/`` comme pour les autres cas d'usage IA."""
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader]
+
+    def post(self, request):
+        from apps.ai_assistant import services as ai_services
+        from apps.ai_assistant.models import AIJob
+        from apps.ai_assistant.tasks import generate_exposure_synthesis_task
+
+        try:
+            ai_services.ensure_ai_enabled(request.tenant)
+            ai_services.ensure_quota_available(request.tenant)
+        except ai_services.AIError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+
+        if services.synthesis_cooldown_active(request.tenant):
+            return Response(
+                {"detail": ("Une analyse vient d'être générée. Réessayez dans quelques minutes.")},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        job = AIJob.all_objects.create(
+            tenant=request.tenant,
+            use_case=AIJob.UseCase.EXPOSURE_SYNTHESIS,
+            status=AIJob.Status.PENDING,
+            created_by=request.user,
+        )
+        generate_exposure_synthesis_task.delay(job.id)
+        return Response({"job_id": job.id}, status=status.HTTP_202_ACCEPTED)
 
 
 class SecretRevealAuditListView(generics.ListAPIView):
