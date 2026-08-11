@@ -73,3 +73,64 @@ Garde-fous :
 Les fuites sont créées via `services.ingest_raw_findings`, donc à travers le
 pipeline réel : masquage, chiffrement du secret, dédoublonnage et ouverture
 d'alerte sont ceux de la production, pas une insertion directe en base.
+
+## Cycle de vie des secrets de fuite (ADR-014)
+
+`chiffré à l'ingestion` → `révélable sous conditions` → `purgé à échéance` → `clé rotable`
+
+### Purge automatique
+
+Une tâche Celery Beat quotidienne (3 h 30) efface les secrets au-delà du délai
+de rétention. **Elle purge le secret, pas la fuite** : métadonnées, statut et
+historique de traitement restent, seule la valeur récupérable disparaît.
+
+| Réglage | Défaut | Portée |
+|---|---|---|
+| `BREACH_SECRET_RETENTION_DAYS` | 90 | Secret chiffré d'un `BreachFinding` |
+| `BREACH_REVEAL_AUDIT_RETENTION_DAYS` | 365 | Journal des révélations |
+
+Le journal des révélations est volontairement conservé **plus longtemps** que
+les secrets : c'est une piste d'audit de sécurité, sa valeur est de survivre à
+la donnée qu'elle protège. Les cassettes de test ne sont pas concernées : elles
+ne contiennent aucun secret (masqués à l'enregistrement).
+
+Exécution manuelle si besoin :
+
+```bash
+python manage.py shell -c "from apps.threat_intelligence import services; print(services.purge_expired_secrets())"
+```
+
+Les exécutions sont tracées (`SecretPurgeRun`) et visibles au back-office
+plateforme — la politique ne vaut que si l'on peut constater qu'elle tourne.
+
+### Rotation de la clé de chiffrement
+
+`BREACH_SECRET_ENCRYPTION_KEYS` est une liste **ordonnée** : la première clé
+chiffre, toutes déchiffrent (MultiFernet). La rotation se fait donc **sans
+coupure ni fenêtre de maintenance**.
+
+```bash
+# 1. Générer une nouvelle clé
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+# 2. La placer EN TÊTE, l'ancienne derrière (.env) :
+#    BREACH_SECRET_ENCRYPTION_KEYS=<nouvelle>,<ancienne>
+#    puis redémarrer web/worker/beat.
+#    À ce stade : la nouvelle chiffre, l'ancienne déchiffre encore l'existant.
+
+# 3. Re-chiffrer l'existant (idempotent, sûr à interrompre)
+python manage.py rotate_breach_secret_key --dry-run   # compte sans écrire
+python manage.py rotate_breach_secret_key
+
+# 4. Retirer l'ancienne clé :
+#    BREACH_SECRET_ENCRYPTION_KEYS=<nouvelle>
+```
+
+Ne pas sauter l'étape 3 : retirer l'ancienne clé avant d'avoir re-chiffré rend
+illisibles tous les secrets encore chiffrés avec elle.
+
+Un secret qu'aucune clé configurée n'ouvre est **signalé et laissé intact** (la
+commande ne l'efface pas) : une clé retrouvée plus tard peut encore le lire.
+
+Le réglage historique `BREACH_SECRET_ENCRYPTION_KEY` (clé unique) reste accepté
+en repli — un déploiement existant continue de fonctionner sans changement.

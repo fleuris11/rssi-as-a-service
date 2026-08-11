@@ -1775,3 +1775,130 @@ quoi faire — et trancher au passage le doublon d'affichage laissé ouvert en 8
   tests unitaires frontend, comme le reste du frontend.
 - **Purge planifiée**, **rotation des clés Fernet**, **smoke test licence réelle** : reste-à-faire
   inchangés des phases précédentes.
+
+---
+
+## 2026-08-11 (suite) — Phase 8C : corrélation de réutilisation et cycle de vie complet du secret
+
+### Contexte
+Trois chantiers distincts réunis par un même fil : donner à la révélation de secret (Phase 8) une
+raison d'être produit (la corrélation), et fermer les deux questions que le chiffrement réversible
+laissait ouvertes (les secrets s'accumulaient indéfiniment ; la clé n'était pas rotable).
+
+### Réalisé
+
+**Tâche 0 — fermeture du couplage implicite repéré en 8B**
+- Nouveau fichier `test_shared_scope_contract.py` : épingle le périmètre de findings vu par
+  l'assistant IA, la météo et la synthèse d'exposition, sur le tenant de démo (seul jeu du dépôt
+  couvrant tous les `source_endpoint`). L'en-tête du fichier explique l'incident 8B et pourquoi ces
+  tests ne sont pas un doublon — pour qu'un futur lecteur ne les supprime pas.
+- **Vérifié qu'ils rougissent réellement** : le correctif 8B a été temporairement annulé, deux tests
+  sont tombés, puis le correctif restauré. Un test de non-régression qu'on n'a pas vu échouer ne
+  prouve rien.
+- Audit des autres consommateurs partagés : `count_critical_open_findings` (endpoint « status » du
+  tenant) interroge le modèle directement sans passer par `list_findings` — son périmètre est
+  épinglé lui aussi, pour qu'il reste un choix visible et non un effet de bord.
+
+**Tâche 1 — UX de la révélation**
+- Message explicite « Vérification de votre identité… » pendant les ~1,5 s de PBKDF2, bouton
+  désactivé, garde anti-double-soumission côté handler (pas seulement `disabled` sur le bouton).
+  Vérifié en navigateur : plus rien ne paraît figé.
+
+**Tâche 2 — corrélation « réutilisation possible » (ADR-017)**
+- Module `correlation.py`, entièrement déterministe. Deux signaux : même identifiant dans plusieurs
+  fuites ; adresse professionnelle d'un membre retrouvée dans la fuite d'un service externe.
+- **Vocabulaire imposé et vérifié mécaniquement** : « possible », « à vérifier », « pourrait » ;
+  jamais « confirmée », « compromis », « avéré ». Une classe de tests refuse le vocabulaire interdit
+  et exige une formulation d'hypothèse. Une règle de rédaction qui ne repose que sur la vigilance
+  humaine finit toujours par céder.
+- Normalisation d'identifiant volontairement prudente (casse + espaces, rien de plus) : fusionner
+  les points de la partie locale ou les suffixes `+…` lierait des comptes réellement distincts.
+  **Le coût d'un faux positif est ici très supérieur à celui d'un faux négatif.**
+- Le croisement n'utilise que des identifiants en clair — un identifiant masqué est ambigu par
+  construction, s'en servir comme clé fabriquerait des liens faux.
+- C'est là que la révélation prend son sens : quand une corrélation porte sur une fuite au mot de
+  passe disponible, l'action recommandée propose de le révéler pour trancher, en rappelant que
+  l'accès est tracé.
+
+**Tâche 3 — purge planifiée (ADR-014 §4)**
+- Tâche Celery Beat quotidienne : au-delà de `BREACH_SECRET_RETENTION_DAYS` (90), le secret chiffré
+  est effacé, `has_secret` repasse à False, `secret_purged_at` est horodaté. **On purge le secret,
+  pas la fuite** — l'historique de conformité reste, et l'interface affiche « mot de passe effacé
+  le … » plutôt que de laisser croire qu'il n'y en a jamais eu.
+- Chaque exécution tracée (`SecretPurgeRun` : volumes, horodatage, jamais de secret), visible au
+  back-office plateforme.
+- **Rétentions tranchées explicitement** : journal des révélations conservé 365 j, soit plus
+  longtemps que les secrets — c'est une piste d'audit, sa valeur est de survivre à la donnée
+  qu'elle protège. Cassettes de test : hors périmètre, elles ne contiennent aucun secret (masquées
+  à l'enregistrement) ; les soumettre à une rétention laisserait croire l'inverse.
+- Politique lisible par le client sur la page Exposition — une promesse de conservation limitée
+  n'est crédible que si elle figure dans le produit, pas seulement dans un contrat.
+
+**Tâche 4 — rotation de clé (ADR-014 §5)**
+- `BREACH_SECRET_ENCRYPTION_KEYS` : liste ordonnée, MultiFernet (la première chiffre, toutes
+  déchiffrent). Rotation sans coupure ; l'ancien réglage à clé unique reste accepté en repli.
+- Commande `rotate_breach_secret_key` (idempotente, `--dry-run`, sûre à interrompre). Un secret
+  qu'aucune clé n'ouvre est **signalé et laissé intact** : l'effacer détruirait une donnée qu'une
+  clé retrouvée plus tard pourrait encore lire.
+- Procédure d'exploitation en quatre étapes documentée dans le README de l'app.
+
+**Tâche 5 — ADR-014 réécrit**
+- Le document décrit désormais le cycle de vie d'un bout à l'autre (chiffré → révélable → purgé →
+  clé rotable) et se lit sans reconstituer la chronologie. L'historique des revirements est conservé
+  en fin de document, pour la traçabilité des décisions.
+
+**Seed** : le tenant Durand reçoit le cas de réutilisation mis en scène (l'adresse de Marie Durand
+apparaît à la fois dans un log de malware et dans la fuite d'un service externe, sur une fuite qui
+porte un mot de passe récupérable — les deux signaux et la révélation s'enchaînent) et une fuite
+ancienne dont le secret est purgé. La purge de démo passe par le **vrai** service, pas par une
+manipulation d'état : la démo montre un état réel.
+
+### Décisions
+- **Vocabulaire de la corrélation vérifié par les tests**, pas seulement par relecture. Un produit
+  qui laisserait croire qu'il a testé un identifiant mentirait sur ce qu'il fait.
+- **Purger le secret, jamais la fuite** : supprimer le finding ferait perdre l'historique de
+  conformité, qui est exactement ce qu'un tenant doit pouvoir présenter.
+- **Journal des révélations conservé plus longtemps que les secrets** : c'est une piste d'audit.
+- **Cassettes hors périmètre de rétention**, décidé explicitement plutôt que par omission.
+- **Prudence sur la normalisation des identifiants** : arbitrage assumé en faveur des faux négatifs.
+
+### Difficultés rencontrées et solutions
+- **Un test de corrélation a révélé un vrai défaut du normaliseur** : la reconnaissance d'un membre
+  du tenant comparait `identifier.lower()` à des emails eux-mêmes minusculés, mais sans retirer les
+  espaces de bord. Un payload fournisseur arrivant avec une espace parasite masquait donc à tort
+  l'adresse d'un membre — le tenant perdait la capacité d'agir directement dessus (ADR-014 §4).
+  Corrigé en normalisant des deux côtés. Le test avait été écrit pour la corrélation ; il a trouvé
+  un bug une couche plus bas.
+- **Exception de librairie qui fuitait à travers une frontière de module** : `rotate_secret_ciphertext`
+  laissait remonter `cryptography.fernet.InvalidToken`, alors que la commande de rotation attrapait
+  `ThreatIntelligenceError` — le cas « secret illisible avec les clés actuelles » faisait donc
+  planter toute la rotation au lieu d'être signalé et ignoré. Corrigé en traduisant l'exception
+  comme le fait déjà `decrypt_secret` : l'appelant n'a pas à connaître `cryptography` pour
+  distinguer une donnée illisible d'une panne.
+- **Assertion Playwright sur la mauvaise carte** : le scénario cliquait « Voir le détail » sur la
+  première carte — laquelle est dépliée d'office, le clic la repliait donc — alors que la fuite
+  corrélée à révéler est sur la carte suivante. Corrigé en ciblant la carte par son contenu
+  (`boutique-loisirs.example`) plutôt que par sa position. La fonctionnalité était correcte.
+- **La purge de démo efface plus que la fuite prévue** : quatre secrets seedés dépassent 90 jours,
+  pas seulement celui de 2019. Constaté puis **conservé tel quel** : c'est le comportement réel de
+  la politique, et une démo qui montre la rétention réellement à l'œuvre vaut mieux qu'une mise en
+  scène calibrée. Le cas de réutilisation à révéler (58 jours) reste intact, ce qui était la
+  contrainte à respecter.
+
+### Vérification
+- 690 tests backend verts (51 nouveaux : épinglage de périmètre, corrélation et ses faux positifs,
+  purge et son idempotence, rotation et rejouabilité), hors les 3 tests PDF WeasyPrint pré-existants.
+  `ruff` propre, lint frontend propre.
+- Scénario de démonstration déroulé en navigateur réel : Exposition → section « Réutilisation
+  possible — à vérifier » avec les deux signaux → dépliage de l'actif corrélé → révélation avec état
+  de chargement explicite → fuite au mot de passe purgé → politique de rétention lisible.
+
+### Reste à faire (sessions suivantes)
+- **Corrélation inter-tenant impossible par construction** (et c'est voulu) : deux entreprises
+  partageant un prestataire compromis ne se le signalent pas mutuellement. Un signal agrégé
+  anonymisé côté plateforme serait utile mais soulève une question RGPD à trancher en ADR.
+- **Détection de réutilisation nécessairement incomplète** : un même mot de passe sous deux adresses
+  différentes échappe au croisement. C'est le cas que seul un test d'identifiant révélerait — refusé
+  par principe (ADR-010/017). Ne jamais laisser croire qu'une absence de signal vaut absence de
+  réutilisation.
+- **Suite Vitest** toujours absente ; **smoke test licence réelle** toujours à faire.
