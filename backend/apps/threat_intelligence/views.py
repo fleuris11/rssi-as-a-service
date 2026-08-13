@@ -161,7 +161,30 @@ class BreachFindingRevealView(APIView):
                 detail="Aucun secret chiffré n'est disponible pour cette fuite.",
             )
 
-        secret = services.decrypt_secret(bytes(finding.secret_encrypted))
+        try:
+            secret = services.decrypt_secret(bytes(finding.secret_encrypted))
+        except services.ThreatIntelligenceError:
+            # Le secret est là mais illisible avec les clés courantes : rotation
+            # menée sans re-chiffrement, ancienne clé retirée trop tôt, ou donnée
+            # corrompue. Renvoyer une 500 brute laisserait l'utilisateur devant
+            # un plantage générique pour un problème d'exploitation identifiable.
+            # La tentative est tracée comme les autres : c'est un accès refusé,
+            # pas un non-événement.
+            logger.error(
+                "Secret illisible pour la fuite %s (tenant %s) : clé de chiffrement "
+                "incorrecte ou donnée corrompue.",
+                finding.id,
+                request.tenant.id,
+            )
+            return _deny(
+                denial_reason=SecretRevealAudit.DenialReason.NO_SECRET,
+                finding=finding,
+                http_status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Ce mot de passe est temporairement illisible. L'incident a été "
+                    "signalé à l'administrateur de la plateforme."
+                ),
+            )
         services.record_reveal_attempt(
             tenant=request.tenant,
             finding=finding,

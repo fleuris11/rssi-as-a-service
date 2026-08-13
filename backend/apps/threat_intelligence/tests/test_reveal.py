@@ -13,6 +13,7 @@ ré-authentifiée et tracée, en remplacement du masquage définitif. Couvre :
 
 import pyotp
 import pytest
+from cryptography.fernet import Fernet
 from django.urls import reverse
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -355,3 +356,64 @@ class TestSecretRevealAuditAPI:
         assert len(response.data["recent_reveal_audits"]) == 1
         assert response.data["recent_reveal_audits"][0]["tenant_name"] == tenant.name
         assert "secret" not in str(response.data["recent_reveal_audits"])
+
+
+class TestUnreadableSecret:
+    """Rotation menée sans re-chiffrement, ancienne clé retirée trop tôt,
+    donnée corrompue : le secret est là mais illisible. Trouvé en conditions
+    réelles (Phase 8D) — le conteneur tournait avec la clé d'avant rotation et
+    l'endpoint renvoyait une 500 brute."""
+
+    def test_returns_a_clean_error_not_a_crash(
+        self, api_client, tenant, tenant_owner, website_asset, settings
+    ):
+        finding = _ingest_secret_finding(tenant, website_asset)
+        # Clé valide mais différente : le blob existant devient indéchiffrable.
+        settings.BREACH_SECRET_ENCRYPTION_KEY = Fernet.generate_key().decode()
+        settings.BREACH_SECRET_ENCRYPTION_KEYS = []
+        headers = _auth(api_client, tenant_owner, tenant)
+
+        response = api_client.post(
+            reverse("breach-finding-reveal", args=[finding.id]),
+            {"password": PASSWORD},
+            format="json",
+            **headers,
+        )
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert "illisible" in response.data["detail"]
+
+    def test_the_failed_attempt_is_still_audited(
+        self, api_client, tenant, tenant_owner, website_asset, settings
+    ):
+        finding = _ingest_secret_finding(tenant, website_asset)
+        settings.BREACH_SECRET_ENCRYPTION_KEY = Fernet.generate_key().decode()
+        settings.BREACH_SECRET_ENCRYPTION_KEYS = []
+        headers = _auth(api_client, tenant_owner, tenant)
+
+        api_client.post(
+            reverse("breach-finding-reveal", args=[finding.id]),
+            {"password": PASSWORD},
+            format="json",
+            **headers,
+        )
+
+        audit = SecretRevealAudit.all_objects.get(tenant=tenant)
+        assert audit.success is False
+
+    def test_no_secret_material_leaks_in_the_error(
+        self, api_client, tenant, tenant_owner, website_asset, settings
+    ):
+        finding = _ingest_secret_finding(tenant, website_asset)
+        settings.BREACH_SECRET_ENCRYPTION_KEY = Fernet.generate_key().decode()
+        settings.BREACH_SECRET_ENCRYPTION_KEYS = []
+        headers = _auth(api_client, tenant_owner, tenant)
+
+        response = api_client.post(
+            reverse("breach-finding-reveal", args=[finding.id]),
+            {"password": PASSWORD},
+            format="json",
+            **headers,
+        )
+
+        assert "SuperSecretRealValue123" not in str(response.data)
