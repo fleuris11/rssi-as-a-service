@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f1b2d"/>
+      <stop offset="100%" stop-color="#2c4a7c"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <g transform="translate(96,150)">
+    <rect width="56" height="56" rx="12" fill="#ffffff" opacity="0.12"/>
+    <text x="28" y="38" text-anchor="middle" font-family="Georgia,serif" font-size="26" font-weight="700" fill="#ffffff">R</text>
+    <text x="76" y="37" font-family="Georgia,serif" font-size="26" font-weight="600" fill="#ffffff">RSSI as a Service</text>
+    <text x="0" y="150" font-family="Georgia,serif" font-size="54" font-weight="600" fill="#ffffff">Vous saurez que vos identifiants</text>
+    <text x="0" y="216" font-family="Georgia,serif" font-size="54" font-weight="600" fill="#ffffff">ont fuite avant vos clients.</text>
+    <text x="0" y="286" font-family="Helvetica,Arial,sans-serif" font-size="24" fill="#c3d2ea">Surveillance des fuites de donnees et conformite pour les PME</text>
+    <rect x="0" y="330" width="200" height="4" rx="2" fill="#7d9cc9"/>
+  </g>
+</svg>

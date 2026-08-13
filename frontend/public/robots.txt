@@ -1,0 +1,19 @@
+User-agent: *
+Allow: /
+# L'application authentifiée n'a rien à faire dans un index de moteur de
+# recherche : ses pages exigent une session et ne renvoient rien d'utile.
+Disallow: /tableau-de-bord
+Disallow: /diagnostic
+Disallow: /resultats
+Disallow: /plan-action
+Disallow: /surveillance
+Disallow: /exposition
+Disallow: /compromissions
+Disallow: /documents
+Disallow: /assistant
+Disallow: /preferences
+Disallow: /securite
+Disallow: /admin
+Disallow: /api
+
+Sitemap: https://rssiasservice.online/sitemap.xml
