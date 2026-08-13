@@ -2,9 +2,13 @@
 instead of importing apps.tenants.models directly (CLAUDE.md architecture rule).
 """
 
+import logging
+
 from django.utils.text import slugify
 
 from .models import Membership, Tenant
+
+logger = logging.getLogger(__name__)
 
 
 def _unique_slug(name: str) -> str:
@@ -28,6 +32,24 @@ def create_tenant_with_owner(
         headcount=headcount,
     )
     Membership.all_objects.create(tenant=tenant, user=owner, role=Membership.Role.ADMIN)
+
+    # Essai automatique (Phase 10). Import différé : apps.billing importe
+    # apps.tenants pour sa clé étrangère, un import au niveau module créerait
+    # un cycle. L'échec est absorbé — une entreprise doit pouvoir être créée
+    # même si le catalogue d'offres est vide ou la plateforme saturée ; elle
+    # se retrouve alors sans abonnement, état que les gardes d'entitlements
+    # traitent explicitement (« aucun abonnement actif »).
+    from apps.billing import services as billing_services
+
+    try:
+        billing_services.start_trial(tenant=tenant, actor=owner)
+    except Exception:  # noqa: BLE001 - la création d'entreprise prime
+        logger.warning(
+            "Essai non ouvert pour l'entreprise %s : abonnement à créer manuellement.",
+            tenant.id,
+            exc_info=True,
+        )
+
     return tenant
 
 

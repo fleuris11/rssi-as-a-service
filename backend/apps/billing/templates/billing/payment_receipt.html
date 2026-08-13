@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Justificatif de paiement</title>
+  <style>
+    @page { size: A4; margin: 22mm; }
+    body { font-family: Helvetica, Arial, sans-serif; color: #1a2333; font-size: 11pt; }
+    h1 { font-size: 17pt; margin: 0 0 4px; }
+    .muted { color: #5c6b85; font-size: 9.5pt; }
+    table { width: 100%; border-collapse: collapse; margin-top: 26px; }
+    th, td { text-align: left; padding: 9px 0; border-bottom: 1px solid #dde3ed; }
+    th { color: #5c6b85; font-weight: 600; font-size: 9.5pt; width: 42%; }
+    .total { margin-top: 26px; font-size: 15pt; font-weight: 600; }
+    footer { margin-top: 46px; color: #5c6b85; font-size: 8.5pt; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <h1>Justificatif de paiement</h1>
+  <p class="muted">RSSI as a Service</p>
+
+  <table>
+    <tr><th>Entreprise</th><td>{{ payment.subscription.tenant.name }}</td></tr>
+    <tr><th>Offre</th><td>{{ payment.subscription.plan.name }}</td></tr>
+    <tr><th>Périodicité</th><td>{{ payment.subscription.get_period_display }}</td></tr>
+    <tr><th>Date de réception</th><td>{{ payment.received_at|date:"d/m/Y" }}</td></tr>
+    {% if payment.reference %}<tr><th>Référence</th><td>{{ payment.reference }}</td></tr>{% endif %}
+  </table>
+
+  <p class="total">{{ payment.amount }} {{ payment.currency }}</p>
+
+  {% if payment.note %}<p class="muted">{{ payment.note }}</p>{% endif %}
+
+  <footer>
+    Ce document atteste de la réception du paiement indiqué. Il ne constitue pas une facture au
+    sens comptable : les mentions légales obligatoires (numéro de facture séquentiel, TVA,
+    identification de l'émetteur) restent à compléter par l'éditeur.
+  </footer>
+</body>
+</html>

@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "apps.threat_intelligence",
     "apps.platform_admin",
     "apps.marketing",
+    "apps.billing",
 ]
 
 MIDDLEWARE = [
@@ -316,6 +317,20 @@ BREACH_REVEAL_AUDIT_RETENTION_DAYS = env.int(
 # Vide = notification exploitant désactivée (l'accusé de réception au
 # prospect, lui, part toujours).
 DEMO_REQUEST_NOTIFICATION_EMAIL = env("DEMO_REQUEST_NOTIFICATION_EMAIL", default="")
+
+# --- Offres et abonnements (Phase 10, ADR-019/020) --------------------------
+#
+# Plafonds PLATEFORME (pas par client) : la licence Breachsense Essentials
+# borne toute la plateforme (ADR-013). Ils changeront au passage à un palier
+# supérieur — d'où la configuration plutôt que des constantes en dur.
+# BREACHSENSE_MONITORED_ASSET_POOL_SIZE (défini plus haut) est le second.
+PLATFORM_MONTHLY_SCAN_CAP = env.int("PLATFORM_MONTHLY_SCAN_CAP", default=1000)
+# Destinataire des alertes d'exploitation (80 % / 95 % d'une ressource rare).
+# Vide = alertes désactivées.
+PLATFORM_ALERT_EMAIL = env("PLATFORM_ALERT_EMAIL", default="")
+# Essai ouvert automatiquement à la création d'une entreprise.
+BILLING_TRIAL_DAYS = env.int("BILLING_TRIAL_DAYS", default=14)
+BILLING_DEFAULT_TRIAL_PLAN_CODE = env("BILLING_DEFAULT_TRIAL_PLAN_CODE", default="pilotage")
 
 # --- Score d'exposition par actif (Phase 8B, ADR-016) ----------------------
 #
