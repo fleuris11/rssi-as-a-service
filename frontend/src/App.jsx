@@ -1,50 +1,43 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
-import AppLayout from './components/AppLayout'
-import ProtectedRoute from './components/ProtectedRoute'
-import StaffRoute from './components/StaffRoute'
-import ActionPlanPage from './pages/ActionPlanPage'
-import AdminBreachsensePage from './pages/AdminBreachsensePage'
-import AssistantPage from './pages/AssistantPage'
-import CompromisesPage from './pages/CompromisesPage'
-import DashboardPage from './pages/DashboardPage'
-import DiagnosticPage from './pages/DiagnosticPage'
-import DocumentsPage from './pages/DocumentsPage'
-import ExposurePage from './pages/ExposurePage'
-import LoginPage from './pages/LoginPage'
-import NotificationPreferencesPage from './pages/NotificationPreferencesPage'
-import RegisterPage from './pages/RegisterPage'
-import ResultsPage from './pages/ResultsPage'
-import SurveillancePage from './pages/SurveillancePage'
-import TwoFactorSettingsPage from './pages/TwoFactorSettingsPage'
+import { lazy, Suspense } from 'react'
+import { Route, Routes } from 'react-router-dom'
+import LandingPage from './marketing/pages/LandingPage'
+
+// Le code de l'application est chargé À LA DEMANDE : un visiteur qui arrive
+// sur la vitrine ne doit pas télécharger le tableau de bord, le kanban et les
+// graphiques qu'il ne verra peut-être jamais. La vitrine, elle, est importée
+// normalement — c'est la première page, la charger en différé ajouterait un
+// aller-retour réseau avant le premier pixel.
+const DemoRequestPage = lazy(() => import('./marketing/pages/DemoRequestPage'))
+const LegalPage = lazy(() => import('./marketing/pages/LegalPage'))
+const AppRoutes = lazy(() => import('./AppRoutes'))
+const LoginPage = lazy(() => import('./pages/LoginPage'))
+const RegisterPage = lazy(() => import('./pages/RegisterPage'))
+
+function RouteFallback() {
+  // Volontairement discret : un écran de chargement voyant sur une transition
+  // de quelques dizaines de millisecondes est plus dérangeant que rien.
+  return <div className="min-h-screen bg-surface" aria-busy="true" />
+}
 
 function App() {
   return (
-    <Routes>
-      <Route path="/connexion" element={<LoginPage />} />
-      <Route path="/inscription" element={<RegisterPage />} />
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
+        {/* Vitrine publique */}
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/demonstration" element={<DemoRequestPage />} />
+        <Route path="/mentions-legales" element={<LegalPage page="legal" />} />
+        <Route path="/confidentialite" element={<LegalPage page="privacy" />} />
+        <Route path="/contact" element={<LegalPage page="contact" />} />
 
-      <Route element={<ProtectedRoute />}>
-        <Route element={<AppLayout />}>
-          <Route path="/tableau-de-bord" element={<DashboardPage />} />
-          <Route path="/diagnostic" element={<DiagnosticPage />} />
-          <Route path="/resultats" element={<ResultsPage />} />
-          <Route path="/resultats/:assessmentId" element={<ResultsPage />} />
-          <Route path="/plan-action" element={<ActionPlanPage />} />
-          <Route path="/surveillance" element={<SurveillancePage />} />
-          <Route path="/exposition" element={<ExposurePage />} />
-          <Route path="/compromissions" element={<CompromisesPage />} />
-          <Route path="/documents" element={<DocumentsPage />} />
-          <Route path="/assistant" element={<AssistantPage />} />
-          <Route path="/preferences" element={<NotificationPreferencesPage />} />
-          <Route path="/securite" element={<TwoFactorSettingsPage />} />
-          <Route element={<StaffRoute />}>
-            <Route path="/admin/breachsense" element={<AdminBreachsensePage />} />
-          </Route>
-        </Route>
-      </Route>
+        {/* Authentification */}
+        <Route path="/connexion" element={<LoginPage />} />
+        <Route path="/inscription" element={<RegisterPage />} />
 
-      <Route path="*" element={<Navigate to="/tableau-de-bord" replace />} />
-    </Routes>
+        {/* Application */}
+        <Route path="/*" element={<AppRoutes />} />
+      </Routes>
+    </Suspense>
   )
 }
 

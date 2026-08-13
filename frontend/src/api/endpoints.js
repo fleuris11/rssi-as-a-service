@@ -1,5 +1,12 @@
 import { apiClient } from './client'
 
+// Endpoint PUBLIC (site vitrine) : aucune authentification, aucun en-tête de
+// tenant. Volontairement isolé des autres objets d'API pour que ce caractère
+// public soit visible à la lecture.
+export const publicApi = {
+  requestDemo: (payload) => apiClient.post('/api/v1/public/demo-requests/', payload),
+}
+
 export const authApi = {
   register: (payload) => apiClient.post('/api/v1/auth/register/', payload),
   login: (email, password) => apiClient.post('/api/v1/auth/token/', { email, password }),
