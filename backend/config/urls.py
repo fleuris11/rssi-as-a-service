@@ -18,6 +18,9 @@ urlpatterns = [
     path("api/v1/notifications/", include("apps.notifications.urls")),
     path("api/v1/ai/", include("apps.ai_assistant.urls")),
     path("api/v1/threat-intelligence/", include("apps.threat_intelligence.urls")),
+    # Site vitrine public : demande de démonstration (endpoint non
+    # authentifié) et sa consultation en back-office plateforme.
+    path("api/v1/", include("apps.marketing.urls")),
     # Hors du namespace tenant-scopé habituel : pas de JWT/X-Tenant-Id côté
     # Breachsense, authentification HTTP Basic dédiée (ADR-013 §7).
     path(

@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "apps.ai_assistant",
     "apps.threat_intelligence",
     "apps.platform_admin",
+    "apps.marketing",
 ]
 
 MIDDLEWARE = [
@@ -151,6 +152,9 @@ REST_FRAMEWORK = {
         # attaquant multi-IP reste bloqué par le compte.
         "breach_secret_reveal_user": "5/min",
         "breach_secret_reveal_ip": "10/min",
+        # Formulaire public de demande de démonstration : seuil bas, aucun
+        # usage légitime ne consiste à le remplir plus de 3 fois par heure.
+        "demo_request": "3/hour",
     },
 }
 
@@ -307,6 +311,11 @@ BREACH_SECRET_RETENTION_DAYS = env.int("BREACH_SECRET_RETENTION_DAYS", default=9
 BREACH_REVEAL_AUDIT_RETENTION_DAYS = env.int(
     "BREACH_REVEAL_AUDIT_RETENTION_DAYS", default=365
 )
+
+# Destinataire des notifications de demande de démonstration (site vitrine).
+# Vide = notification exploitant désactivée (l'accusé de réception au
+# prospect, lui, part toujours).
+DEMO_REQUEST_NOTIFICATION_EMAIL = env("DEMO_REQUEST_NOTIFICATION_EMAIL", default="")
 
 # --- Score d'exposition par actif (Phase 8B, ADR-016) ----------------------
 #
