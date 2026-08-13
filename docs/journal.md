@@ -2020,3 +2020,124 @@ tracée dans le journal d'audit (c'est un accès refusé, pas un non-événement
   local.
 - **Purge planifiée, licence réelle, pondération du score par type d'actif** : reste-à-faire
   inchangés des phases précédentes.
+
+---
+
+## 2026-08-13 (suite) — Phase 9 : site vitrine public
+
+### Contexte
+L'application s'ouvrait sur l'écran de connexion : un visiteur découvrant le produit tombait sur un
+formulaire sans savoir ce qu'il achetait. Objectif : une vitrine publique destinée à de vrais
+prospects, menant soit à une demande de démonstration, soit à la connexion.
+
+### Écarts entre le discours envisagé et le produit réel
+La consigne demandait de signaler toute promesse que le code ne tient pas plutôt que de l'écrire.
+Quatre écarts relevés en vérifiant chaque affirmation contre l'implémentation :
+
+1. **« dix sources de renseignement » → neuf.** `QUERY_ENDPOINTS` en interroge neuf (stealer, combo,
+   creds, sessions, nhi, darkweb, docs, asm, radar). La dixième valeur de l'énumération
+   `SourceEndpoint` est `webhook`, qui est un **canal de livraison** (notification temps réel), pas
+   une source interrogée. Écrit « neuf sources » partout, et un test échoue si « dix sources »
+   réapparaît.
+2. **« révélation sous double authentification » → ré-authentification.** La révélation exige de
+   re-prouver son identité par mot de passe **ou** code à usage unique. Ce n'est pas de la double
+   authentification, et la 2FA elle-même est proposée, pas imposée. Formulé « une nouvelle
+   vérification d'identité (mot de passe ou code à usage unique) ».
+3. **DKIM n'est pas vérifié.** `apps/monitoring/checks/email_dns.py` le dit explicitement : le
+   sélecteur DKIM n'étant pas découvrable, il est hors périmètre. Or **le README que j'avais réécrit
+   en Phase 8D annonçait « SPF/DKIM/DMARC »** — mon erreur, corrigée en « SPF/DMARC ». Le cadrage
+   (§ tableau des phases) porte encore la mention d'origine ; c'est un document de planification
+   historique, laissé tel quel, mais l'écart est signalé ici.
+4. **Surveillance temps réel : le pool est partagé.** Les 15 emplacements de surveillance continue
+   sont un plafond de licence **pour toute la plateforme**, pas par client (ADR-013). Vendre
+   « surveillance en continu de vos actifs » dans une offre serait invendable dès le sixième client.
+   Reformulé « Surveillance en temps réel (nombre d'actifs convenu ensemble) ».
+
+Aucune de ces formulations n'a été écrite puis corrigée après coup : elles ont été vérifiées avant
+rédaction, en lisant le code.
+
+### Réalisé
+
+**Backend — demande de démonstration** (`apps.marketing`, 25 tests)
+- Modèle `DemoRequest` délibérément **hors périmètre multi-tenant** : un prospect n'a pas encore de
+  tenant. Lui en coller un obligerait à en inventer un ou à ouvrir une brèche dans le manager
+  fail-closed. Contrepartie : lecture réservée au back-office plateforme (`IsAdminUser`).
+- Endpoint public, honeypot (champ `website` masqué et retiré de l'arbre d'accessibilité, message de
+  rejet qui ne révèle pas le piège), limitation à 3 demandes/heure/IP, validation stricte.
+- Adresses jetables refusées, adresses grand public **acceptées** : un artisan à son compte n'a
+  souvent que celles-là, et les écarter coûterait plus cher que le spam évité.
+- Accusé de réception au prospect + notification à l'exploitant, tous deux best-effort : un incident
+  SMTP ne doit pas faire échouer une demande déjà enregistrée, sinon le prospect resoumet alors que
+  sa demande est arrivée. Testé.
+
+**Frontend — vitrine**
+- Découpage du chargement : `AppRoutes.jsx` extrait pour former un point de coupe, l'application
+  authentifiée n'est plus téléchargée par un visiteur de la vitrine (deux paquets distincts au
+  build : ~285 Ko pour l'entrée, ~457 Ko pour l'application).
+- Huit sections dans l'ordre demandé, contenu centralisé dans `content.js` (structure prête pour
+  l'i18n, non implémentée — aucune dépendance ajoutée).
+- Visuels entièrement en CSS/SVG : reconstitution de la page Exposition dans un cadre de navigateur,
+  schéma animé du fonctionnement en quatre étapes, composition « nom de domaine imitant le vôtre ».
+  Aucune photo. `public/screenshots/README.md` explique où déposer les captures réelles et bascule
+  automatique dès qu'un fichier est présent.
+- Pages légales présentes, avec un **avertissement visible** sur ce qui reste à faire rédiger par un
+  professionnel — publier un texte juridique inventé aurait été pire que de ne rien publier.
+- SEO de base : métadonnées par page, Open Graph, données structurées d'organisation, `sitemap.xml`,
+  `robots.txt` (qui interdit l'indexation des routes authentifiées).
+- Aucun traceur, aucun cookie tiers, donc aucune bannière de consentement.
+
+### Décisions
+- **Vitrine dans l'application existante** plutôt qu'un site séparé (ADR-018) : un site à part
+  divergerait visuellement, et la cohérence est un argument sur ce produit. Le découplage se fait au
+  chargement, pas au dépôt.
+- **Le discours est verrouillé par des tests**, pas seulement par une règle de rédaction : six tests
+  de composant échouent si une promesse de blocage, une garantie de conformité, « réutilisation
+  confirmée », « dix sources », un ciblage géographique ou un superlatif creux réapparaît.
+- **Pas de CAPTCHA** : il chargerait un script tiers sur une page qui promet de n'en avoir aucun.
+
+### Deux vrais défauts trouvés en vérifiant
+- **Contenu invisible si l'apparition au défilement ne se déclenche pas.** L'état initial d'un bloc
+  animé est `opacity-0` ; si l'`IntersectionObserver` ne se déclenchait jamais (saut direct en bas de
+  page, capture pleine hauteur, robot exécutant le JS sans faire défiler), la moitié de la page
+  restait blanche — constaté sur une capture pleine hauteur, où toutes les sections intermédiaires
+  étaient vides. Sur une page dont l'objet est d'être lue, c'est un mode de défaillance inacceptable.
+  Corrigé par un filet de sécurité de 2 s dans `Reveal` **et** dans `FlowDiagram` (qui avait le même
+  défaut, laissant un schéma vide au milieu de la section) : l'animation est un agrément, la
+  lisibilité est une exigence.
+- **Deux violations d'accessibilité sérieuses**, détectées par axe-core : des `<div>` d'animation
+  glissées entre un `<ol>` et ses `<li>` cassaient la sémantique de liste (corrigé par une prop `as`
+  sur `Reveal`), et le schéma placé dans un conteneur défilant horizontalement exigeait un accès
+  clavier alors qu'il est purement décoratif (corrigé en le laissant se mettre à l'échelle plutôt
+  que défiler).
+
+### Difficultés
+- **Le formulaire public s'auto-limite en test.** La limitation à 3 demandes/heure/IP est une valeur
+  de production ; rejouer la suite Playwright depuis la même machine l'épuise légitimement. Plutôt
+  que d'assouplir la protection pour les besoins du test, la suite purge le compteur avant de
+  démarrer (`resetDemoRequestThrottle`).
+- **jsdom sous Windows dépassait les 5 s par défaut** sur un formulaire de six champs, `userEvent`
+  frappant caractère par caractère. Délai relevé à 20 s plutôt que de basculer sur `fireEvent`, qui
+  contournerait précisément le pipeline de saisie qu'on veut exercer — c'est lui qui avait révélé le
+  vol de focus des modales en Phase 8D.
+- **Sélecteurs ambigus** (`49 €` présent dans un `<span>` et son `<p>` parent, « indicatif » écrit
+  deux fois à dessein) : assertions resserrées plutôt que contenu appauvri.
+
+### Vérification
+- Backend : **738 tests verts** (25 nouveaux), hors les 3 tests PDF WeasyPrint connus. `ruff` propre.
+- Frontend : **65 tests Vitest verts** (28 nouveaux), lint propre.
+- Playwright : 4 scénarios publics verts — parcours visiteur complet (accueil, défilement de toutes
+  les sections, demande de démonstration, confirmation), parcours client vers la connexion, rendu sur
+  largeur de téléphone (390 px, sans débordement horizontal), pages légales. **axe-core propre** sur
+  chacune, y compris en largeur téléphone.
+- Rendu inspecté visuellement en pleine hauteur, sur écran large et sur téléphone.
+
+### Reste à faire
+- **Captures d'écran réelles** à produire et déposer (`frontend/public/screenshots/README.md`) : la
+  vitrine affiche pour l'instant une reconstitution CSS de l'interface.
+- **Contenu juridique** des mentions légales et de la page contact à faire rédiger ou valider par un
+  professionnel du droit ; la politique de confidentialité est en revanche factuellement complète
+  (elle décrit ce que le code fait réellement).
+- **Tarifs** : montants indicatifs, à arrêter. Centralisés dans `content.js`, modifiables en un seul
+  endroit.
+- **Déploiement** : la vitrine ne sera visible qu'une fois la plateforme déployée
+  (`docs/deployment_runbook.md`, toujours en attente d'un VPS).

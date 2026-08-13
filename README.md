@@ -6,7 +6,7 @@ n'ont ni RSSI ni budget pour en recruter un.
 Le produit répond à une question que ces entreprises se posent sans pouvoir y répondre seules :
 **« sommes-nous exposés, et par quoi devons-nous commencer ? »** Il combine un diagnostic de
 maturité (référentiel ANSSI, 42 mesures), un plan d'action priorisé, la surveillance continue des
-actifs déclarés (disponibilité, TLS, en-têtes, SPF/DKIM/DMARC), la détection de fuites de données,
+actifs déclarés (disponibilité, TLS, en-têtes, SPF/DMARC), la détection de fuites de données,
 et une assistance par IA.
 
 ## Ce qui le distingue
