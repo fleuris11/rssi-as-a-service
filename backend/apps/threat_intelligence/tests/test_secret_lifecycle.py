@@ -21,8 +21,13 @@ from apps.threat_intelligence.providers.base import RawFinding
 
 pytestmark = pytest.mark.django_db
 
-KEY_A = "d3WIQitt1JLP5CBSQ0KApk3DHHrPbUUXRXiHUbxK_5w="
-KEY_B = "LevB7qGv2Wfnl3nbC8FQzc02kphOiH__s6yxL_8X778="
+# Clés générées à l'exécution, jamais écrites en dur : une constante de test
+# finit tôt ou tard par être copiée dans un `.env` (ou l'inverse — c'est
+# exactement ce qui s'est produit ici, la clé de développement ayant été
+# reprise comme constante puis publiée dans le dépôt). Générer rend cette
+# confusion structurellement impossible, sans rien coûter au test.
+KEY_A = Fernet.generate_key().decode()
+KEY_B = Fernet.generate_key().decode()
 
 
 def _ingest(tenant, asset, *, secret="SuperSecret42", email="victime@example.com"):
