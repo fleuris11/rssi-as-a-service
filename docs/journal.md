@@ -1902,3 +1902,121 @@ manipulation d'état : la démo montre un état réel.
   par principe (ADR-010/017). Ne jamais laisser croire qu'une absence de signal vaut absence de
   réutilisation.
 - **Suite Vitest** toujours absente ; **smoke test licence réelle** toujours à faire.
+
+---
+
+## 2026-08-13 — Phase 8D : tests frontend, préparation au déploiement, hygiène du dépôt
+
+### Contexte
+Trois objectifs : combler l'absence de suite de tests frontend (prévue par CLAUDE.md, jamais mise
+en place), déployer en production, et préparer le dépôt et la démonstration pour un regard
+extérieur.
+
+### Constat bloquant sur le déploiement (tâche 2)
+`rssiasservice.online` résout vers `194.126.193.53` et sert **la page de parking par défaut de
+LWS** : aucune instance n'est déployée, aucun VPS n'est provisionné, et je n'ai ni clé SSH ni accès
+d'hébergement. Le déploiement lui-même, les vérifications Celery en production, le webhook
+Breachsense de bout en bout et le seed du tenant de démo en production **n'ont donc pas été faits**
+— et ne pouvaient pas l'être depuis cet environnement.
+
+Ce qui a été livré à la place, et qui couvre la partie « code » de la tâche :
+- **Garde-fou de configuration** (`config/startup_checks.py`) : refuse le démarrage si une clé
+  Fernet est absente, invalide ou **réutilisée d'un usage à l'autre**. Validé à l'import des
+  settings et non via les *system checks* Django, seul moyen de garantir que Gunicorn ne serve
+  rien : un serveur WSGI n'exécute pas les system checks. Vérifié réellement dans les deux sens
+  (trois clés identiques → refus explicite listant les deux collisions ; trois clés distinctes →
+  `System check identified no issues`).
+- **`BREACHSENSE_MODE` en production : `live`, explicite.** Un mode `replay` en production servirait
+  des données fictives à des clients payants — pire qu'une panne, qui elle se voit. Le choix est
+  posé dans `settings_production.py` avec ses trois garde-fous (mode explicite plutôt qu'`auto`,
+  marge de sécurité du quota, cooldown par tenant).
+- **`docs/deployment_runbook.md`** : la procédure complète, chaque étape se terminant par une
+  vérification observable (certificat, files Celery réellement consommées, webhook de bout en bout,
+  seed de démo, contrôles de sécurité finaux), plus un tableau de diagnostic.
+
+### Réalisé — suite Vitest (tâche 1)
+Vitest + Testing Library, job CI dédié et bloquant (`frontend-unit`), 37 tests sur les endroits où
+une régression serait silencieuse et coûteuse : modale de révélation (état de chargement, garde
+anti-double-soumission, **un seul appel réseau sur identifiants refusés** — la régression 401 de la
+Phase 7 est désormais verrouillée par un test), masquage automatique du secret à 30 s, carte Radar
+(actions, mode historique, état vide), rendu du score et de ses composantes, finding au secret
+purgé, vocabulaire de corrélation non reformulé.
+
+### Un vrai bug d'interface trouvé par le premier test écrit
+Le premier test de saisie a échoué avec `password === "M"` : un seul caractère. Cause réelle —
+`Modal` déclarait `onClose` dans les dépendances de son effet de mise au point. Or `onClose` est
+presque toujours une fonction recréée à chaque rendu du parent : l'effet se relançait donc à
+**chaque frappe**, et `dialogRef.current.focus()` volait le focus de l'input. **Toute saisie dans
+n'importe quelle modale de l'application était cassée** — invisible jusque-là parce que les tests
+Playwright utilisent `fill()`, qui écrit la valeur d'un coup au lieu de la taper caractère par
+caractère. Corrigé par une ref sur `onClose`, l'effet ne dépendant plus que de `open`.
+
+C'est l'argument le plus net en faveur des tests de composants : aucun test e2e existant ne pouvait
+révéler ce défaut, et un utilisateur réel l'aurait rencontré au premier mot de passe saisi.
+
+### Hygiène du dépôt (tâche 3)
+Scan des 72 commits de l'historique complet (motifs : clés API, clés Fernet, clés AWS, jetons,
+clés privées, mots de passe en dur). Résultats, sans divulgation de valeur :
+- **1 vraie fuite, la mienne** : la clé `BREACH_SECRET_ENCRYPTION_KEY` du `.env` de développement
+  avait été reprise telle quelle comme constante de test en Phase 8C, donc publiée. Portée limitée
+  (clé de développement, protégeant des données de démonstration factices), mais réelle.
+  **Traitée** : test réécrit pour générer ses clés à l'exécution — ce qui rend cette confusion
+  structurellement impossible — puis rotation effective de la clé de développement via la commande
+  `rotate_breach_secret_key` de la Phase 8C (11 secrets re-chiffrés, ancienne clé retirée,
+  déchiffrement revérifié). La procédure de rotation a ainsi été exercée pour de vrai, sur des
+  données réelles, et pas seulement en test.
+- Le reste : mots de passe de tests, et une fausse clé AWS (`AKIADEMOFAKEKEY00000`) délibérément
+  factice dans le seed de démonstration. Aucune action.
+- `ANTHROPIC_API_KEY`, `DJANGO_SECRET_KEY`, `TOTP_ENCRYPTION_KEY`, `AI_PSEUDONYMIZATION_KEY` et la
+  licence Breachsense : absentes du dépôt, `.gitignore` correct.
+
+README racine réécrit pour un lecteur découvrant le projet : ce que fait le produit, les trois
+différenciateurs, schéma d'architecture, état des tests, table des ADR. Au passage, une affirmation
+devenue **fausse** a été corrigée : le README promettait encore qu'aucun secret de fuite n'est
+jamais stocké, alors qu'ADR-014 a été révisé en Phase 8 (chiffré, révélable sous conditions, purgé).
+
+### Kit de démonstration (tâche 4)
+`docs/demo_runbook.md` : 8 étapes minutées, avec pour chacune ce qu'on montre et ce qu'on dit, la
+remise à zéro entre deux démos, un tableau « si ça casse en direct », et une section **« ce qu'il ne
+faut pas promettre »** (webhook temps réel jamais validé en réel, volumes de détection, envoi
+d'emails en production).
+
+Chronométrage réel du parcours complet (Playwright, en local) : **24 s** de temps machine pour les
+8 étapes. Le budget de 12 minutes est donc presque entièrement du temps de parole, très en deçà des
+15 minutes demandées. **Non rejoué sur le VPS**, faute de déploiement.
+
+### Un second vrai défaut, trouvé en conditions réelles
+Après la rotation de clé, la révélation renvoyait une **500 brute** : le conteneur tournait encore
+avec la clé d'avant rotation. La cause immédiate était un simple redémarrage manquant, mais elle a
+exposé un vrai manque : un secret présent mais illisible (rotation sans re-chiffrement, ancienne clé
+retirée trop tôt, donnée corrompue) faisait planter l'endpoint au lieu de répondre proprement.
+Corrigé — 503 avec un message compréhensible, erreur journalisée côté serveur, et la tentative reste
+tracée dans le journal d'audit (c'est un accès refusé, pas un non-événement). Trois tests ajoutés.
+
+### Difficultés
+- **Minuteurs et Testing Library** : `waitFor` sonde sur l'horloge réelle et se bloque sous horloge
+  figée. Résolu avec `vi.useFakeTimers({ shouldAdvanceTime: true })`, documenté dans le README
+  frontend pour le prochain test qui touchera au compte à rebours.
+- **« Fermer » est ambigu** dans une modale (arrière-plan, croix, bouton de pied portent tous ce
+  libellé) — déjà rencontré côté Playwright, reconfirmé côté Vitest.
+- **Serveur Vite en état de rechargement à chaud incohérent** après édition de `vite.config.js` :
+  page bloquée sur ses squelettes alors que l'API répondait en 0,19 s. Même réflexe que les fois
+  précédentes (mesurer l'API avant de suspecter le code, puis redémarrer proprement).
+- **Redirection de port Docker instable** après `restart` : port en écoute mais réponse vide, et
+  `localhost` résolvant vers un écouteur IPv6 périmé. Résolu par `up -d --force-recreate web`.
+
+### Vérification
+- Backend : **713 tests verts** (hors les 3 tests PDF WeasyPrint, limite d'environnement Windows).
+  `ruff` propre.
+- Frontend : **37 tests Vitest verts**, lint propre (2 avertissements pré-existants).
+- Parcours de démonstration complet rejoué en navigateur réel, vert, chronométré.
+- Garde-fou de production vérifié dans ses deux cas (refus et acceptation).
+
+### Reste à faire
+- **Le déploiement lui-même** — provisionner un VPS, faire pointer le DNS, puis dérouler
+  `docs/deployment_runbook.md`. Tout le reste de la tâche 2 (Celery en production, webhook réel,
+  seed de démo en production, vérification des variables d'environnement) en dépend.
+- **Rejouer le chronométrage de la démo sur le VPS**, la latence réseau n'étant pas représentée en
+  local.
+- **Purge planifiée, licence réelle, pondération du score par type d'actif** : reste-à-faire
+  inchangés des phases précédentes.
