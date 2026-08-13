@@ -8,4 +8,14 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './src/test/setup.js',
+    // e2e/ contient des specs Playwright : les deux suites cohabitent dans
+    // le même dossier frontend, il faut donc exclure explicitement l'une de
+    // l'autre (sinon Vitest tente de lancer les tests Playwright).
+    include: ['src/**/*.test.{js,jsx}'],
+    exclude: ['e2e/**', 'node_modules/**'],
+  },
 })

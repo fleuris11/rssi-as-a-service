@@ -109,6 +109,31 @@ jobs:
       - name: Dependency audit (npm audit)
         run: npm run audit
 
+  # Tests de composants (Vitest + Testing Library). Job dédié et bloquant,
+  # séparé de "frontend" : un échec doit se lire immédiatement comme « un
+  # comportement d'interface a régressé », sans se confondre avec un lint ou
+  # un build cassé. Ne nécessite ni base ni navigateur (jsdom) — donc rapide,
+  # contrairement au job e2e.
+  frontend-unit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Component tests (vitest)
+        run: npm test
+
   e2e:
     runs-on: ubuntu-latest
     steps:
