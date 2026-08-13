@@ -82,3 +82,25 @@ export function simulateAssetDown({ tenantSlug, assetValue }) {
     { cwd: REPO_ROOT, stdio: 'pipe' }
   )
 }
+
+/** Vide le compteur de limitation de débit du formulaire public.
+ *
+ * L'endpoint est volontairement limité à 3 demandes par heure et par IP (une
+ * valeur de production, pas un réglage de test). Rejouer la suite plusieurs
+ * fois depuis la même machine l'épuise donc légitimement : on repart d'un
+ * compteur propre plutôt que d'assouplir la protection pour les besoins du
+ * test. */
+export function resetDemoRequestThrottle() {
+  const script = [
+    'import redis',
+    'from django.conf import settings',
+    'r = redis.Redis.from_url(settings.CACHES["default"]["LOCATION"], decode_responses=True)',
+    'keys = [k for k in r.scan_iter("*demo_request*")]',
+    '[r.delete(k) for k in keys]',
+  ].join('\n')
+  execFileSync(
+    'docker',
+    ['compose', 'exec', '-T', 'web', 'python', 'manage.py', 'shell', '-c', script],
+    { cwd: REPO_ROOT, stdio: 'pipe' }
+  )
+}
