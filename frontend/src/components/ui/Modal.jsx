@@ -4,7 +4,16 @@ import { X } from 'lucide-react'
 export default function Modal({ open, onClose, title, children, className = '' }) {
   const dialogRef = useRef(null)
   const previouslyFocused = useRef(null)
+  // ``onClose`` est presque toujours une fonction recréée à chaque rendu du
+  // parent. La garder dans les dépendances de l'effet ci-dessous relançait
+  // celui-ci à CHAQUE rendu — donc à chaque frappe dans un champ de la
+  // modale — et `dialogRef.current.focus()` volait le focus de l'input : on
+  // ne pouvait taper qu'un seul caractère. Une ref garde l'appel à jour sans
+  // faire de la fonction une dépendance.
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
+  // Effet de mise au point / restauration : dépend UNIQUEMENT de l'ouverture.
   useEffect(() => {
     if (!open) return undefined
 
@@ -12,14 +21,14 @@ export default function Modal({ open, onClose, title, children, className = '' }
     dialogRef.current?.focus()
 
     function handleKeyDown(event) {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') onCloseRef.current()
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
       previouslyFocused.current?.focus?.()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
 
