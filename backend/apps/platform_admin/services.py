@@ -16,7 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 def record_admin_action(
-    *, actor, action: str, tenant=None, target: str = "", detail: str = "", ip_address: str = ""
+    *,
+    actor,
+    action: str,
+    tenant=None,
+    target: str = "",
+    detail: str = "",
+    ip_address: str = "",
+    changes: dict | None = None,
 ) -> AdminAuditLog:
     return AdminAuditLog.objects.create(
         actor=actor,
@@ -24,8 +31,39 @@ def record_admin_action(
         tenant=tenant,
         target=target[:200],
         detail=detail,
+        changes=changes or {},
         ip_address=ip_address or None,
     )
+
+
+def diff_fields(before: dict, after: dict) -> dict:
+    """Champs réellement modifiés, sous la forme {"champ": [avant, après]}.
+
+    Enregistrer l'objet entier noierait le changement dans le bruit ; ne rien
+    enregistrer laisse un journal qui dit « modifié » sans dire quoi. On ne
+    garde donc que les écarts, et on n'écrit aucune ligne d'audit s'il n'y en
+    a aucun (une modification sans changement n'est pas un acte de gestion).
+    """
+    changed = {}
+    for field, new_value in after.items():
+        old_value = before.get(field)
+        if old_value != new_value:
+            changed[field] = [_auditable(old_value), _auditable(new_value)]
+    return changed
+
+
+def _auditable(value):
+    """Rend une valeur sérialisable en JSON sans perdre son sens."""
+    from datetime import date, datetime
+    from decimal import Decimal
+
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    if value is None or isinstance(value, str | int | float | bool | list | dict):
+        return value
+    return str(value)
 
 
 def list_admin_audit(limit: int = 100):
@@ -355,17 +393,414 @@ def key_status() -> list[dict]:
 
 
 def technical_configuration() -> dict:
+    """État technique en LECTURE : ce qui n'est pas réglable depuis la console.
+
+    Les plafonds et durées eux-mêmes sont désormais des réglages modifiables
+    (``settings_registry``) ; ce qui reste ici est ce qui doit rester
+    immuable depuis une interface web — la présence des clés, le mode du
+    fournisseur de renseignement.
+    """
+    from . import settings_registry
+
     return {
         "keys": key_status(),
         "cti_mode": settings.BREACHSENSE_MODE,
         "caps": {
-            "monitored_slots": settings.BREACHSENSE_MONITORED_ASSET_POOL_SIZE,
-            "monthly_scans": settings.PLATFORM_MONTHLY_SCAN_CAP,
+            "monitored_slots": settings_registry.get(settings_registry.MONITORED_SLOT_POOL),
+            "monthly_scans": settings_registry.get(settings_registry.MONTHLY_SCAN_CAP),
             "quota_safety_margin": settings.BREACHSENSE_QUOTA_SAFETY_MARGIN,
         },
         "retention": {
-            "secret_days": settings.BREACH_SECRET_RETENTION_DAYS,
-            "reveal_audit_days": settings.BREACH_REVEAL_AUDIT_RETENTION_DAYS,
+            "secret_days": settings_registry.get(settings_registry.SECRET_RETENTION_DAYS),
+            "reveal_audit_days": settings_registry.get(
+                settings_registry.REVEAL_AUDIT_RETENTION_DAYS
+            ),
         },
-        "trial_days": settings.BILLING_TRIAL_DAYS,
+        "trial_days": settings_registry.get(settings_registry.TRIAL_DAYS),
     }
+
+
+# --- Réglages d'exploitation (phase 11) -------------------------------------
+
+
+def update_setting(*, key: str, raw_value, actor=None) -> tuple[object, list]:
+    """Modifie un réglage. Renvoie (réglage, [avant, après]).
+
+    La validation vit dans le registre, pas ici ni dans le sérialiseur : c'est
+    la même règle qui doit s'appliquer que la valeur vienne de la console, d'un
+    script de migration ou d'un test.
+    """
+    from . import settings_registry
+    from .models import PlatformSetting
+
+    spec = settings_registry.REGISTRY.get(key)
+    if spec is None:
+        raise settings_registry.SettingError(f"Réglage inconnu : {key}")
+
+    before = settings_registry.get(key)
+    value = settings_registry.coerce(spec, raw_value)
+
+    setting, _created = PlatformSetting.objects.update_or_create(
+        key=key, defaults={"value": value, "updated_by": actor}
+    )
+    settings_registry.invalidate_cache()
+    return setting, [before, value]
+
+
+def reset_setting(*, key: str) -> None:
+    """Revient à la valeur du fichier d'environnement."""
+    from . import settings_registry
+    from .models import PlatformSetting
+
+    PlatformSetting.objects.filter(key=key).delete()
+    settings_registry.invalidate_cache()
+
+
+def capacity_setting_warning(*, key: str, new_value) -> str:
+    """Avertissement à afficher AVANT d'appliquer une baisse de plafond.
+
+    Baisser le pool en dessous de ce qui est déjà engagé ne retire rien aux
+    clients en cours — les gardes refusent les nouvelles activations, elles ne
+    résilient personne. Le dire explicitement évite deux erreurs opposées :
+    croire que la baisse est sans effet, ou croire qu'elle coupe des clients.
+    """
+    from apps.billing import capacity
+
+    from . import settings_registry
+
+    if key != settings_registry.MONITORED_SLOT_POOL:
+        return ""
+    committed = capacity.projected_monitored_slots(additional=0)
+    if int(new_value) >= committed:
+        return ""
+    return (
+        f"{committed} emplacements sont déjà engagés auprès de vos clients, soit plus "
+        f"que le nouveau plafond de {new_value}. Aucun client ne perdra sa surveillance : "
+        "les engagements en cours sont honorés. En revanche, aucune nouvelle activation "
+        "ne sera possible tant que l'engagement dépassera le plafond."
+    )
+
+
+# --- Administrateurs de la plateforme ---------------------------------------
+
+
+class AdminManagementError(Exception):
+    """Violation d'une règle de gestion des administrateurs."""
+
+
+def list_platform_admins():
+    from django.contrib.auth import get_user_model
+
+    from .models import PlatformAdminProfile
+
+    User = get_user_model()
+    admins = User.objects.filter(is_staff=True).select_related("platform_admin").order_by("email")
+    rows = []
+    for user in admins:
+        profile = getattr(user, "platform_admin", None)
+        rows.append(
+            {
+                "id": str(user.id),
+                "email": user.email,
+                "name": user.get_full_name(),
+                "is_active": user.is_active,
+                # Sans profil = niveau complet : c'est le cas du fondateur et
+                # des comptes antérieurs à la phase 11, qui ne doivent pas
+                # perdre leurs droits au déploiement de cette migration.
+                "level": (
+                    profile.level if profile else PlatformAdminProfile.Level.FULL
+                ),
+                "level_label": (
+                    profile.get_level_display()
+                    if profile
+                    else PlatformAdminProfile.Level.FULL.label
+                ),
+                "has_usable_password": user.has_usable_password(),
+                "last_login": user.last_login,
+            }
+        )
+    return rows
+
+
+def _count_full_admins(exclude_user_id=None) -> int:
+    from django.contrib.auth import get_user_model
+
+    from .models import PlatformAdminProfile
+
+    User = get_user_model()
+    queryset = User.objects.filter(is_staff=True, is_active=True)
+    if exclude_user_id is not None:
+        queryset = queryset.exclude(id=exclude_user_id)
+    total = 0
+    for user in queryset.select_related("platform_admin"):
+        profile = getattr(user, "platform_admin", None)
+        if profile is None or profile.level == PlatformAdminProfile.Level.FULL:
+            total += 1
+    return total
+
+
+def invite_platform_admin(*, email: str, level: str, actor=None):
+    """Crée (ou promeut) un administrateur et émet son lien d'accès.
+
+    Renvoie ``(user, jeton en clair)``. Comme pour un utilisateur client,
+    aucun mot de passe n'est choisi ni transmis par l'invitant.
+    """
+    from django.contrib.auth import get_user_model
+
+    from apps.accounts.models import AccessInvitation
+    from apps.accounts.services import create_access_invitation
+
+    from .models import PlatformAdminProfile
+
+    email = (email or "").strip().lower()
+    if not email:
+        raise AdminManagementError("L'adresse email est obligatoire.")
+    if level not in PlatformAdminProfile.Level.values:
+        raise AdminManagementError("Niveau d'administration inconnu.")
+
+    User = get_user_model()
+    user = User.objects.filter(email__iexact=email).first()
+    if user is None:
+        user = User.objects.create_user(email=email, password=None)
+        user.set_unusable_password()
+        user.is_active = False
+
+    user.is_staff = True
+    user.save()
+
+    PlatformAdminProfile.objects.update_or_create(
+        user=user, defaults={"level": level, "invited_by": actor}
+    )
+
+    _invitation, raw_token = create_access_invitation(
+        user=user, purpose=AccessInvitation.Purpose.INVITATION, actor=actor
+    )
+    return user, raw_token
+
+
+def change_admin_level(*, user, level: str, actor=None):
+    from .models import PlatformAdminProfile
+
+    if level not in PlatformAdminProfile.Level.values:
+        raise AdminManagementError("Niveau d'administration inconnu.")
+    if actor is not None and user.id == actor.id:
+        # Se rétrograder soi-même est le moyen le plus simple de se retrouver
+        # sans personne pour revenir en arrière.
+        raise AdminManagementError("Vous ne pouvez pas modifier votre propre niveau.")
+    if level != PlatformAdminProfile.Level.FULL and _count_full_admins(exclude_user_id=user.id) == 0:
+        raise AdminManagementError(
+            "C'est le dernier administrateur complet. Nommez-en un autre avant de "
+            "rétrograder celui-ci."
+        )
+
+    profile, _created = PlatformAdminProfile.objects.update_or_create(
+        user=user, defaults={"level": level}
+    )
+    return profile
+
+
+def revoke_platform_admin(*, user, actor=None) -> str:
+    """Retire les droits d'administration. Le compte subsiste : la personne
+    peut être membre d'une entreprise cliente par ailleurs."""
+    if actor is not None and user.id == actor.id:
+        raise AdminManagementError("Vous ne pouvez pas retirer vos propres droits.")
+    if _count_full_admins(exclude_user_id=user.id) == 0:
+        raise AdminManagementError(
+            "C'est le dernier administrateur complet : le retirer rendrait la console "
+            "inaccessible. Nommez-en un autre d'abord."
+        )
+
+    from .models import PlatformAdminProfile
+
+    email = user.email
+    user.is_staff = False
+    user.is_superuser = False
+    user.save(update_fields=["is_staff", "is_superuser"])
+    PlatformAdminProfile.objects.filter(user=user).delete()
+    return email
+
+
+# --- Recherche globale ------------------------------------------------------
+
+
+def global_search(query: str, *, limit: int = 8) -> dict:
+    """Une seule barre pour retrouver une entreprise, une personne ou un
+    prospect. Sans elle, retrouver un client se fait en parcourant une liste
+    triée par nom — praticable à dix clients, plus à cent."""
+    from django.contrib.auth import get_user_model
+    from django.db.models import Q
+
+    from apps.marketing.models import DemoRequest
+    from apps.tenants.models import Membership, Tenant
+
+    query = (query or "").strip()
+    if len(query) < 2:
+        return {"tenants": [], "users": [], "prospects": [], "query": query}
+
+    User = get_user_model()
+
+    tenants = Tenant.objects.filter(
+        Q(name__icontains=query)
+        | Q(slug__icontains=query)
+        | Q(contact_email__icontains=query)
+        | Q(website__icontains=query)
+    ).select_related("subscription", "subscription__plan")[:limit]
+
+    users = User.objects.filter(
+        Q(email__icontains=query) | Q(first_name__icontains=query) | Q(last_name__icontains=query)
+    )[:limit]
+
+    prospects = DemoRequest.objects.filter(
+        Q(company__icontains=query) | Q(full_name__icontains=query) | Q(email__icontains=query)
+    )[:limit]
+
+    user_tenants = {
+        membership.user_id: membership.tenant
+        for membership in Membership.all_objects.filter(user__in=users).select_related("tenant")
+    }
+
+    return {
+        "query": query,
+        "tenants": [
+            {
+                "id": str(t.id),
+                "name": t.name,
+                "archived": t.is_archived,
+                "plan_name": getattr(getattr(t, "subscription", None), "plan", None)
+                and t.subscription.plan.name,
+            }
+            for t in tenants
+        ],
+        "users": [
+            {
+                "id": str(u.id),
+                "email": u.email,
+                "name": u.get_full_name(),
+                "is_active": u.is_active,
+                "is_staff": u.is_staff,
+                "tenant_id": str(user_tenants[u.id].id) if u.id in user_tenants else None,
+                "tenant_name": user_tenants[u.id].name if u.id in user_tenants else "",
+            }
+            for u in users
+        ],
+        "prospects": [
+            {
+                "id": p.id,
+                "company": p.company,
+                "full_name": p.full_name,
+                "email": p.email,
+                "status": p.status,
+                "status_label": p.get_status_display(),
+            }
+            for p in prospects
+        ],
+    }
+
+
+# --- Exports ----------------------------------------------------------------
+
+
+def export_rows(kind: str) -> tuple[list[str], list[list]]:
+    """En-têtes et lignes d'un export CSV. Le formatage CSV lui-même reste
+    dans la vue : ce service produit des données, pas un fichier."""
+    from apps.billing.models import Subscription
+    from apps.marketing.models import DemoRequest
+    from apps.tenants.models import Tenant
+
+    if kind == "tenants":
+        headers = [
+            "Entreprise",
+            "Secteur",
+            "Effectif",
+            "Email de contact",
+            "Téléphone",
+            "Référent",
+            "Offre",
+            "État",
+            "Créée le",
+            "Archivée",
+        ]
+        rows = []
+        for tenant in Tenant.objects.select_related(
+            "subscription", "subscription__plan"
+        ).order_by("name"):
+            subscription = getattr(tenant, "subscription", None)
+            rows.append(
+                [
+                    tenant.name,
+                    tenant.sector,
+                    tenant.headcount or "",
+                    tenant.contact_email,
+                    tenant.contact_phone,
+                    tenant.account_manager,
+                    subscription.plan.name if subscription else "",
+                    subscription.get_status_display() if subscription else "Aucun abonnement",
+                    tenant.created_at.date().isoformat(),
+                    "oui" if tenant.is_archived else "non",
+                ]
+            )
+        return headers, rows
+
+    if kind == "prospects":
+        headers = [
+            "Entreprise",
+            "Contact",
+            "Fonction",
+            "Email",
+            "Téléphone",
+            "Taille",
+            "Statut",
+            "Motif de perte",
+            "Relance prévue",
+            "Origine",
+            "Reçue le",
+        ]
+        rows = [
+            [
+                p.company,
+                p.full_name,
+                p.role,
+                p.email,
+                p.phone,
+                p.get_company_size_display() or "",
+                p.get_status_display(),
+                p.lost_reason,
+                p.next_follow_up_on.isoformat() if p.next_follow_up_on else "",
+                p.get_source_display(),
+                p.created_at.date().isoformat(),
+            ]
+            for p in DemoRequest.objects.all().order_by("-created_at")
+        ]
+        return headers, rows
+
+    if kind == "subscriptions":
+        headers = [
+            "Entreprise",
+            "Offre",
+            "État",
+            "Périodicité",
+            "Emplacements",
+            "Analyses/mois",
+            "Utilisateurs",
+            "Début",
+            "Fin d'essai",
+            "Renouvellement",
+        ]
+        rows = [
+            [
+                s.tenant.name,
+                s.plan.name,
+                s.get_status_display(),
+                s.get_period_display(),
+                s.monitored_assets_quota,
+                s.monthly_scans_quota,
+                s.max_users_quota,
+                s.started_at.date().isoformat() if s.started_at else "",
+                s.trial_ends_at.date().isoformat() if s.trial_ends_at else "",
+                s.renews_at.date().isoformat() if s.renews_at else "",
+            ]
+            for s in Subscription.objects.select_related("tenant", "plan").order_by("tenant__name")
+        ]
+        return headers, rows
+
+    raise ValueError(f"Export inconnu : {kind}")

@@ -168,6 +168,37 @@ def user_limit_reached(tenant) -> bool:
     return Membership.all_objects.filter(tenant=tenant).count() >= quota
 
 
+def ensure_user_quota(tenant, *, additional: int = 1) -> None:
+    """Refuse AVANT d'ajouter des utilisateurs au-delà du quota de l'offre.
+
+    ``user_limit_reached`` répond à « puis-je encore en ajouter un ? » pour
+    l'affichage ; celle-ci refuse réellement, et sait compter plusieurs ajouts
+    à la fois. Les deux sont nécessaires : la première ne doit pas lever, la
+    seconde ne doit pas être contournable.
+    """
+    from apps.tenants.models import Membership
+
+    subscription = get_subscription(tenant)
+    if subscription is None:
+        raise EntitlementError(
+            "Cette entreprise n'a pas d'abonnement : attribuez-lui une offre avant "
+            "d'ajouter des utilisateurs.",
+            reason="no_subscription",
+        )
+    quota = subscription.max_users_quota
+    if quota == 0:  # illimité
+        return
+    current = Membership.all_objects.filter(tenant=tenant).count()
+    if current + additional > quota:
+        remaining = max(0, quota - current)
+        raise EntitlementError(
+            f"L'offre {subscription.plan.name} comprend {quota} utilisateur(s) et "
+            f"{current} sont déjà enregistrés — il en reste {remaining}. "
+            "Changez d'offre ou relevez le quota de ce client pour en ajouter.",
+            reason="quota",
+        )
+
+
 def summary(tenant) -> dict:
     """Ce que le frontend consomme pour afficher les fonctionnalités hors
     offre en **désactivé** plutôt que masquées : il lui faut la liste

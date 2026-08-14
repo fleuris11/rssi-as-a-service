@@ -1,8 +1,9 @@
 """API du back-office plateforme.
 
-Toutes les vues sont gardées par ``IsAdminUser`` (``is_staff``) et **non** par
-les permissions de tenant : l'administration n'est pas un espace client mieux
-doté, c'est un espace distinct. Aucune de ces vues n'expose le contenu des
+Toutes les vues sont gardées par ``IsFullPlatformAdmin`` et **non** par les
+permissions de tenant : l'administration n'est pas un espace client mieux doté,
+c'est un espace distinct. La lecture est ouverte à tout administrateur,
+l'écriture au seul niveau complet (phase 11). Aucune de ces vues n'expose le contenu des
 fuites d'un client (ADR-014 : un administrateur plateforme n'y accède que s'il
 est membre du tenant, par les vues client habituelles) — uniquement des
 abonnements, des quotas et des compteurs.
@@ -11,7 +12,7 @@ abonnements, des quotas et des compteurs.
 import logging
 
 from django.shortcuts import get_object_or_404
-from rest_framework import permissions, status
+from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -23,6 +24,7 @@ from apps.tenants.models import Tenant
 
 from . import services
 from .models import AdminAuditLog
+from .permissions import IsFullPlatformAdmin
 from .serializers import (
     AdminAuditLogSerializer,
     DemoRequestAdminSerializer,
@@ -43,17 +45,25 @@ def _client_ip(request) -> str:
 
 
 class PlatformAdminView(APIView):
-    """Base commune : garde d'accès et journalisation."""
+    """Base commune : garde d'accès et journalisation.
 
-    permission_classes = [permissions.IsAdminUser]
+    ``IsFullPlatformAdmin`` et non ``IsAdminUser`` (phase 11) : la lecture
+    reste ouverte à tout administrateur, l'écriture au seul niveau complet. Un
+    commercial pouvait sinon modifier le catalogue depuis ces vues, alors que
+    les vues de la console le lui refusaient — une garde qui dépend du chemin
+    emprunté n'est pas une garde.
+    """
 
-    def audit(self, request, action, *, tenant=None, target="", detail=""):
+    permission_classes = [IsFullPlatformAdmin]
+
+    def audit(self, request, action, *, tenant=None, target="", detail="", changes=None):
         return services.record_admin_action(
             actor=request.user,
             action=action,
             tenant=tenant,
             target=target,
             detail=detail,
+            changes=changes,
             ip_address=_client_ip(request),
         )
 
@@ -226,9 +236,16 @@ class AdminPlanDetailView(PlatformAdminView):
     def patch(self, request, plan_code):
         plan = get_object_or_404(Plan, code=plan_code)
         previous_status = plan.status
+
+        # Validation de forme par le sérialiseur, application par le service :
+        # c'est le service qui porte la règle de propagation (ADR-021, gel des
+        # clients existants à la baisse). Enregistrer via le sérialiseur
+        # court-circuiterait cette règle sans que rien ne le signale.
         serializer = PlanWriteSerializer(plan, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        plan = serializer.save()
+        plan, changes, frozen = billing_services.update_plan(
+            plan=plan, actor=request.user, **serializer.validated_data
+        )
 
         if plan.status != previous_status:
             action = (
@@ -237,11 +254,26 @@ class AdminPlanDetailView(PlatformAdminView):
                 else AdminAuditLog.Action.PLAN_RETIRED
             )
             self.audit(
-                request, action, target=plan.name, detail=f"{previous_status} -> {plan.status}"
+                request,
+                action,
+                target=plan.name,
+                detail=f"{previous_status} -> {plan.status}",
+                changes=changes,
             )
-        else:
-            self.audit(request, AdminAuditLog.Action.PLAN_UPDATED, target=plan.name)
-        return Response(PlanAdminSerializer(plan).data)
+        elif changes:
+            self.audit(
+                request,
+                AdminAuditLog.Action.PLAN_UPDATED,
+                target=plan.name,
+                detail=(
+                    f"Quota(s) figé(s) pour {len(frozen)} client(s) existant(s) : "
+                    + ", ".join(frozen)
+                    if frozen
+                    else ""
+                ),
+                changes=changes,
+            )
+        return Response({**PlanAdminSerializer(plan).data, "frozen_tenants": frozen})
 
 
 # --- Demandes de démonstration ----------------------------------------------

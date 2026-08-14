@@ -21,6 +21,35 @@ class Tenant(models.Model):
     ai_enabled = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # --- Fiche commerciale (phase 11) --------------------------------------
+    # Renseignées depuis la console. Aucune n'est requise : on crée un client
+    # avec un nom, on complète ensuite.
+    contact_email = models.EmailField(blank=True)
+    contact_phone = models.CharField(max_length=40, blank=True)
+    address = models.TextField(blank=True)
+    website = models.CharField(max_length=200, blank=True)
+    account_manager = models.CharField(max_length=120, blank=True)
+    internal_notes = models.TextField(blank=True)
+
+    # --- Corbeille (phase 11) ----------------------------------------------
+    # Une suppression est d'abord LOGIQUE et réversible : effacer une
+    # entreprise détruirait ses diagnostics, ses actifs et son historique de
+    # fuites, sans retour possible. La suppression définitive existe, isolée,
+    # et n'est proposée qu'après archivage.
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    archive_reason = models.CharField(max_length=200, blank=True)
+
+    @property
+    def is_archived(self) -> bool:
+        return self.archived_at is not None
+
     class Meta:
         ordering = ["name"]
 

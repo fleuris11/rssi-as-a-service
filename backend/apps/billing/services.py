@@ -263,6 +263,273 @@ def record_payment(
     )
 
 
+# --- Console d'administration (phase 11) ------------------------------------
+
+
+@transaction.atomic
+def set_trial_end(*, subscription, ends_at, actor=None, reason="") -> Subscription:
+    """Prolonge ou raccourcit un essai.
+
+    Raccourcir n'est pas anodin : porter l'échéance dans le passé revient à
+    couper l'accès opérationnel du client à la prochaine passe de la tâche
+    d'expiration. On l'autorise (c'est une décision commerciale légitime) mais
+    on l'inscrit au journal comme tout le reste.
+    """
+    if subscription.status != Subscription.Status.TRIAL:
+        raise BillingError("Seul un abonnement en période d'essai a une échéance d'essai.")
+
+    previous = subscription.trial_ends_at
+    subscription.trial_ends_at = ends_at
+    subscription.save(update_fields=["trial_ends_at", "updated_at"])
+    _record_event(
+        subscription,
+        from_status=subscription.status,
+        to_status=subscription.status,
+        reason=reason or f"Échéance d'essai portée au {ends_at:%d/%m/%Y}.",
+        actor=actor,
+    )
+    return subscription
+
+
+# Surcharges négociées. ``None`` remet le quota de l'offre — c'est la seule
+# façon de revenir en arrière sur un prix ou un quota négocié.
+OVERRIDE_FIELDS = (
+    "override_monitored_assets",
+    "override_monthly_scans",
+    "override_max_users",
+    "override_features",
+)
+
+
+def snapshot_subscription(subscription) -> dict:
+    return {
+        "plan": subscription.plan.code,
+        "status": subscription.status,
+        "period": subscription.period,
+        "trial_ends_at": subscription.trial_ends_at,
+        "internal_notes": subscription.internal_notes,
+        **{field: getattr(subscription, field) for field in OVERRIDE_FIELDS},
+    }
+
+
+@transaction.atomic
+def set_quota_overrides(*, subscription, actor=None, **overrides) -> Subscription:
+    """Applique des quotas négociés, indispensables pour un palier sur devis.
+
+    Toute HAUSSE d'emplacements passe par la garde de capacité : un quota
+    négocié engage la plateforme exactement comme une offre standard. C'est
+    précisément le chemin par lequel on survendrait sans s'en apercevoir.
+    """
+    changed = {}
+    for field in OVERRIDE_FIELDS:
+        if field not in overrides:
+            continue
+        value = overrides[field]
+        if value != getattr(subscription, field):
+            changed[field] = value
+
+    if not changed:
+        return subscription
+
+    if "override_monitored_assets" in changed:
+        new_quota = changed["override_monitored_assets"]
+        effective = (
+            subscription.plan.monitored_assets if new_quota is None else int(new_quota)
+        )
+        if subscription.is_operational and effective > subscription.monitored_assets_quota:
+            capacity.ensure_monitored_slots_available(
+                additional=effective, excluding_subscription_id=subscription.id
+            )
+
+    for field, value in changed.items():
+        setattr(subscription, field, value)
+    subscription.save(update_fields=[*changed.keys(), "updated_at"])
+
+    _record_event(
+        subscription,
+        from_status=subscription.status,
+        to_status=subscription.status,
+        reason="Quotas négociés modifiés.",
+        actor=actor,
+    )
+    capacity.check_alert_thresholds()
+    return subscription
+
+
+def set_internal_notes(*, subscription, notes: str) -> Subscription:
+    subscription.internal_notes = notes
+    subscription.save(update_fields=["internal_notes", "updated_at"])
+    return subscription
+
+
+# --- Catalogue : administration complète ------------------------------------
+
+EDITABLE_PLAN_FIELDS = (
+    "name",
+    "tagline",
+    "description",
+    "price_monthly",
+    "price_yearly",
+    "currency",
+    "is_quote_only",
+    "status",
+    "display_order",
+    "is_highlighted",
+    "monitored_assets",
+    "monthly_scans",
+    "max_users",
+    "features",
+)
+
+QUOTA_FIELDS = ("monitored_assets", "monthly_scans", "max_users")
+
+
+def snapshot_plan(plan) -> dict:
+    return {field: getattr(plan, field) for field in EDITABLE_PLAN_FIELDS}
+
+
+def plan_subscriber_count(plan) -> int:
+    return Subscription.objects.filter(plan=plan).count()
+
+
+def plan_impact(*, plan, changes: dict) -> dict:
+    """Ce qui changerait pour les clients existants si l'on appliquait
+    ``changes`` à ``plan``.
+
+    Affiché AVANT confirmation. Sans cet aperçu, modifier une offre revient à
+    modifier tous ses clients à l'aveugle — et la question « combien de clients
+    est-ce que j'impacte ? » n'a aucune réponse accessible depuis l'interface.
+    """
+    subscriptions = list(
+        Subscription.objects.filter(plan=plan).select_related("tenant", "plan")
+    )
+    rows = []
+    lowered = []
+
+    for field in QUOTA_FIELDS:
+        if field not in changes:
+            continue
+        new_value = int(changes[field])
+        old_value = getattr(plan, field)
+        if new_value >= old_value and not (old_value == 0 and new_value != 0):
+            continue
+        # 0 signifie « illimité » : passer de 0 à une valeur finie est une
+        # BAISSE, quel que soit le nombre.
+        lowered.append(field)
+
+    for subscription in subscriptions:
+        affected = {}
+        for field in QUOTA_FIELDS:
+            if field not in changes:
+                continue
+            override = getattr(subscription, f"override_{field}")
+            current = (
+                override if override is not None else getattr(plan, field)
+            )
+            affected[field] = {
+                "current": current,
+                "after": current if override is not None else int(changes[field]),
+                "frozen_by_override": override is not None,
+            }
+        rows.append(
+            {
+                "tenant_id": str(subscription.tenant_id),
+                "tenant_name": subscription.tenant.name,
+                "status": subscription.status,
+                "quotas": affected,
+            }
+        )
+
+    return {
+        "subscriber_count": len(subscriptions),
+        "lowered_quotas": lowered,
+        "will_freeze_existing": bool(lowered) and bool(subscriptions),
+        "tenants": rows,
+    }
+
+
+@transaction.atomic
+def update_plan(*, plan, actor=None, **changes) -> tuple[Plan, dict, list[str]]:
+    """Modifie une offre. Renvoie (offre, champs modifiés, clients gelés).
+
+    **Décision (ADR-021) : une baisse de quota ne retire rien aux clients
+    existants.** Chaque abonnement en cours reçoit une surcharge figeant son
+    quota actuel ; le nouveau quota ne vaut que pour les futurs clients. Le
+    raisonnement : un client a souscrit sur la foi d'un quota annoncé, et le
+    lui reprendre sans préavis est une rupture unilatérale — alors qu'un
+    tableau de bord soudain au-dessus de son quota est un incident que
+    personne ne sait expliquer au support. Une hausse, elle, profite
+    immédiatement à tout le monde.
+    """
+    from apps.platform_admin.services import diff_fields
+
+    before = snapshot_plan(plan)
+    impact = plan_impact(plan=plan, changes=changes)
+
+    frozen = []
+    if impact["will_freeze_existing"]:
+        for subscription in Subscription.objects.filter(plan=plan).select_related("tenant"):
+            fields_to_freeze = []
+            for field in impact["lowered_quotas"]:
+                if getattr(subscription, f"override_{field}") is None:
+                    setattr(subscription, f"override_{field}", getattr(plan, field))
+                    fields_to_freeze.append(f"override_{field}")
+            if fields_to_freeze:
+                subscription.save(update_fields=[*fields_to_freeze, "updated_at"])
+                frozen.append(subscription.tenant.name)
+
+    for field, value in changes.items():
+        if field in EDITABLE_PLAN_FIELDS:
+            setattr(plan, field, value)
+    plan.save()
+
+    return plan, diff_fields(before, snapshot_plan(plan)), frozen
+
+
+@transaction.atomic
+def duplicate_plan(*, plan, code: str, name: str) -> Plan:
+    """Copie une offre en brouillon. Le point de départ le plus fréquent d'une
+    nouvelle offre est une offre existante, pas une page blanche."""
+    if Plan.objects.filter(code=code).exists():
+        raise BillingError(f"Le code « {code} » est déjà utilisé par une autre offre.")
+
+    clone = Plan.objects.get(pk=plan.pk)
+    clone.pk = None
+    clone.code = code
+    clone.name = name
+    # Une copie n'est jamais publiée ni mise en avant : on ne veut pas la voir
+    # apparaître sur la vitrine avant d'avoir été relue.
+    clone.status = Plan.Status.DRAFT
+    clone.is_highlighted = False
+    clone.display_order = plan.display_order + 1
+    clone.save()
+    return clone
+
+
+def can_delete_plan(plan) -> tuple[bool, str]:
+    """Un plan utilisé ne se supprime pas : ses abonnements y font référence,
+    et l'historique de facturation deviendrait illisible. Il se RETIRE de la
+    vente — invisible sur la vitrine, conservé pour les clients en cours."""
+    count = plan_subscriber_count(plan)
+    if count:
+        return False, (
+            f"{count} client(s) sont sur cette offre. Une offre utilisée ne peut pas être "
+            "supprimée : retirez-la de la vente. Elle disparaîtra de la vitrine et "
+            "restera valable pour ses clients actuels."
+        )
+    return True, ""
+
+
+@transaction.atomic
+def delete_plan(*, plan) -> str:
+    allowed, message = can_delete_plan(plan)
+    if not allowed:
+        raise BillingError(message)
+    name = plan.name
+    plan.delete()
+    return name
+
+
 def render_payment_receipt_pdf(payment: Payment) -> bytes:
     """Justificatif simple. Import différé de WeasyPrint : la bibliothèque
     tire des dépendances système lourdes, et rien d'autre dans ce module n'en
