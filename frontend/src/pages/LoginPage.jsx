@@ -7,6 +7,31 @@ import { useAuth } from '../context/AuthContext'
 const inputClass =
   'transition-smooth mt-1 w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-brand-600'
 
+/**
+ * Traduit un échec de connexion en message utile.
+ *
+ * Afficher « mot de passe incorrect » quel que soit le motif envoie
+ * l'utilisateur retaper son mot de passe — ce qui, en cas de verrouillage,
+ * prolonge le verrouillage. Le 401 reste volontairement générique (ne pas
+ * révéler si un compte existe) ; les autres cas ont chacun une cause que
+ * l'utilisateur peut lever lui-même.
+ */
+export function loginErrorMessage(error) {
+  const status = error?.response?.status
+  const detail = error?.response?.data?.detail
+
+  if (status === 429) {
+    return detail || 'Trop de tentatives. Réessayez dans quelques instants.'
+  }
+  if (status === 403) {
+    return 'Session précédente incohérente. Rechargez la page et réessayez.'
+  }
+  if (status === undefined) {
+    return 'Serveur injoignable. Vérifiez que le service est démarré.'
+  }
+  return 'Email ou mot de passe incorrect.'
+}
+
 function CredentialsStep({ onSubmitted }) {
   const { login } = useAuth()
   const [email, setEmail] = useState('')
@@ -21,8 +46,8 @@ function CredentialsStep({ onSubmitted }) {
     try {
       const result = await login(email, password)
       onSubmitted(result)
-    } catch {
-      setError('Email ou mot de passe incorrect.')
+    } catch (err) {
+      setError(loginErrorMessage(err))
     } finally {
       setSubmitting(false)
     }

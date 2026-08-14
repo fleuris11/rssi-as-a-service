@@ -38,7 +38,22 @@ export const tokenStorage = {
 
 export const apiClient = axios.create({ baseURL: API_BASE_URL })
 
+// Routes d'authentification : elles s'exécutent AVANT qu'un contexte
+// d'entreprise ait un sens. Y joindre un jeton ou un identifiant de tenant
+// hérités d'une session précédente rendait la connexion impossible — le
+// middleware de scoping répondait « Aucun accès à cette entreprise » (403)
+// avant même la vérification du mot de passe, et l'écran affichait
+// « mot de passe incorrect ». Un contexte périmé ne doit jamais empêcher de
+// se ré-authentifier.
+const UNAUTHENTICATED_PATHS = ['/api/v1/auth/token/', '/api/v1/auth/register/']
+
+function isUnauthenticatedRoute(url = '') {
+  return UNAUTHENTICATED_PATHS.some((path) => url.startsWith(path))
+}
+
 apiClient.interceptors.request.use((config) => {
+  if (isUnauthenticatedRoute(config.url)) return config
+
   const access = tokenStorage.getAccess()
   if (access) {
     config.headers.Authorization = `Bearer ${access}`
@@ -95,6 +110,19 @@ apiClient.interceptors.response.use(
         tokenStorage.clear()
       }
     }
+
+    // Le serveur dit que l'entreprise mémorisée n'est pas (ou plus)
+    // accessible : on oublie ce contexte au lieu de le renvoyer indéfiniment.
+    // Sans cela, un identifiant d'entreprise périmé condamne le navigateur —
+    // chaque requête repart avec l'en-tête fautif, y compris après une
+    // reconnexion.
+    if (response?.status === 403 && tokenStorage.getTenantId()) {
+      const detail = response?.data?.detail || ''
+      if (detail.includes('Aucun accès à cette entreprise')) {
+        tokenStorage.setTenantId(null)
+      }
+    }
+
     return Promise.reject(error)
   }
 )
