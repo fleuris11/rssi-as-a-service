@@ -2141,3 +2141,114 @@ rédaction, en lisant le code.
   endroit.
 - **Déploiement** : la vitrine ne sera visible qu'une fois la plateforme déployée
   (`docs/deployment_runbook.md`, toujours en attente d'un VPS).
+
+## 2026-08-14 — Phase 10 : administration plateforme, offres et abonnements
+
+Objectif : rendre le produit commercialisable. Un catalogue d'offres administrable, un cycle de vie
+d'abonnement, des droits appliqués partout, un back-office — et surtout une gestion de la
+**ressource rare**, qui est le vrai sujet de la phase.
+
+### Le problème structurant
+
+La licence Breachsense Essentials plafonne la **plateforme entière** à 15 emplacements de
+surveillance continue et 1000 requêtes d'analyse par mois, partagés par tous les clients. Ce ne
+sont pas des quotas par client. Vendre un seizième emplacement ne produit pas une facture de plus,
+il produit un service qui ne fonctionne pas — pour le nouveau client comme pour ceux déjà servis.
+Un dépassement constaté après coup est donc un défaut de conception, pas un incident de
+facturation.
+
+Décision (ADR-019) : compter les **quotas engagés** (somme sur les abonnements en essai ou actifs),
+pas les actifs effectivement déclarés, et refuser **avant toute écriture**. Un client qui a payé
+trois emplacements et n'en a déclaré aucun les occupe quand même : ils lui sont dus. Compter
+l'usage réel reviendrait à survendre en pariant sur la lenteur des clients à s'installer.
+
+Le refus dit ce qu'il reste : « Cette opération engagerait 17 emplacements … pour un plafond
+plateforme de 15. Il en reste 1 disponible(s). » Sans ce chiffre, l'exploitant ne sait pas s'il
+doit libérer un emplacement ou changer de palier. Code HTTP : **409**, pas 400 ni 403 — la demande
+est légitime, c'est l'état de la plateforme qui la rend momentanément impossible.
+
+### Ce qui a été livré
+
+- **`apps/billing`** : `Plan` (offres administrables, quotas, fonctionnalités activées),
+  `Subscription` (essai de 14 jours, actif, suspendu, résilié, expiré, quotas négociés en
+  surcharge), `SubscriptionEvent` (toute transition tracée), `Payment` (encaissement manuel +
+  reçu PDF).
+- **`capacity.py`** : la garde. Alertes à 80 % et 95 %, une fois par seuil, par ressource et par
+  mois.
+- **`entitlements.py`** : service central utilisé par les quatre vues consommatrices
+  (déclenchement d'analyse, inscription d'actif surveillé, révélation de secret, synthèse
+  d'exposition).
+- **`apps/platform_admin`** : back-office `is_staff` — ressources rares, clients, demandes de
+  démonstration, offres, santé, configuration, journal consolidé. `AdminAuditLog` : les
+  administrateurs plateforme ne sont pas au-dessus de l'audit.
+- **Frontend** : espace d'administration distinct, `FeatureGate` (hors offre = désactivé, jamais
+  masqué, avec le nom de l'offre qui débloque), grille tarifaire de la vitrine servie par l'API
+  avec repli statique, pages légales générées depuis un fichier de configuration unique.
+
+### Ce que les tests ont révélé (et qui a changé le code)
+
+- **`cheapest_plan_with()` renvoyait « Souverain »** — l'offre la plus chère. Les offres sur devis
+  stockent un prix de 0, elles sortaient donc toujours premières au tri. Vrai bug de logique : on
+  privilégie désormais les offres tarifées.
+- **Une inscription libre sur plateforme pleine créait une entreprise sans abonnement.**
+  `create_tenant_with_owner` absorbait tous les échecs d'ouverture d'essai, y compris le refus de
+  capacité. Le client obtenait un compte dont chaque fonction se bloquait ensuite — pire qu'un
+  refus franc. Corrigé : la fonction est désormais atomique et laisse remonter la seule
+  `PlatformCapacityError`, en continuant d'absorber les défauts de configuration (catalogue vide,
+  offre par défaut retirée) qui ne sont pas des limites opposables au client. L'inscription répond
+  alors « Les inscriptions sont momentanément fermées, faute de capacité disponible », sans
+  divulguer les plafonds de la licence à un visiteur. Les deux tests correspondants étaient
+  **rouges avant** le correctif et verts après : c'est la vérification de garde demandée, obtenue
+  à l'endroit du bug plutôt que par neutralisation.
+- **`FeatureGate` n'était branché nulle part.** Le composant existait, testé, mais aucune page ne
+  l'utilisait : l'exigence « désactivé, pas masqué » n'était donc pas réellement livrée. Branché
+  sur la révélation de mot de passe, la synthèse d'exposition et l'inscription d'un actif à la
+  surveillance. Au passage, j'avais d'abord grisé le bouton « Lancer un scan » sur
+  `realtime_monitoring` — à tort : le serveur ne garde pas cette vue sur cette fonctionnalité mais
+  sur le quota. Le gate a été déplacé là où le serveur l'applique vraiment.
+- **Le compteur de demandes de démonstration n'avait pas d'écran.** La page Santé affichait
+  « 4 demandes à traiter » et l'API savait convertir une demande en client, mais rien ne permettait
+  de le faire. Ajout d'un onglet Demandes (suivi commercial + conversion) et de l'endpoint de liste
+  qui manquait — sans exposer l'IP ni l'agent utilisateur, collectés pour la seule finalité
+  anti-abus.
+- **L'espace d'administration était inaccessible à un compte purement administrateur** : monté sous
+  `ProtectedRoute`, qui exige un tenant courant. Un administrateur plateforme n'a précisément pas
+  vocation à être membre d'une entreprise cliente (ADR-014). `PlatformAdminRoute` sépare les deux.
+- **La page d'administration bloquait sur la sonde Celery** (2,4 s) avant d'afficher quoi que ce
+  soit, et remplaçait le titre par des squelettes. Titre et onglets restent désormais visibles, la
+  santé se charge séparément.
+
+### Vérification
+
+- **Backend : 850 tests verts** (~110 nouveaux), hors les 3 tests PDF WeasyPrint connus (qui
+  passent en conteneur, échouent sous Windows). `ruff` propre.
+- **Frontend : 81 tests Vitest verts** (~30 nouveaux), lint propre.
+- **Playwright : 5 parcours réels verts** — administration complète (pilotage du pool, conversion
+  d'un prospect en client, remplissage du pool avec de vrais abonnements puis **refus observé à
+  l'écran**, vérification qu'aucune entreprise n'a été créée, santé, absence de valeur de clé à
+  l'écran, journal d'audit nominatif) ; client sur offre limitée (fonctionnalité désactivée avec
+  l'offre requise) ; client suspendu (lecture conservée, analyse refusée en 402) ; vitrine.
+
+### Difficultés rencontrées
+
+- **Les tests e2e se saturaient eux-mêmes.** Le pool étant partagé, chaque exécution laissait des
+  essais ouverts et les suivantes échouaient — à juste titre. Corrigé par un nettoyage systématique
+  avant et après, plutôt qu'en assouplissant la garde. Le symptôme est la réalité du produit : avec
+  10 emplacements sur 15 déjà engagés par le jeu de démonstration, une inscription libre en
+  consomme trois.
+- **Bannière du shell Django** (« N objects imported automatically ») parasitant les valeurs lues
+  par les tests : `--no-imports`.
+- **Redirection de port Docker** de nouveau perdue après un `restart` ; `up -d --force-recreate web`
+  la rétablit. Symptôme connu de cette machine, pas du code.
+- **Disque saturé en fin de phase** (238 Go pleins) : purge des artefacts de test et du cache de
+  build Docker. À surveiller avant la prochaine session.
+
+### Reste à faire
+
+- **Paiement réel** : emplacement posé (ADR-020), prestataire non choisi — conditionné à
+  l'existence d'une entité juridique.
+- **Informations légales** : `frontend/src/marketing/legalConfig.js` attend l'identité de
+  l'éditeur ; les pages affichent un bandeau tant qu'elle manque. Relecture juridique nécessaire,
+  conditions générales à rédiger entièrement, DPA à écrire (`docs/legal/README.md`).
+- **Palier de licence** : 15 emplacements est étroit. Surveiller le pool ou monter de palier avant
+  toute campagne d'acquisition — l'alerte à 80 % prévient, elle ne résout pas.
