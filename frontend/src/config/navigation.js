@@ -1,4 +1,5 @@
 import {
+  Building2,
   ClipboardCheck,
   Crosshair,
   KanbanSquare,
@@ -33,7 +34,16 @@ const SECONDARY_TITLES = {
   '/preferences': 'Préférences',
   '/securite': 'Sécurité',
   '/admin/breachsense': 'Administration — Renseignement sur la menace',
+  '/admin/plateforme': 'Administration de la plateforme',
 }
+
+// Liens réservés aux administrateurs plateforme (is_staff), affichés dans une
+// section distincte de la barre latérale : l'administration n'est pas un
+// espace client mieux doté, c'est un espace séparé.
+export const STAFF_NAV_ITEMS = [
+  { to: '/admin/plateforme', label: 'Plateforme', icon: Building2 },
+  { to: '/admin/breachsense', label: 'Licence CTI', icon: Radar },
+]
 
 export function pageTitleFor(pathname) {
   const navMatch = NAV_ITEMS.find((item) => pathname.startsWith(item.to))

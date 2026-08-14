@@ -1,6 +1,6 @@
 import { LogOut, ShieldCheck, ShieldEllipsis, SlidersHorizontal } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
-import { NAV_ITEMS } from '../config/navigation'
+import { NAV_ITEMS, STAFF_NAV_ITEMS } from '../config/navigation'
 import { useAuth } from '../context/AuthContext'
 
 const linkBase =
@@ -47,6 +47,33 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
             {!collapsed && <span>{item.label}</span>}
           </NavLink>
         ))}
+
+        {/* Section distincte pour l'administration plateforme : elle ne
+            s'affiche que pour un utilisateur is_staff, et la séparation
+            visuelle rappelle qu'on quitte l'espace client. */}
+        {user?.is_staff && (
+          <>
+            <p
+              className={`mt-5 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-brand-400 ${
+                collapsed ? 'text-center' : ''
+              }`}
+            >
+              {collapsed ? '···' : 'Plateforme'}
+            </p>
+            {STAFF_NAV_ITEMS.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={onNavigate}
+                className={(state) => linkClass(state, collapsed)}
+                title={collapsed ? item.label : undefined}
+              >
+                <item.icon className="size-5 shrink-0" aria-hidden="true" />
+                {!collapsed && <span>{item.label}</span>}
+              </NavLink>
+            ))}
+          </>
+        )}
       </nav>
 
       <div className="space-y-1 border-t border-brand-800 px-3 py-3">

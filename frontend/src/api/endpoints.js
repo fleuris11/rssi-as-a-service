@@ -5,6 +5,37 @@ import { apiClient } from './client'
 // public soit visible à la lecture.
 export const publicApi = {
   requestDemo: (payload) => apiClient.post('/api/v1/public/demo-requests/', payload),
+  // Catalogue d'offres : public et non authentifié, c'est la source de la
+  // grille tarifaire du site vitrine.
+  listPlans: () => apiClient.get('/api/v1/billing/plans/'),
+}
+
+// Droits de l'entreprise courante : ce que comprend son offre et, pour le
+// reste, l'offre qui le donnerait. Le frontend s'en sert pour AFFICHER les
+// fonctionnalités hors offre en désactivé plutôt que les masquer.
+export const billingApi = {
+  entitlements: () => apiClient.get('/api/v1/billing/entitlements/'),
+}
+
+// Back-office plateforme (is_staff). Espace distinct de l'espace client.
+export const platformApi = {
+  capacity: () => apiClient.get('/api/v1/platform/capacity/'),
+  listTenants: () => apiClient.get('/api/v1/platform/tenants/'),
+  tenantDetail: (id) => apiClient.get(`/api/v1/platform/tenants/${id}/`),
+  updateTenant: (id, payload) => apiClient.patch(`/api/v1/platform/tenants/${id}/`, payload),
+  subscriptionAction: (id, payload) =>
+    apiClient.post(`/api/v1/platform/tenants/${id}/subscription/`, payload),
+  listPlans: () => apiClient.get('/api/v1/platform/plans/'),
+  updatePlan: (code, payload) => apiClient.patch(`/api/v1/platform/plans/${code}/`, payload),
+  createPlan: (payload) => apiClient.post('/api/v1/platform/plans/', payload),
+  listDemoRequests: () => apiClient.get('/api/v1/platform/demo-requests/'),
+  updateDemoRequest: (id, payload) =>
+    apiClient.patch(`/api/v1/platform/demo-requests/${id}/`, payload),
+  convertDemoRequest: (id) =>
+    apiClient.post(`/api/v1/platform/demo-requests/${id}/convert/`),
+  health: () => apiClient.get('/api/v1/platform/health/'),
+  configuration: () => apiClient.get('/api/v1/platform/configuration/'),
+  audit: () => apiClient.get('/api/v1/platform/audit/'),
 }
 
 export const authApi = {

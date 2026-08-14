@@ -1,9 +1,11 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout'
 import ProtectedRoute from './components/ProtectedRoute'
-import StaffRoute from './components/StaffRoute'
+import { EntitlementsProvider } from './context/EntitlementsContext'
+import PlatformAdminRoute from './components/PlatformAdminRoute'
 import ActionPlanPage from './pages/ActionPlanPage'
 import AdminBreachsensePage from './pages/AdminBreachsensePage'
+import PlatformAdminPage from './pages/admin/PlatformAdminPage'
 import AssistantPage from './pages/AssistantPage'
 import CompromisesPage from './pages/CompromisesPage'
 import DashboardPage from './pages/DashboardPage'
@@ -23,7 +25,13 @@ export default function AppRoutes() {
   return (
     <Routes>
       <Route element={<ProtectedRoute />}>
-        <Route element={<AppLayout />}>
+        <Route
+          element={
+            <EntitlementsProvider>
+              <AppLayout />
+            </EntitlementsProvider>
+          }
+        >
           <Route path="/tableau-de-bord" element={<DashboardPage />} />
           <Route path="/diagnostic" element={<DiagnosticPage />} />
           <Route path="/resultats" element={<ResultsPage />} />
@@ -36,10 +44,15 @@ export default function AppRoutes() {
           <Route path="/assistant" element={<AssistantPage />} />
           <Route path="/preferences" element={<NotificationPreferencesPage />} />
           <Route path="/securite" element={<TwoFactorSettingsPage />} />
-          <Route element={<StaffRoute />}>
-            <Route path="/admin/breachsense" element={<AdminBreachsensePage />} />
-          </Route>
         </Route>
+      </Route>
+
+      {/* Espace d'administration plateforme : hors du layout client, qui
+          exige un tenant courant. Un administrateur plateforme n'a aucune
+          raison d'etre membre d'une entreprise cliente. */}
+      <Route element={<PlatformAdminRoute />}>
+        <Route path="/admin/plateforme" element={<PlatformAdminPage />} />
+        <Route path="/admin/breachsense" element={<AdminBreachsensePage />} />
       </Route>
 
       {/* Une URL inconnue renvoie vers la vitrine plutôt que vers le tableau

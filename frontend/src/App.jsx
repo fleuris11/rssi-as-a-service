@@ -28,6 +28,8 @@ function App() {
         <Route path="/demonstration" element={<DemoRequestPage />} />
         <Route path="/mentions-legales" element={<LegalPage page="legal" />} />
         <Route path="/confidentialite" element={<LegalPage page="privacy" />} />
+        <Route path="/conditions-generales" element={<LegalPage page="terms" />} />
+        <Route path="/securite-donnees" element={<LegalPage page="security" />} />
         <Route path="/contact" element={<LegalPage page="contact" />} />
 
         {/* Authentification */}
