@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { aiApi, threatIntelligenceApi } from '../api/endpoints'
 import ExposureScoreDial from '../components/ExposureScoreDial'
+import FeatureGate from '../components/FeatureGate'
 import PreIncidentRadar from '../components/PreIncidentRadar'
 import RevealSecretModal from '../components/RevealSecretModal'
 import Badge from '../components/ui/Badge'
@@ -37,9 +38,17 @@ function SynthesisBanner({ synthesis, onRefresh, refreshing, canRefresh }) {
             ci-dessous.
           </p>
         </div>
-        <Button variant="secondary" size="sm" icon={Sparkles} loading={refreshing} onClick={onRefresh}>
-          Générer l’analyse
-        </Button>
+        <FeatureGate feature="exposure_synthesis">
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Sparkles}
+            loading={refreshing}
+            onClick={onRefresh}
+          >
+            Générer l’analyse
+          </Button>
+        </FeatureGate>
       </Card>
     ) : null
   }
@@ -64,15 +73,17 @@ function SynthesisBanner({ synthesis, onRefresh, refreshing, canRefresh }) {
           </div>
         </div>
         {canRefresh && (
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={RefreshCw}
-            loading={refreshing}
-            onClick={onRefresh}
-          >
-            Actualiser l’analyse
-          </Button>
+          <FeatureGate feature="exposure_synthesis">
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={RefreshCw}
+              loading={refreshing}
+              onClick={onRefresh}
+            >
+              Actualiser l’analyse
+            </Button>
+          </FeatureGate>
         )}
       </div>
       <p className="mt-3 text-sm leading-relaxed text-ink-800">{synthesis.content}</p>
@@ -148,9 +159,19 @@ function FindingRow({ finding, canReveal, onReveal, retentionDays }) {
           {finding.recommended_action}
         </p>
         {finding.has_secret && canReveal && (
-          <Button variant="secondary" size="sm" icon={KeyRound} onClick={() => onReveal(finding.id)}>
-            Révéler le mot de passe
-          </Button>
+          // Hors offre, le bouton reste VISIBLE et désactivé, avec l'offre qui
+          // le débloque : masquer laisserait croire que le produit ne sait pas
+          // le faire. La garde réelle reste côté serveur.
+          <FeatureGate feature="secret_reveal">
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={KeyRound}
+              onClick={() => onReveal(finding.id)}
+            >
+              Révéler le mot de passe
+            </Button>
+          </FeatureGate>
         )}
       </div>
 

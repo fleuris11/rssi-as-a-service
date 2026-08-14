@@ -1,6 +1,7 @@
 import { AlertTriangle, Fingerprint, KeyRound, RefreshCw, ShieldAlert, ShieldOff } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { monitoringApi, threatIntelligenceApi } from '../api/endpoints'
+import FeatureGate from '../components/FeatureGate'
 import RevealSecretModal from '../components/RevealSecretModal'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
@@ -208,14 +209,16 @@ function MonitoredAssetsPanel({ assets, monitored, onRegister, onUnregister, poo
             {registrable.map((asset) => (
               <li key={asset.id} className="flex items-center justify-between gap-3">
                 <span className="truncate text-sm text-ink-700">{asset.value}</span>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={busyId === asset.id}
-                  onClick={() => onRegister(asset.id)}
-                >
-                  Surveiller
-                </Button>
+                <FeatureGate feature="realtime_monitoring">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={busyId === asset.id}
+                    onClick={() => onRegister(asset.id)}
+                  >
+                    Surveiller
+                  </Button>
+                </FeatureGate>
               </li>
             ))}
           </ul>

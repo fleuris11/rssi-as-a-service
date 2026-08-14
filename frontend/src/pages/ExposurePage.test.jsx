@@ -20,6 +20,19 @@ vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({ user: { is_staff: false }, currentTenant: { role: 'admin' } }),
 }))
 vi.mock('../components/ui/Toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
+// La page affiche désormais certaines actions derrière FeatureGate. Les droits
+// eux-mêmes sont testés dans FeatureGate.test.jsx : ici on se place sur une
+// offre complète, pour que ces tests continuent de porter sur le RENDU de ce
+// que calcule le serveur.
+vi.mock('../context/EntitlementsContext', () => ({
+  useEntitlements: () => ({
+    hasFeature: () => true,
+    featureInfo: () => null,
+    requiredPlanFor: () => '',
+    isOperational: true,
+    loading: false,
+  }),
+}))
 
 const { threatIntelligenceApi } = await import('../api/endpoints')
 
