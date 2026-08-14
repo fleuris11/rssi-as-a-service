@@ -52,10 +52,29 @@ class RegisterSerializer(serializers.Serializer):
         return value
 
     def create(self, validated_data):
+        from apps.billing.capacity import PlatformCapacityError
+
         company_name = validated_data.pop("company_name")
         password = validated_data.pop("password")
         user = User.objects.create_user(password=password, **validated_data)
-        create_tenant_with_owner(name=company_name, owner=user)
+        try:
+            create_tenant_with_owner(name=company_name, owner=user)
+        except PlatformCapacityError:
+            # La licence de renseignement plafonne la plateforme entière. Une
+            # inscription de plus engagerait des emplacements qui n'existent
+            # pas : on refuse explicitement plutôt que de livrer un compte
+            # dont toutes les fonctions se bloqueraient ensuite. Le détail du
+            # plafond ne regarde pas un visiteur non authentifié — il est
+            # tracé côté serveur et visible dans le back-office.
+            user.delete()
+            raise serializers.ValidationError(
+                {
+                    "detail": (
+                        "Les inscriptions sont momentanément fermées, faute de capacité "
+                        "disponible. Écrivez-nous pour être prévenu de leur réouverture."
+                    )
+                }
+            ) from None
         return user
 
 

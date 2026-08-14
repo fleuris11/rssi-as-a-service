@@ -10,6 +10,8 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.billing import capacity as platform_capacity
+from apps.billing import entitlements, features
 from apps.monitoring import services as monitoring_services
 from apps.tenants.models import Membership
 from apps.tenants.permissions import IsTenantAdmin, IsTenantMember, IsTenantMemberReadOnlyForReader
@@ -127,6 +129,20 @@ class BreachFindingRevealView(APIView):
                 http_status=status.HTTP_403_FORBIDDEN,
                 detail="Cette action nécessite le rôle administrateur sur l'entreprise "
                 "(ou un accès administrateur plateforme).",
+            )
+
+        # La révélation est une fonctionnalité d'offre : vérifiée avant la
+        # ré-authentification (inutile de faire saisir un mot de passe pour
+        # refuser ensuite), et le refus est tracé comme tout autre refus.
+        if not entitlements.has_feature(request.tenant, features.SECRET_REVEAL):
+            plan = entitlements.cheapest_plan_with(features.SECRET_REVEAL)
+            return _deny(
+                denial_reason=SecretRevealAudit.DenialReason.ROLE,
+                http_status=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=(
+                    "La révélation de mot de passe n'est pas comprise dans votre offre"
+                    + (f" ; elle est incluse à partir de l'offre {plan.name}." if plan else ".")
+                ),
             )
 
         finding = services.get_finding(tenant=request.tenant, finding_id=finding_id)
@@ -262,6 +278,15 @@ class ExposureSynthesisRefreshView(APIView):
         from apps.ai_assistant.tasks import generate_exposure_synthesis_task
 
         try:
+            entitlements.ensure_operational(request.tenant, action="La génération d'une analyse")
+            entitlements.ensure_feature(request.tenant, features.EXPOSURE_SYNTHESIS)
+        except entitlements.EntitlementError as exc:
+            return Response(
+                {"detail": exc.message, "required_plan": exc.required_plan},
+                status=status.HTTP_402_PAYMENT_REQUIRED,
+            )
+
+        try:
             ai_services.ensure_ai_enabled(request.tenant)
             ai_services.ensure_quota_available(request.tenant)
         except ai_services.AIError as exc:
@@ -309,6 +334,20 @@ class MonitoredAssetListCreateView(generics.ListAPIView):
         )
         if asset is None:
             raise NotFound("Actif introuvable.")
+
+        # Deux plafonds indépendants : celui du client (son offre) et celui de
+        # la plateforme (les 15 emplacements partagés). Un client peut avoir du
+        # quota alors que la plateforme est saturée, et l'inverse.
+        try:
+            entitlements.ensure_operational(request.tenant, action="La surveillance en temps réel")
+            entitlements.ensure_feature(request.tenant, features.REALTIME_MONITORING)
+            entitlements.ensure_monitored_asset_quota(request.tenant)
+        except entitlements.EntitlementError as exc:
+            return Response(
+                {"detail": exc.message, "required_plan": exc.required_plan},
+                status=status.HTTP_402_PAYMENT_REQUIRED,
+            )
+
         try:
             monitored = services.register_monitored_asset(tenant=request.tenant, asset=asset)
         except services.ThreatIntelligenceError as exc:
@@ -339,6 +378,19 @@ class BreachScanTriggerView(APIView):
             asset = monitoring_services.get_asset(tenant=request.tenant, asset_id=asset_id)
             if asset is None:
                 raise NotFound("Actif introuvable.")
+
+        # Une analyse consomme trois ressources distinctes, vérifiées dans cet
+        # ordre : l'abonnement doit être opérationnel, le quota du client non
+        # épuisé, et le budget mensuel de la PLATEFORME disponible (les 1000
+        # requêtes sont partagées par tous les clients — ADR-013).
+        try:
+            entitlements.ensure_operational(request.tenant, action="Le lancement d'une analyse")
+            entitlements.ensure_scan_quota(request.tenant)
+            platform_capacity.ensure_scan_budget_available(additional=1)
+        except entitlements.EntitlementError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_402_PAYMENT_REQUIRED)
+        except platform_capacity.PlatformCapacityError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         try:
             job = services.create_scan_job(

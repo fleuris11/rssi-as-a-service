@@ -62,3 +62,28 @@ def test_register_rejects_weak_password(api_client):
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "password" in response.data
     assert not User.objects.filter(email="faible@example.com").exists()
+
+
+def test_register_is_refused_when_the_platform_has_no_capacity_left(api_client, settings):
+    """Une inscription ouvre un essai, et un essai engage des emplacements sur
+    un pool partagé par toute la plateforme. Quand il est plein, on refuse
+    explicitement : livrer un compte dont chaque fonction se bloquerait
+    ensuite serait pire, et laisserait constater le dépassement après coup."""
+    from apps.tenants.models import Tenant
+
+    settings.BREACHSENSE_MONITORED_ASSET_POOL_SIZE = 0
+    url = reverse("auth-register")
+    payload = {
+        "email": "trop-tard@example.com",
+        "password": "UnMotDePasseSolide2026",
+        "company_name": "Entreprise Sans Place",
+    }
+
+    response = api_client.post(url, payload, format="json")
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    # Rien n'est laissé derrière : ni compte, ni entreprise à moitié créée.
+    assert not User.objects.filter(email="trop-tard@example.com").exists()
+    assert not Tenant.objects.filter(name="Entreprise Sans Place").exists()
+    # Le message ne divulgue pas les plafonds de la licence à un visiteur.
+    assert "15" not in str(response.data)
