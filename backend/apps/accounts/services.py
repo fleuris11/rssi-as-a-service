@@ -13,6 +13,7 @@ import hashlib
 import io
 import logging
 import secrets
+from datetime import timedelta
 
 import pyotp
 import qrcode
@@ -264,3 +265,107 @@ def resolve_mfa_challenge(token: str):
 
 def consume_mfa_challenge(token: str) -> None:
     cache.delete(f"mfa_challenge:{token}")
+
+
+# --- Invitations et réinitialisations par lien (phase 11) -------------------
+#
+# Règle non négociable : un administrateur n'affiche, ne saisit ni ne transmet
+# jamais le mot de passe d'un tiers. Il émet un lien à durée limitée ; la
+# personne destinataire est la seule à choisir son mot de passe.
+#
+# Le jeton est stocké HACHÉ (même traitement qu'un mot de passe) : la valeur en
+# clair n'existe que dans la réponse HTTP qui suit sa création. Une fuite de la
+# table ne permet donc pas de prendre la main sur un compte.
+
+INVITATION_TTL_HOURS = 72
+RESET_TTL_HOURS = 2
+
+
+class InvitationError(AccountsError):
+    """Lien d'invitation invalide, expiré ou déjà utilisé."""
+
+
+def _hash_token(raw: str) -> str:
+    # SHA-256 et non un hacheur de mot de passe : le jeton fait 256 bits
+    # d'entropie aléatoire, il n'est pas devinable par force brute — le coût
+    # d'un hacheur lent n'apporterait rien et ralentirait chaque vérification.
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def create_access_invitation(*, user, purpose, actor=None, ttl_hours=None) -> tuple[object, str]:
+    """Émet un lien. Renvoie (invitation, jeton en clair).
+
+    Les liens antérieurs du même usage sont invalidés : sinon, révoquer l'accès
+    d'un salarié parti n'aurait aucun effet tant qu'un ancien lien traîne dans
+    sa boîte mail.
+    """
+    from .models import AccessInvitation
+
+    AccessInvitation.objects.filter(user=user, purpose=purpose, used_at__isnull=True).update(
+        used_at=timezone.now()
+    )
+
+    if ttl_hours is None:
+        ttl_hours = (
+            INVITATION_TTL_HOURS
+            if purpose == AccessInvitation.Purpose.INVITATION
+            else RESET_TTL_HOURS
+        )
+
+    raw_token = secrets.token_urlsafe(32)
+    invitation = AccessInvitation.objects.create(
+        user=user,
+        purpose=purpose,
+        token_hash=_hash_token(raw_token),
+        expires_at=timezone.now() + timedelta(hours=ttl_hours),
+        created_by=actor,
+    )
+    return invitation, raw_token
+
+
+def resolve_access_invitation(raw_token: str):
+    """Invitation utilisable correspondant au jeton, ou None.
+
+    Ne distingue pas « inconnu » de « expiré » dans son retour : c'est
+    l'appelant qui décide du message, et l'appelant (vue publique) doit donner
+    le même dans les deux cas.
+    """
+    from .models import AccessInvitation
+
+    invitation = (
+        AccessInvitation.objects.filter(token_hash=_hash_token(raw_token))
+        .select_related("user")
+        .first()
+    )
+    if invitation is None or not invitation.is_usable:
+        return None
+    return invitation
+
+
+def accept_access_invitation(*, raw_token: str, new_password: str):
+    """Consomme le lien et fixe le mot de passe. Renvoie l'utilisateur."""
+    invitation = resolve_access_invitation(raw_token)
+    if invitation is None:
+        raise InvitationError(
+            "Ce lien n'est plus valable. Demandez-en un nouveau à votre administrateur."
+        )
+
+    user = invitation.user
+    user.set_password(new_password)
+    # Un compte invité n'est actif qu'une fois son mot de passe défini : tant
+    # que le lien n'est pas utilisé, l'identité existe mais ne peut pas servir.
+    user.is_active = True
+    user.save(update_fields=["password", "is_active"])
+
+    invitation.used_at = timezone.now()
+    invitation.save(update_fields=["used_at"])
+
+    # Le mot de passe vient de changer : on efface les compteurs d'échec, sinon
+    # un utilisateur qui vient de le réinitialiser resterait verrouillé.
+    clear_failed_attempts(email=user.email, ip="")
+    return user
+
+
+def invitation_url(raw_token: str) -> str:
+    base = getattr(settings, "FRONTEND_BASE_URL", "").rstrip("/")
+    return f"{base}/invitation/{raw_token}"

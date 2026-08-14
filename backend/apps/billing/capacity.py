@@ -13,9 +13,12 @@ passe par ``ensure_*`` et lève ``PlatformCapacityError`` si le plafond serait
 dépassé. Un dépassement constaté après coup est un échec de conception, pas un
 incident d'exploitation.
 
-Les plafonds viennent de la configuration (``BREACHSENSE_MONITORED_ASSET_POOL_SIZE``,
-``PLATFORM_MONTHLY_SCAN_CAP``) : ils changeront au passage à un palier de
-licence supérieur, et ce module ne doit pas être modifié ce jour-là.
+Les plafonds sont des réglages d'exploitation (``apps.platform_admin.
+settings_registry``) : ils changeront au passage à un palier de licence
+supérieur, et ce module ne doit pas être modifié ce jour-là. Tant qu'aucune
+modification n'a été faite depuis la console, ils retombent sur les variables
+d'environnement (``BREACHSENSE_MONITORED_ASSET_POOL_SIZE``,
+``PLATFORM_MONTHLY_SCAN_CAP``).
 """
 
 import logging
@@ -28,10 +31,22 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+_ALERT_CACHE_KEY = "platform_capacity:alert:{resource}:{threshold}"
+
+
 # Seuils d'alerte d'exploitation : on prévient l'administrateur plateforme
 # AVANT la saturation, pas au moment où une vente devient impossible.
-ALERT_THRESHOLDS = (0.80, 0.95)
-_ALERT_CACHE_KEY = "platform_capacity:alert:{resource}:{threshold}"
+def alert_thresholds() -> tuple[float, ...]:
+    """Seuils d'alerte, réglables depuis la console (phase 11). Triés et
+    dédoublonnés : régler les deux seuils sur la même valeur ne doit pas
+    envoyer deux fois la même alerte."""
+    from apps.platform_admin import settings_registry
+
+    ratios = {
+        int(settings_registry.get(settings_registry.ALERT_WARNING_RATIO)) / 100,
+        int(settings_registry.get(settings_registry.ALERT_CRITICAL_RATIO)) / 100,
+    }
+    return tuple(sorted(ratios))
 
 
 class PlatformCapacityError(Exception):
@@ -69,12 +84,21 @@ class ResourceUsage:
 # --- Mesure -----------------------------------------------------------------
 
 
+# Les plafonds sont désormais des RÉGLAGES d'exploitation (phase 11) : ils
+# changent le jour où la licence change de palier, et cela ne doit demander ni
+# accès au serveur ni redémarrage. Le registre retombe sur la variable
+# d'environnement tant que le réglage n'a jamais été modifié — la plateforme
+# démarre donc sans aucune ligne en base.
 def monitored_slot_capacity() -> int:
-    return settings.BREACHSENSE_MONITORED_ASSET_POOL_SIZE
+    from apps.platform_admin import settings_registry
+
+    return int(settings_registry.get(settings_registry.MONITORED_SLOT_POOL))
 
 
 def monthly_scan_capacity() -> int:
-    return settings.PLATFORM_MONTHLY_SCAN_CAP
+    from apps.platform_admin import settings_registry
+
+    return int(settings_registry.get(settings_registry.MONTHLY_SCAN_CAP))
 
 
 def monitored_slots_used() -> int:
@@ -211,7 +235,7 @@ def check_alert_thresholds() -> list[str]:
 
     period = timezone.now().strftime("%Y-%m")
     for usage in snapshot():
-        for threshold in ALERT_THRESHOLDS:
+        for threshold in alert_thresholds():
             if usage.ratio < threshold:
                 continue
             key = _ALERT_CACHE_KEY.format(

@@ -7,6 +7,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from . import services
 from .serializers import (
+    InvitationAcceptSerializer,
     LoginSerializer,
     RegisterSerializer,
     TwoFactorConfirmSerializer,
@@ -189,3 +190,45 @@ class TwoFactorDisableView(APIView):
             )
         services.disable_totp(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class InvitationView(APIView):
+    """Écran public de définition du mot de passe (phase 11).
+
+    Non authentifié par construction : la personne invitée n'a précisément pas
+    encore de mot de passe. Le jeton porte à lui seul l'autorisation, il est à
+    usage unique et à durée limitée.
+    """
+
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [AuthRateThrottle]
+
+    def get(self, request, token):
+        invitation = services.resolve_access_invitation(token)
+        if invitation is None:
+            # Même réponse qu'un jeton expiré ou déjà utilisé : distinguer
+            # les cas indiquerait à un attaquant qu'un jeton a existé.
+            return Response(
+                {"detail": "Ce lien n'est plus valable."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(
+            {
+                "email": invitation.user.email,
+                "purpose": invitation.purpose,
+                "purpose_label": invitation.get_purpose_display(),
+                "expires_at": invitation.expires_at,
+            }
+        )
+
+    def post(self, request, token):
+        serializer = InvitationAcceptSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            user = services.accept_access_invitation(
+                raw_token=token, new_password=serializer.validated_data["password"]
+            )
+        except services.InvitationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({"email": user.email, "detail": "Mot de passe défini."})

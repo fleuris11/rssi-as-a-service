@@ -110,3 +110,14 @@ class TwoFactorVerifySerializer(serializers.Serializer):
                 "Fournissez un code de vérification ou de récupération."
             )
         return attrs
+
+
+class InvitationAcceptSerializer(serializers.Serializer):
+    """Définition du mot de passe depuis un lien d'invitation.
+
+    Les mêmes validateurs que l'inscription : un compte créé par un
+    administrateur ne doit pas être protégé plus faiblement qu'un compte créé
+    en autonomie.
+    """
+
+    password = serializers.CharField(write_only=True, validators=[validate_password])

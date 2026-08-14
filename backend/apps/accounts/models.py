@@ -63,6 +63,54 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.first_name or self.email
 
 
+class AccessInvitation(models.Model):
+    """Jeton à usage unique pour définir ou réinitialiser un mot de passe.
+
+    Raison d'être (phase 11) : un administrateur plateforme crée des comptes
+    pour ses clients, et **ne doit jamais manipuler leur mot de passe** — ni le
+    choisir, ni le lire, ni le transmettre. Il émet un lien à durée limitée ;
+    seule la personne destinataire fixe son mot de passe.
+
+    Le jeton n'est stocké que **haché**, exactement comme un mot de passe : une
+    fuite de cette table ne doit pas permettre de prendre la main sur des
+    comptes. La valeur en clair n'existe qu'une fois, dans la réponse HTTP qui
+    suit immédiatement sa création.
+    """
+
+    class Purpose(models.TextChoices):
+        INVITATION = "invitation", "Première connexion"
+        RESET = "reset", "Réinitialisation de mot de passe"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="access_invitations"
+    )
+    purpose = models.CharField(max_length=12, choices=Purpose.choices)
+    token_hash = models.CharField(max_length=128)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+    # Qui a émis le lien. Un lien de réinitialisation émis par un
+    # administrateur et un lien demandé par l'utilisateur lui-même ne se lisent
+    # pas de la même façon dans un journal.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "purpose"])]
+
+    def __str__(self):
+        return f"{self.get_purpose_display()} — {self.user_id}"
+
+    @property
+    def is_usable(self) -> bool:
+        from django.utils import timezone as _timezone
+
+        return self.used_at is None and self.expires_at > _timezone.now()
+
+
 class TwoFactorCredential(models.Model):
     """US-1.3 (2FA TOTP). One per user, platform-wide (not tenant-scoped —
     login happens before any tenant is selected). ``encrypted_secret`` is
