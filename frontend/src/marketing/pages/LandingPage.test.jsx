@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,9 +12,14 @@ import LandingPage from './LandingPage'
 
 vi.mock('../../api/client', () => ({
   tokenStorage: { getAccess: vi.fn(() => null) },
+  // La grille tarifaire est lue sur l'endpoint PUBLIC des offres. Par défaut
+  // on fait échouer l'appel : les tests ci-dessous vérifient alors le repli
+  // statique, qui est le comportement à garantir en priorité (une grille vide
+  // sur la vitrine est pire qu'une grille légèrement datée).
+  apiClient: { get: vi.fn(() => Promise.reject(new Error('hors ligne'))) },
 }))
 
-const { tokenStorage } = await import('../../api/client')
+const { tokenStorage, apiClient } = await import('../../api/client')
 
 function renderPage() {
   return render(
@@ -74,10 +79,14 @@ describe('LandingPage', () => {
     })
 
     it('ne déclenche aucun appel authentifié', () => {
-      // Une route publique ne doit rien demander à l'API : on se contente de
-      // regarder le jeton stocké.
+      // La vitrine n'interroge que l'endpoint PUBLIC des offres : elle lit le
+      // jeton stocké pour adapter son bouton, sans jamais appeler une route
+      // qui exige une authentification.
       renderPage()
       expect(tokenStorage.getAccess).toHaveBeenCalled()
+      for (const [url] of apiClient.get.mock.calls) {
+        expect(url).toBe('/api/v1/billing/plans/')
+      }
     })
   })
 
@@ -106,6 +115,43 @@ describe('LandingPage', () => {
     it('met un seul palier en avant', () => {
       renderPage()
       expect(screen.getAllByText('Le plus demandé')).toHaveLength(1)
+    })
+
+    it('affiche les offres publiées par l’administration plutôt que le repli', async () => {
+      // Modifier une offre en back-office doit se voir sur la vitrine sans
+      // redéploiement (ADR-019).
+      apiClient.get.mockResolvedValueOnce({
+        data: {
+          plans: [
+            {
+              code: 'veille',
+              name: 'Veille renommée',
+              tagline: 'Nouveau positionnement',
+              price_monthly: 119,
+              currency: '€',
+              is_quote_only: false,
+              is_highlighted: false,
+              features: [{ key: 'a', label: 'Surveillance continue' }],
+            },
+          ],
+        },
+      })
+      renderPage()
+
+      expect(await screen.findByText('Veille renommée')).toBeInTheDocument()
+      expect(screen.getByText(/^119\s*€$/)).toBeInTheDocument()
+    })
+
+    it('conserve la grille statique quand l’API ne répond pas', async () => {
+      // Le repli est le comportement par défaut du mock : on vérifie qu'un
+      // échec réseau laisse une grille complète, pas une section vide.
+      renderPage()
+      const pricing = document.querySelector('#tarifs')
+
+      await waitFor(() => expect(apiClient.get).toHaveBeenCalled())
+      for (const plan of PRICING.plans) {
+        expect(within(pricing).getByText(plan.name)).toBeInTheDocument()
+      }
     })
   })
 

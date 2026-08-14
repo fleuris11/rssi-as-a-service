@@ -320,8 +320,10 @@ export const FOOTER = {
       title: 'Société',
       links: [
         { label: 'Contact', href: '/contact' },
+        { label: 'Sécurité et données', href: '/securite-donnees' },
         { label: 'Mentions légales', href: '/mentions-legales' },
         { label: 'Confidentialité', href: '/confidentialite' },
+        { label: 'Conditions générales', href: '/conditions-generales' },
       ],
     },
   ],

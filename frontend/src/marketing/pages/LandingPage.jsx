@@ -1,6 +1,7 @@
 import { Check, ChevronDown } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { publicApi } from '../../api/endpoints'
 import BrowserFrame from '../components/BrowserFrame'
 import ExposureMockup from '../components/ExposureMockup'
 import FlowDiagram from '../components/FlowDiagram'
@@ -281,46 +282,91 @@ function Trust() {
 }
 
 function Pricing() {
+  // Les offres viennent de l'API : les modifier depuis l'administration doit
+  // se refléter sur la vitrine sans redéploiement (ADR-019). Le contenu
+  // statique sert de REPLI — une grille tarifaire vide serait pire qu'une
+  // grille légèrement datée, et c'est la première chose qu'un prospect
+  // regarde.
+  const [plans, setPlans] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    publicApi
+      .listPlans()
+      .then((response) => {
+        if (cancelled) return
+        const fetched = response.data?.plans || []
+        if (fetched.length > 0) setPlans(fetched)
+      })
+      .catch(() => {
+        /* repli statique : voir PRICING.plans ci-dessous */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const displayed =
+    plans ??
+    PRICING.plans.map((plan) => ({
+      code: plan.id,
+      name: plan.name,
+      tagline: plan.pitch,
+      price_monthly: plan.price,
+      currency: '€',
+      is_quote_only: false,
+      is_highlighted: Boolean(plan.highlighted),
+      features: plan.features.map((label) => ({ key: label, label })),
+    }))
+
   return (
     <Section id="tarifs" className="bg-ink-50/50">
       <Reveal>
         <SectionTitle title={PRICING.title} subtitle={PRICING.subtitle} />
       </Reveal>
       <div className="mt-10 grid gap-6 lg:grid-cols-3">
-        {PRICING.plans.map((plan, index) => (
-          <Reveal key={plan.id} delay={index * 90}>
+        {displayed.map((plan, index) => (
+          <Reveal key={plan.code} delay={index * 90}>
             <div
               className={`flex h-full flex-col rounded-lg border bg-surface p-6 ${
-                plan.highlighted
+                plan.is_highlighted
                   ? 'border-brand-600 shadow-elevated ring-1 ring-brand-600'
                   : 'border-ink-200'
               }`}
             >
-              {plan.highlighted && (
+              {plan.is_highlighted && (
                 <span className="mb-3 self-start rounded-full bg-brand-100 px-2.5 py-1 text-xs font-medium text-brand-800">
                   Le plus demandé
                 </span>
               )}
               <h3 className="font-display text-lg font-semibold text-ink-900">{plan.name}</h3>
-              <p className="mt-1 text-sm text-ink-600">{plan.pitch}</p>
+              {plan.tagline && <p className="mt-1 text-sm text-ink-600">{plan.tagline}</p>}
               <p className="mt-5">
-                <span className="font-display text-3xl font-semibold text-ink-900">
-                  {plan.price} {PRICING.currency}
-                </span>
-                <span className="text-sm text-ink-500"> / mois</span>
+                {plan.is_quote_only ? (
+                  <span className="font-display text-2xl font-semibold text-ink-900">
+                    Sur devis
+                  </span>
+                ) : (
+                  <>
+                    <span className="font-display text-3xl font-semibold text-ink-900">
+                      {Math.round(Number(plan.price_monthly))} {PRICING.currency}
+                    </span>
+                    <span className="text-sm text-ink-500"> / mois</span>
+                  </>
+                )}
               </p>
               <ul className="mt-6 flex-1 space-y-2.5">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex gap-2.5 text-sm text-ink-700">
+                {(plan.features || []).map((feature) => (
+                  <li key={feature.key} className="flex gap-2.5 text-sm text-ink-700">
                     <Check className="mt-0.5 size-4 shrink-0 text-ok-strong" aria-hidden="true" />
-                    {feature}
+                    {feature.label}
                   </li>
                 ))}
               </ul>
               <Link
                 to="/demonstration"
                 className={`transition-smooth mt-7 rounded-md px-4 py-2.5 text-center text-sm font-medium ${
-                  plan.highlighted
+                  plan.is_highlighted
                     ? 'bg-brand-700 text-white hover:bg-brand-800'
                     : 'border border-ink-300 text-ink-800 hover:bg-ink-50'
                 } focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600`}
