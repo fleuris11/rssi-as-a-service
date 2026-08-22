@@ -162,7 +162,7 @@ function ProspectCard({ prospect, onChanged, onConvert }) {
   }
 
   return (
-    <div className="rounded-lg border border-ink-200 p-4">
+    <li className="rounded-lg border border-ink-200 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="flex flex-wrap items-center gap-2 font-medium text-ink-900">
@@ -271,7 +271,7 @@ function ProspectCard({ prospect, onChanged, onConvert }) {
           Ajouter
         </Button>
       </form>
-    </div>
+    </li>
   )
 }
 
@@ -374,7 +374,7 @@ export default function ProspectsPanel({ onConvertToClient }) {
           }
         />
 
-        <div className="space-y-3">
+        <ul className="space-y-3">
           {prospects.map((prospect) => (
             <ProspectCard
               key={prospect.id}
@@ -383,12 +383,10 @@ export default function ProspectsPanel({ onConvertToClient }) {
               onConvert={onConvertToClient}
             />
           ))}
-          {prospects.length === 0 && (
-            <p className="py-6 text-center text-sm text-ink-500">
-              Aucun prospect pour ce filtre.
-            </p>
-          )}
-        </div>
+        </ul>
+        {prospects.length === 0 && (
+          <p className="py-6 text-center text-sm text-ink-500">Aucun prospect pour ce filtre.</p>
+        )}
       </Card>
 
       <ProspectForm open={creating} onClose={() => setCreating(false)} onCreated={load} />

@@ -31,7 +31,6 @@ const TABS = [
   { id: 'settings', label: 'Réglages', icon: Settings },
   { id: 'trash', label: 'Corbeille', icon: Trash2 },
   { id: 'health', label: 'Santé', icon: Activity },
-  { id: 'config', label: 'Clés', icon: ClipboardList },
   { id: 'audit', label: 'Journal', icon: ClipboardList },
 ]
 
@@ -252,63 +251,6 @@ function HealthPanel({ health }) {
   )
 }
 
-function ConfigPanel({ config }) {
-  if (!config) return null
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader title="Clés et secrets" />
-        <p className="mb-3 text-sm text-ink-600">
-          Présence et validité de forme uniquement. La valeur d’une clé n’est jamais affichée, ni
-          consultable depuis cette interface.
-        </p>
-        <ul className="space-y-2">
-          {config.keys.map((key) => (
-            <li
-              key={key.name}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-ink-50 px-3 py-2"
-            >
-              <span>
-                <span className="text-sm text-ink-800">{key.label}</span>
-                <span className="ml-2 font-mono text-xs text-ink-500">{key.name}</span>
-              </span>
-              <Badge variant={key.present && key.valid ? 'ok' : 'critical'}>
-                {!key.present ? 'Absente' : key.valid ? 'Configurée' : 'Format invalide'}
-              </Badge>
-            </li>
-          ))}
-        </ul>
-      </Card>
-
-      <Card>
-        <CardHeader title="Plafonds et rétention" />
-        <dl className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-md border border-ink-200 px-4 py-3">
-            <dt className="text-xs uppercase tracking-wide text-ink-500">Mode du fournisseur</dt>
-            <dd className="mt-1 font-medium text-ink-900">{config.cti_mode}</dd>
-          </div>
-          <div className="rounded-md border border-ink-200 px-4 py-3">
-            <dt className="text-xs uppercase tracking-wide text-ink-500">
-              Emplacements de surveillance
-            </dt>
-            <dd className="mt-1 font-medium text-ink-900">{config.caps.monitored_slots}</dd>
-          </div>
-          <div className="rounded-md border border-ink-200 px-4 py-3">
-            <dt className="text-xs uppercase tracking-wide text-ink-500">Analyses par mois</dt>
-            <dd className="mt-1 font-medium text-ink-900">{config.caps.monthly_scans}</dd>
-          </div>
-          <div className="rounded-md border border-ink-200 px-4 py-3">
-            <dt className="text-xs uppercase tracking-wide text-ink-500">
-              Conservation des mots de passe
-            </dt>
-            <dd className="mt-1 font-medium text-ink-900">{config.retention.secret_days} jours</dd>
-          </div>
-        </dl>
-      </Card>
-    </div>
-  )
-}
-
 function AuditPanel({ audit }) {
   if (!audit) return null
   return (
@@ -475,7 +417,6 @@ export default function PlatformAdminPage() {
       {!loading && activeTab === 'settings' && <SettingsPanel configuration={config} />}
       {!loading && activeTab === 'trash' && <TrashPanel onRefresh={loadCore} />}
       {!loading && activeTab === 'health' && (health ? <HealthPanel health={health} /> : <SkeletonCard />)}
-      {!loading && activeTab === 'config' && <ConfigPanel config={config} />}
       {!loading && activeTab === 'audit' && <AuditPanel audit={audit} />}
     </div>
   )
