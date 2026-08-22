@@ -8,6 +8,10 @@ l'autre.
 
 Ces clients n'ont aucune fuite : l'administration ne montre que des
 abonnements, des quotas et des compteurs (ADR-014).
+
+Depuis la phase 11, la commande crée aussi des **prospects** à divers stades :
+sans eux, la vue de suivi commercial et la conversion sans ressaisie ne se
+démontrent pas.
 """
 
 from datetime import timedelta
@@ -31,12 +35,39 @@ DEMO_CLIENTS = [
     ("Demo — Garage Peret", "Automobile", 15, "veille", Subscription.Status.SUSPENDED),
 ]
 
+# Prospects de démonstration (phase 11).
+# (entreprise, contact, fonction, taille, statut, relance dans N jours, motif de perte)
+# ``None`` en relance = aucune date prévue ; combiné à une dernière activité
+# ancienne, c'est ce qui fait apparaître un prospect comme « en sommeil ».
+DEMO_PROSPECTS = [
+    ("Demo — Cabinet Ferrand", "Inès Ferrand", "Associée", "10-49", "new", 0, ""),
+    ("Demo — Imprimerie Sault", "Marc Sault", "Gérant", "1-9", "contacted", 2, ""),
+    ("Demo — Groupe Ancelin", "Sofia Ancelin", "DSI", "250+", "scheduled", 5, ""),
+    ("Demo — Laboratoire Vionnet", "Théo Vionnet", "Directeur", "50-249", "proposal", 1, ""),
+    ("Demo — Étude Bardet", "Claire Bardet", "Notaire", "10-49", "new", None, ""),
+    (
+        "Demo — Transports Kessler",
+        "Yann Kessler",
+        "Responsable IT",
+        "50-249",
+        "lost",
+        None,
+        "Budget reporté à l'exercice suivant.",
+    ),
+]
+
+# Ancienneté simulée du prospect « en sommeil » : au-delà du seuil de la vue
+# de suivi (14 jours), pour qu'il y apparaisse réellement.
+STALE_PROSPECT_AGE_DAYS = 40
+
 
 class Command(BaseCommand):
     help = "Crée des clients de démonstration sur différentes offres et différents états."
 
     def add_arguments(self, parser):
-        parser.add_argument("--reset", action="store_true", help="Supprime d'abord les clients de démo.")
+        parser.add_argument(
+            "--reset", action="store_true", help="Supprime d'abord les clients de démo."
+        )
         parser.add_argument(
             "--allow-production",
             action="store_true",
@@ -56,16 +87,69 @@ class Command(BaseCommand):
             if reset:
                 self._reset()
             created = self._create_clients()
+            prospects = self._create_prospects()
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"{created} client(s) de démonstration prêt(s). "
+                f"{created} client(s) et {prospects} prospect(s) de démonstration prêts. "
                 "Consultez-les dans l'administration plateforme."
             )
         )
 
     def _reset(self):
+        from apps.marketing.models import DemoRequest
+
         Tenant.objects.filter(slug__endswith=DEMO_CLIENT_SUFFIX).delete()
+        DemoRequest.objects.filter(company__startswith="Demo — ").delete()
+
+    def _create_prospects(self) -> int:
+        """Prospects couvrant chaque étape du suivi commercial.
+
+        Passe par le service, comme le ferait la console : le motif de perte
+        obligatoire et les autres règles s'appliquent donc ici aussi.
+        """
+        from apps.marketing import services as marketing_services
+        from apps.marketing.models import DemoRequest
+
+        created = 0
+        today = timezone.localdate()
+
+        for company, full_name, role, size, status, follow_up, lost_reason in DEMO_PROSPECTS:
+            if DemoRequest.objects.filter(company=company).exists():
+                continue
+
+            prospect = marketing_services.create_prospect(
+                company=company,
+                full_name=full_name,
+                role=role,
+                email=f"{full_name.split()[0].lower()}@{self._slug_for(company)[:40]}.example",
+                company_size=size,
+                message="Prospect de démonstration.",
+            )
+            marketing_services.update_prospect(
+                prospect=prospect,
+                status=status,
+                lost_reason=lost_reason,
+                next_follow_up_on=(
+                    today + timedelta(days=follow_up) if follow_up is not None else None
+                ),
+            )
+
+            if status == "new" and follow_up is None:
+                # Le cas « en sommeil » : aucune relance prévue et plus aucune
+                # activité depuis longtemps. ``update_at`` étant auto_now, on
+                # le force par un UPDATE direct.
+                DemoRequest.objects.filter(id=prospect.id).update(
+                    updated_at=timezone.now() - timedelta(days=STALE_PROSPECT_AGE_DAYS)
+                )
+
+            marketing_services.add_prospect_note(
+                prospect=prospect,
+                body="Premier échange : découverte du besoin.",
+            )
+            created += 1
+
+        return created
 
     def _create_clients(self) -> int:
         from django.contrib.auth import get_user_model
@@ -87,14 +171,11 @@ class Command(BaseCommand):
 
             owner_email = f"contact@{slug}.example"
             owner, _ = User.objects.get_or_create(
-                email=owner_email, defaults={"first_name": "Contact", "last_name": name.split("—")[-1].strip()}
+                email=owner_email,
+                defaults={"first_name": "Contact", "last_name": name.split("—")[-1].strip()},
             )
-            tenant = Tenant.objects.create(
-                name=name, slug=slug, sector=sector, headcount=headcount
-            )
-            Membership.all_objects.create(
-                tenant=tenant, user=owner, role=Membership.Role.ADMIN
-            )
+            tenant = Tenant.objects.create(name=name, slug=slug, sector=sector, headcount=headcount)
+            Membership.all_objects.create(tenant=tenant, user=owner, role=Membership.Role.ADMIN)
 
             # On passe par le service : la garde de capacité s'applique donc à
             # ces clients comme aux vrais. Si le pool est plein, le seed

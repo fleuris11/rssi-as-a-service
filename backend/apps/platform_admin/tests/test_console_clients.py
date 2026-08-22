@@ -218,9 +218,7 @@ class TestClientUpdate:
             **staff_headers,
         )
 
-        assert not AdminAuditLog.objects.filter(
-            action=AdminAuditLog.Action.TENANT_UPDATED
-        ).exists()
+        assert not AdminAuditLog.objects.filter(action=AdminAuditLog.Action.TENANT_UPDATED).exists()
 
 
 class TestArchiveAndTrash:
@@ -273,9 +271,7 @@ class TestArchiveAndTrash:
         names = [row["name"] for row in response.data["tenants"]]
         assert tenant.name in names
 
-    def test_permanent_deletion_requires_archiving_first(
-        self, api_client, staff_headers, tenant
-    ):
+    def test_permanent_deletion_requires_archiving_first(self, api_client, staff_headers, tenant):
         response = api_client.delete(
             reverse("platform-client-detail", kwargs={"tenant_id": tenant.id}),
             {"confirm_name": tenant.name},

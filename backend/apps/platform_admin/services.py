@@ -400,10 +400,21 @@ def technical_configuration() -> dict:
     immuable depuis une interface web — la présence des clés, le mode du
     fournisseur de renseignement.
     """
+    from apps.billing import features as feature_registry
+
     from . import settings_registry
 
     return {
         "keys": key_status(),
+        # Registre complet des fonctionnalités : la console coche les cases
+        # d'une offre à partir de cette liste. La reconstituer côté frontend
+        # depuis les offres existantes appariait les libellés par position et
+        # les intervertissait — une fonctionnalité ne peut se nommer qu'à un
+        # seul endroit.
+        "features": [
+            {"key": key, "label": feature.label, "teaser": feature.teaser}
+            for key, feature in feature_registry.REGISTRY.items()
+        ],
         "cti_mode": settings.BREACHSENSE_MODE,
         "caps": {
             "monitored_slots": settings_registry.get(settings_registry.MONITORED_SLOT_POOL),
@@ -507,9 +518,7 @@ def list_platform_admins():
                 # Sans profil = niveau complet : c'est le cas du fondateur et
                 # des comptes antérieurs à la phase 11, qui ne doivent pas
                 # perdre leurs droits au déploiement de cette migration.
-                "level": (
-                    profile.level if profile else PlatformAdminProfile.Level.FULL
-                ),
+                "level": (profile.level if profile else PlatformAdminProfile.Level.FULL),
                 "level_label": (
                     profile.get_level_display()
                     if profile
@@ -587,7 +596,10 @@ def change_admin_level(*, user, level: str, actor=None):
         # Se rétrograder soi-même est le moyen le plus simple de se retrouver
         # sans personne pour revenir en arrière.
         raise AdminManagementError("Vous ne pouvez pas modifier votre propre niveau.")
-    if level != PlatformAdminProfile.Level.FULL and _count_full_admins(exclude_user_id=user.id) == 0:
+    if (
+        level != PlatformAdminProfile.Level.FULL
+        and _count_full_admins(exclude_user_id=user.id) == 0
+    ):
         raise AdminManagementError(
             "C'est le dernier administrateur complet. Nommez-en un autre avant de "
             "rétrograder celui-ci."
@@ -721,9 +733,9 @@ def export_rows(kind: str) -> tuple[list[str], list[list]]:
             "Archivée",
         ]
         rows = []
-        for tenant in Tenant.objects.select_related(
-            "subscription", "subscription__plan"
-        ).order_by("name"):
+        for tenant in Tenant.objects.select_related("subscription", "subscription__plan").order_by(
+            "name"
+        ):
             subscription = getattr(tenant, "subscription", None)
             rows.append(
                 [

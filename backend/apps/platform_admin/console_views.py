@@ -368,9 +368,7 @@ class ClientMemberListView(ConsoleView):
         return Response(
             {
                 **MemberSerializer(membership).data,
-                "invitation": invitation_payload(
-                    raw_token, email=membership.user.email, sent=sent
-                ),
+                "invitation": invitation_payload(raw_token, email=membership.user.email, sent=sent),
             },
             status=status.HTTP_201_CREATED,
         )
@@ -402,9 +400,7 @@ class ClientMemberDetailView(ConsoleView):
                     changes={"role": [previous, membership.get_role_display()]},
                 )
             if "is_active" in data and data["is_active"] != membership.user.is_active:
-                tenant_services.set_member_active(
-                    membership=membership, active=data["is_active"]
-                )
+                tenant_services.set_member_active(membership=membership, active=data["is_active"])
                 self.audit(
                     request,
                     AdminAuditLog.Action.USER_REACTIVATED
@@ -466,9 +462,7 @@ class MemberPasswordResetView(ConsoleView):
             tenant=membership.tenant,
             target=membership.user.email,
         )
-        return Response(
-            invitation_payload(raw_token, email=membership.user.email, sent=sent)
-        )
+        return Response(invitation_payload(raw_token, email=membership.user.email, sent=sent))
 
 
 # --- Abonnement d'un client -------------------------------------------------
@@ -508,9 +502,7 @@ class SubscriptionDetailView(ConsoleView):
                     subscription=subscription, notes=data["internal_notes"]
                 )
             overrides = {
-                key: value
-                for key, value in data.items()
-                if key in billing_services.OVERRIDE_FIELDS
+                key: value for key, value in data.items() if key in billing_services.OVERRIDE_FIELDS
             }
             if overrides:
                 billing_services.set_quota_overrides(
@@ -525,9 +517,7 @@ class SubscriptionDetailView(ConsoleView):
             return self.refused(exc, status.HTTP_422_UNPROCESSABLE_ENTITY)
 
         subscription.refresh_from_db()
-        changes = services.diff_fields(
-            before, billing_services.snapshot_subscription(subscription)
-        )
+        changes = services.diff_fields(before, billing_services.snapshot_subscription(subscription))
         if changes:
             action = (
                 AdminAuditLog.Action.QUOTA_OVERRIDDEN
@@ -618,9 +608,7 @@ class ClientMonitoredAssetView(ConsoleView):
         from apps.monitoring.models import Asset
         from apps.threat_intelligence import services as ti_services
 
-        asset = get_object_or_404(
-            Asset.all_objects, id=request.data.get("asset_id"), tenant=tenant
-        )
+        asset = get_object_or_404(Asset.all_objects, id=request.data.get("asset_id"), tenant=tenant)
         ti_services.unregister_monitored_asset(tenant=tenant, asset=asset)
         self.audit(
             request,
@@ -751,7 +739,9 @@ class PlanDeleteView(ConsoleView):
         except billing_services.BillingError as exc:
             return self.refused(exc, status.HTTP_409_CONFLICT)
 
-        self.audit(request, AdminAuditLog.Action.PLAN_RETIRED, target=name, detail="Offre supprimée.")
+        self.audit(
+            request, AdminAuditLog.Action.PLAN_RETIRED, target=name, detail="Offre supprimée."
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -854,9 +844,7 @@ class ProspectNoteView(ConsoleView):
         except marketing_services.ProspectError as exc:
             return self.refused(exc, status.HTTP_422_UNPROCESSABLE_ENTITY)
 
-        self.audit(
-            request, AdminAuditLog.Action.PROSPECT_NOTE_ADDED, target=prospect.company
-        )
+        self.audit(request, AdminAuditLog.Action.PROSPECT_NOTE_ADDED, target=prospect.company)
         return Response(ProspectNoteSerializer(note).data, status=status.HTTP_201_CREATED)
 
 
@@ -975,9 +963,7 @@ class PlatformSettingsView(ConsoleView):
             warning = ""
 
         try:
-            _setting, change = services.update_setting(
-                key=key, raw_value=value, actor=request.user
-            )
+            _setting, change = services.update_setting(key=key, raw_value=value, actor=request.user)
         except settings_registry.SettingError as exc:
             return self.refused(exc, status.HTTP_422_UNPROCESSABLE_ENTITY)
 

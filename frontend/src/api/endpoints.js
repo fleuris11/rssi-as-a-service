@@ -36,6 +36,76 @@ export const platformApi = {
   health: () => apiClient.get('/api/v1/platform/health/'),
   configuration: () => apiClient.get('/api/v1/platform/configuration/'),
   audit: () => apiClient.get('/api/v1/platform/audit/'),
+
+  // --- Console d'administration (phase 11) --------------------------------
+  // Écriture complète : plus aucune opération de gestion ne demande un shell.
+  createClient: (payload) => apiClient.post('/api/v1/platform/clients/', payload),
+  clientDetail: (id) => apiClient.get(`/api/v1/platform/clients/${id}/`),
+  updateClient: (id, payload) => apiClient.patch(`/api/v1/platform/clients/${id}/`, payload),
+  archiveClient: (id, payload) => apiClient.post(`/api/v1/platform/clients/${id}/archive/`, payload),
+  deleteClient: (id, confirmName) =>
+    apiClient.delete(`/api/v1/platform/clients/${id}/`, { data: { confirm_name: confirmName } }),
+
+  listMembers: (id) => apiClient.get(`/api/v1/platform/clients/${id}/members/`),
+  inviteMember: (id, payload) =>
+    apiClient.post(`/api/v1/platform/clients/${id}/members/`, payload),
+  updateMember: (id, membershipId, payload) =>
+    apiClient.patch(`/api/v1/platform/clients/${id}/members/${membershipId}/`, payload),
+  removeMember: (id, membershipId) =>
+    apiClient.delete(`/api/v1/platform/clients/${id}/members/${membershipId}/`),
+  resetMemberPassword: (id, membershipId) =>
+    apiClient.post(`/api/v1/platform/clients/${id}/members/${membershipId}/reset-password/`),
+
+  updateSubscription: (id, payload) =>
+    apiClient.patch(`/api/v1/platform/clients/${id}/subscription/`, payload),
+  clientMonitoredAssets: (id) =>
+    apiClient.get(`/api/v1/platform/clients/${id}/monitored-assets/`),
+  addMonitoredAsset: (id, assetId) =>
+    apiClient.post(`/api/v1/platform/clients/${id}/monitored-assets/`, { asset_id: assetId }),
+  removeMonitoredAsset: (id, assetId) =>
+    apiClient.delete(`/api/v1/platform/clients/${id}/monitored-assets/`, {
+      data: { asset_id: assetId },
+    }),
+  clientAction: (id, action) =>
+    apiClient.post(`/api/v1/platform/clients/${id}/actions/`, { action }),
+
+  planImpact: (code, changes) =>
+    apiClient.post(`/api/v1/platform/plans/${code}/impact/`, changes),
+  duplicatePlan: (code, payload) =>
+    apiClient.post(`/api/v1/platform/plans/${code}/duplicate/`, payload),
+  deletePlan: (code) => apiClient.delete(`/api/v1/platform/plans/${code}/delete/`),
+  previewPlan: (code) => apiClient.get(`/api/v1/platform/plans/${code}/preview/`),
+
+  listProspects: (params) => apiClient.get('/api/v1/platform/prospects/', { params }),
+  createProspect: (payload) => apiClient.post('/api/v1/platform/prospects/', payload),
+  updateProspect: (id, payload) => apiClient.patch(`/api/v1/platform/prospects/${id}/`, payload),
+  addProspectNote: (id, body) =>
+    apiClient.post(`/api/v1/platform/prospects/${id}/notes/`, { body }),
+  followUpBoard: () => apiClient.get('/api/v1/platform/prospects/follow-up/'),
+
+  listAdmins: () => apiClient.get('/api/v1/platform/admins/'),
+  inviteAdmin: (payload) => apiClient.post('/api/v1/platform/admins/', payload),
+  changeAdminLevel: (userId, level) =>
+    apiClient.patch(`/api/v1/platform/admins/${userId}/`, { level }),
+  revokeAdmin: (userId) => apiClient.delete(`/api/v1/platform/admins/${userId}/`),
+
+  settings: () => apiClient.get('/api/v1/platform/settings/'),
+  updateSetting: (key, value) => apiClient.patch('/api/v1/platform/settings/', { key, value }),
+  resetSetting: (key) => apiClient.post(`/api/v1/platform/settings/${key}/reset/`),
+
+  trash: () => apiClient.get('/api/v1/platform/trash/'),
+  search: (q) => apiClient.get('/api/v1/platform/search/', { params: { q } }),
+  // L'export est un téléchargement de fichier : on renvoie l'URL, le
+  // navigateur s'en charge (une réponse CSV lue en JSON serait illisible).
+  exportUrl: (kind) => `/api/v1/platform/export/${kind}/`,
+}
+
+// Définition du mot de passe depuis un lien d'invitation. Route PUBLIQUE :
+// la personne invitée n'a précisément pas encore de mot de passe.
+export const invitationApi = {
+  check: (token) => apiClient.get(`/api/v1/auth/invitation/${token}/`),
+  accept: (token, password) =>
+    apiClient.post(`/api/v1/auth/invitation/${token}/`, { password }),
 }
 
 export const authApi = {

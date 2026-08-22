@@ -445,9 +445,7 @@ class TestDemoRequestHandling:
         assert "Mozilla/5.0" not in payload
         assert "Atelier Roux" in payload
 
-    def test_status_change_is_recorded_and_audited(
-        self, api_client, staff_headers, demo_request
-    ):
+    def test_status_change_is_recorded_and_audited(self, api_client, staff_headers, demo_request):
         response = api_client.patch(
             reverse("platform-demo-request-detail", kwargs={"demo_request_id": demo_request.id}),
             {"status": "contacted"},

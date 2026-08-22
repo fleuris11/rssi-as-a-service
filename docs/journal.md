@@ -2252,3 +2252,112 @@ est légitime, c'est l'état de la plateforme qui la rend momentanément impossi
   conditions générales à rédiger entièrement, DPA à écrire (`docs/legal/README.md`).
 - **Palier de licence** : 15 emplacements est étroit. Surveiller le pool ou monter de palier avant
   toute campagne d'acquisition — l'alerte à 80 % prévient, elle ne résout pas.
+
+---
+
+## 2026-08-15 — Phase 11 : console d'administration complète (opérations d'écriture)
+
+### Point de départ
+
+Constat de l'exploitant, exact : la phase 10 avait livré une **supervision**, pas une
+administration. On voyait tout, on ne pouvait presque rien créer ni modifier. Inventaire réalisé
+avant d'écrire une ligne de code — sur 11 objets métier, **un seul** (l'abonnement) avait plus
+d'une opération réellement pilotable depuis l'écran, et encore partiellement. Tout le reste passait
+par un shell Django ou la base.
+
+Objectif de la phase : **plus jamais de terminal pour gérer l'activité**.
+
+### Décisions structurantes
+
+Trois arbitrages soumis à l'exploitant avant de coder :
+
+- **ADR-021 — propagation d'une modification d'offre.** À la baisse d'un quota, les clients
+  existants sont **gelés** (une surcharge fige leur quota actuel) ; le nouveau quota ne vaut que
+  pour les futurs clients. À la hausse, tout le monde en profite immédiatement. L'asymétrie est
+  volontaire : une hausse ne peut léser personne.
+- **ADR-022 — droits des administrateurs.** Deux niveaux métier (complet / commercial) plutôt que
+  la matrice de permissions Django. Un compte `is_staff` sans profil reste complet, pour ne
+  retirer les droits de personne au déploiement.
+- **Invitations** : lien copiable, et email en plus si un serveur d'envoi est configuré. Le
+  choix « email uniquement » aurait rendu la console inutilisable en local.
+
+### Ce qui a été fait
+
+**Socle.** `PlatformAdminProfile` (niveaux), `settings_registry` (11 réglages d'exploitation en
+base avec repli sur les variables d'environnement — plafonds de licence, durées d'essai,
+rétentions, seuils d'alerte, ouverture des inscriptions, message de maintenance),
+`AccessInvitation` (jeton à usage unique, **stocké haché**, à durée limitée), et audit enrichi de
+valeurs **avant/après**.
+
+**Clients.** Création atomique (entreprise + premier utilisateur + abonnement + lien d'invitation),
+modification de la fiche commerciale, archivage réversible, suppression définitive après archivage
+et saisie du nom, gestion des utilisateurs (invitation, rôle, désactivation, retrait,
+réinitialisation par lien), abonnement complet (offre, essai, périodicité, quotas négociés,
+notes), actifs surveillés, et actions sur les données (analyse, synthèse, purge des secrets) sans
+accès au contenu des compromissions.
+
+**Offres.** Création de zéro, duplication en brouillon, modification de tous les attributs,
+**aperçu d'impact avant confirmation**, prévisualisation du rendu vitrine. Une offre utilisée ne
+peut pas être supprimée : elle se retire de la vente.
+
+**Prospects.** Saisie manuelle, pipeline complet (motif de perte **obligatoire**), notes
+horodatées, relances, vue « à traiter » (relances du jour / prospects en sommeil), conversion sans
+ressaisie avec lien conservé vers le client créé.
+
+**Plateforme.** Gestion des administrateurs (jamais soi-même, jamais le dernier complet), réglages
+modifiables sans redémarrage, corbeille avec durée de conservation, recherche globale, exports CSV.
+
+### Défauts trouvés et corrigés
+
+- **Connexion impossible après une session précédente.** Un identifiant d'entreprise périmé dans
+  `localStorage` était joint à la requête de connexion ; le middleware de scoping répondait 403
+  *avant* la vérification du mot de passe, et l'écran affichait « mot de passe incorrect ». Le
+  compte devenait inutilisable jusqu'à un vidage manuel du navigateur. Les routes
+  d'authentification ne portent plus de contexte, un 403 purge le contexte mémorisé, et le message
+  reflète enfin la vraie cause.
+- **Deux trous de la phase 10**, révélés par les tests : les vues du back-office utilisaient
+  encore `IsAdminUser` (un commercial pouvait modifier le catalogue), et la mise à jour d'une offre
+  court-circuitait le service — donc la règle de propagation ne s'appliquait jamais.
+- **Le troisième `except` trop large.** `create_tenant_with_owner` absorbait `PlatformCapacityError`
+  : une inscription sur plateforme saturée créait une entreprise **sans abonnement**, dont toutes
+  les fonctions se bloquaient ensuite. Seule cette exception remonte désormais ; le reste (catalogue
+  vide) reste absorbé. La fonction est devenue atomique.
+- **Modale sans défilement** : un formulaire long (création d'offre) débordait sous l'écran et son
+  bouton de validation devenait inatteignable.
+- **Libellés de fonctionnalités faux** : la console appariait clés et libellés *par position*
+  depuis les offres. Le registre est désormais servi par le serveur.
+- **Saisie écrasée en cours de frappe** : un rafraîchissement déclenché par une autre section de la
+  fiche client réinitialisait le formulaire de quotas. Les dépendances de l'effet ne suivent plus
+  que l'identité de l'abonnement.
+- **Validation native contre messages précis** : ajouter `required` aux champs a fait bloquer le
+  navigateur *avant* notre validation, remplaçant des messages alignés sur le serveur par une bulle
+  générique. `required` conservé pour les technologies d'assistance, `noValidate` sur les
+  formulaires.
+- **Astérisque dans le nom accessible** : « Email * » au lieu de « Email ». Masqué aux
+  technologies d'assistance.
+- **Lien d'invitation persistant** après le retrait de la personne concernée — laissait croire que
+  son accès était toujours en cours d'ouverture.
+
+### Vérification
+
+- **Backend : 902 tests verts** (52 nouveaux), hors les 3 tests PDF WeasyPrint connus.
+- **Frontend : 97 tests Vitest verts** (16 nouveaux), lint propre.
+- **Refus vérifiés par neutralisation** de `ensure_monitored_slots_available` (méthode des phases
+  8C et 10) : **7 tests de refus rougissent**, dont le nouveau chemin de création de client et
+  l'inscription libre. Garde restaurée, tout revient au vert.
+
+### Reste à faire
+
+- **Parcours Playwright de la phase** (créer une offre → prospect → conversion → invitation →
+  quota → suspension → retrait → journal) : écrit et débogué jusqu'à l'étape 7 sur 8, interrompu
+  par l'arrêt du moteur Docker. À rejouer d'un bout à l'autre.
+- **Extension de `seed_demo_tenant`** : prospects à divers statuts, essai proche de l'expiration.
+- Les points de la phase 10 restent ouverts : paiement réel, informations légales, palier de
+  licence.
+
+### Difficulté d'environnement
+
+**Docker Desktop s'est arrêté deux fois** en cours de session (canal nommé disparu, puis démon
+figé ne répondant plus à `docker version`). Symptôme connu de cette machine, sans rapport avec le
+code — mais il interrompt les vérifications en conditions réelles, qui sont précisément celles qui
+ont révélé la moitié des défauts ci-dessus.

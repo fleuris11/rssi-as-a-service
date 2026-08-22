@@ -28,9 +28,7 @@ def commercial_headers(api_client, user_factory):
     """Administrateur de niveau commercial : lecture partout, écriture sur les
     seuls prospects."""
     user = user_factory(email="commercial@example.com", is_staff=True)
-    PlatformAdminProfile.objects.create(
-        user=user, level=PlatformAdminProfile.Level.COMMERCIAL
-    )
+    PlatformAdminProfile.objects.create(user=user, level=PlatformAdminProfile.Level.COMMERCIAL)
     response = api_client.post(
         reverse("token-obtain-pair"), {"email": user.email, "password": PASSWORD}, format="json"
     )
@@ -157,9 +155,7 @@ class TestPlanAdministration:
         assert subscription.override_monthly_scans is None
         assert subscription.monthly_scans_quota == 100
 
-    def test_a_plan_with_clients_cannot_be_deleted(
-        self, api_client, staff_headers, plan, tenant
-    ):
+    def test_a_plan_with_clients_cannot_be_deleted(self, api_client, staff_headers, plan, tenant):
         Subscription.objects.filter(tenant=tenant).update(plan=plan)
 
         response = api_client.delete(
@@ -254,12 +250,8 @@ class TestProspects:
             email="a@relance.example",
             next_follow_up_on=today,
         )
-        old = DemoRequest.objects.create(
-            company="Oublié", full_name="B", email="b@oublie.example"
-        )
-        DemoRequest.objects.filter(id=old.id).update(
-            updated_at=timezone.now() - timedelta(days=40)
-        )
+        old = DemoRequest.objects.create(company="Oublié", full_name="B", email="b@oublie.example")
+        DemoRequest.objects.filter(id=old.id).update(updated_at=timezone.now() - timedelta(days=40))
 
         response = api_client.get(reverse("platform-prospect-follow-up"), **staff_headers)
 
@@ -330,9 +322,7 @@ class TestAdminLevels:
         assert archive.status_code == status.HTTP_403_FORBIDDEN
         assert not Tenant.objects.filter(name="Interdit").exists()
 
-    def test_invites_an_administrator_with_a_link_not_a_password(
-        self, api_client, staff_headers
-    ):
+    def test_invites_an_administrator_with_a_link_not_a_password(self, api_client, staff_headers):
         response = api_client.post(
             reverse("platform-admin-list"),
             {"email": "collegue@example.com", "level": "commercial"},
@@ -369,9 +359,7 @@ class TestAdminLevels:
         from django.contrib.auth import get_user_model
 
         other = user_factory(email="autre-admin@example.com", is_staff=True)
-        PlatformAdminProfile.objects.create(
-            user=other, level=PlatformAdminProfile.Level.COMMERCIAL
-        )
+        PlatformAdminProfile.objects.create(user=other, level=PlatformAdminProfile.Level.COMMERCIAL)
         me = get_user_model().objects.get(email="patron@example.com")
 
         # « autre » est commercial : « patron » est le dernier complet, mais il
@@ -399,9 +387,7 @@ class TestPlatformSettings:
 
         assert response.status_code == status.HTTP_200_OK
         assert capacity.monitored_slot_capacity() == 25
-        assert AdminAuditLog.objects.filter(
-            action=AdminAuditLog.Action.SETTING_CHANGED
-        ).exists()
+        assert AdminAuditLog.objects.filter(action=AdminAuditLog.Action.SETTING_CHANGED).exists()
 
     def test_refuses_an_out_of_range_value(self, api_client, staff_headers):
         response = api_client.patch(
@@ -460,9 +446,7 @@ class TestPlatformSettings:
 
 
 class TestSearchAndExport:
-    def test_search_finds_a_company_a_user_and_a_prospect(
-        self, api_client, staff_headers, tenant
-    ):
+    def test_search_finds_a_company_a_user_and_a_prospect(self, api_client, staff_headers, tenant):
         DemoRequest.objects.create(
             company=f"{tenant.name} Filiale", full_name="D", email="d@filiale.example"
         )
@@ -488,9 +472,7 @@ class TestSearchAndExport:
         assert response.status_code == status.HTTP_200_OK
         assert response["Content-Type"].startswith("text/csv")
         assert "attachment" in response["Content-Disposition"]
-        assert AdminAuditLog.objects.filter(
-            action=AdminAuditLog.Action.EXPORT_GENERATED
-        ).exists()
+        assert AdminAuditLog.objects.filter(action=AdminAuditLog.Action.EXPORT_GENERATED).exists()
 
     def test_an_unknown_export_is_a_404_not_a_crash(self, api_client, staff_headers):
         response = api_client.get(

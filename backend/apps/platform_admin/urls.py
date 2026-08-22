@@ -137,9 +137,7 @@ urlpatterns = [
     ),
     # --- Plateforme ---------------------------------------------------------
     path("admins/", PlatformAdminListView.as_view(), name="platform-admin-list"),
-    path(
-        "admins/<uuid:user_id>/", PlatformAdminDetailView.as_view(), name="platform-admin-detail"
-    ),
+    path("admins/<uuid:user_id>/", PlatformAdminDetailView.as_view(), name="platform-admin-detail"),
     path("settings/", PlatformSettingsView.as_view(), name="platform-settings"),
     path(
         "settings/<str:key>/reset/",

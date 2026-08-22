@@ -3,26 +3,35 @@ import {
   Building2,
   ClipboardList,
   Gauge,
-  Inbox,
   Settings,
+  ShieldCheck,
   Tags,
+  Trash2,
+  Users,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { platformApi } from '../../api/endpoints'
+import GlobalSearch from '../../components/admin/GlobalSearch'
 import Badge from '../../components/ui/Badge'
-import Button from '../../components/ui/Button'
 import Card, { CardHeader } from '../../components/ui/Card'
 import { SkeletonCard } from '../../components/ui/Skeleton'
 import Tabs from '../../components/ui/Tabs'
 import { useToast } from '../../components/ui/Toast'
+import ClientsPanel from './panels/ClientsPanel'
+import PlansPanel from './panels/PlansPanel'
+import { AdminsPanel, SettingsPanel, TrashPanel } from './panels/PlatformPanel'
+import ProspectsPanel from './panels/ProspectsPanel'
 
 const TABS = [
   { id: 'capacity', label: 'Ressources', icon: Gauge },
   { id: 'tenants', label: 'Clients', icon: Building2 },
-  { id: 'demo', label: 'Demandes', icon: Inbox },
+  { id: 'prospects', label: 'Prospects', icon: Users },
   { id: 'plans', label: 'Offres', icon: Tags },
+  { id: 'admins', label: 'Administrateurs', icon: ShieldCheck },
+  { id: 'settings', label: 'Réglages', icon: Settings },
+  { id: 'trash', label: 'Corbeille', icon: Trash2 },
   { id: 'health', label: 'Santé', icon: Activity },
-  { id: 'config', label: 'Configuration', icon: Settings },
+  { id: 'config', label: 'Clés', icon: ClipboardList },
   { id: 'audit', label: 'Journal', icon: ClipboardList },
 ]
 
@@ -162,202 +171,6 @@ function CapacityPanel({ data }) {
         </div>
       </Card>
     </div>
-  )
-}
-
-function TenantsPanel({ tenants, onAction, busyId }) {
-  return (
-    <Card>
-      <CardHeader title="Clients" />
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500">
-              <th className="py-2 pr-4 font-medium">Entreprise</th>
-              <th className="py-2 pr-4 font-medium">Offre</th>
-              <th className="py-2 pr-4 font-medium">État</th>
-              <th className="py-2 pr-4 font-medium">Utilisateurs</th>
-              <th className="py-2 font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tenants.map((tenant) => (
-              <tr key={tenant.id} className="border-b border-ink-100 last:border-0">
-                <td className="py-2.5 pr-4 text-ink-800">{tenant.name}</td>
-                <td className="py-2.5 pr-4 text-ink-600">{tenant.plan_name || '—'}</td>
-                <td className="py-2.5 pr-4">
-                  <Badge variant={STATUS_VARIANT[tenant.subscription_status] || 'neutral'}>
-                    {tenant.subscription_status_label}
-                  </Badge>
-                </td>
-                <td className="py-2.5 pr-4 text-ink-600">{tenant.user_count ?? 0}</td>
-                <td className="py-2.5">
-                  <span className="flex flex-wrap gap-2">
-                    {tenant.subscription_status !== 'active' && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={busyId === tenant.id}
-                        onClick={() => onAction(tenant.id, 'activate')}
-                      >
-                        Activer
-                      </Button>
-                    )}
-                    {tenant.subscription_status !== 'suspended' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busyId === tenant.id}
-                        onClick={() => onAction(tenant.id, 'suspend')}
-                      >
-                        Suspendre
-                      </Button>
-                    )}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
-  )
-}
-
-const DEMO_STATUS_VARIANT = {
-  new: 'brand',
-  contacted: 'neutral',
-  scheduled: 'ok',
-  closed: 'neutral',
-}
-
-function DemoRequestsPanel({ demoRequests, onConvert, onSetStatus, busyId }) {
-  if (!demoRequests) return null
-  const requests = demoRequests.requests || []
-
-  return (
-    <Card>
-      <CardHeader title="Demandes de démonstration" />
-      <p className="mb-4 text-sm text-ink-600">
-        Reçues depuis le site public. Convertir une demande crée l’entreprise, son
-        utilisateur administrateur et son essai — l’opération est refusée si elle
-        dépasserait les plafonds de la plateforme.
-      </p>
-
-      {requests.length === 0 && <p className="text-sm text-ink-500">Aucune demande reçue.</p>}
-
-      <ul className="space-y-3">
-        {requests.map((demoRequest) => (
-          <li
-            key={demoRequest.id}
-            className="rounded-lg border border-ink-200 px-4 py-3"
-          >
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="font-medium text-ink-900">{demoRequest.company}</p>
-              <Badge variant={DEMO_STATUS_VARIANT[demoRequest.status] || 'neutral'}>
-                {demoRequest.status_label}
-              </Badge>
-            </div>
-            <p className="mt-1 text-sm text-ink-600">
-              {demoRequest.full_name}
-              {demoRequest.role ? ` — ${demoRequest.role}` : ''} · {demoRequest.email}
-              {demoRequest.company_size_label ? ` · ${demoRequest.company_size_label}` : ''}
-            </p>
-            {demoRequest.message && (
-              <p className="mt-2 whitespace-pre-line text-sm text-ink-600">
-                {demoRequest.message}
-              </p>
-            )}
-            <div className="mt-3 flex flex-wrap gap-2">
-              {demoRequest.status !== 'contacted' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={busyId === demoRequest.id}
-                  onClick={() => onSetStatus(demoRequest.id, 'contacted')}
-                >
-                  Marquer contactée
-                </Button>
-              )}
-              {demoRequest.already_client ? (
-                // Le bouton disparaît plutôt que d'échouer en 409 : le tenant
-                // existe déjà, il se pilote depuis l'onglet Clients.
-                <span className="self-center text-sm text-ink-500">Déjà cliente</span>
-              ) : (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={busyId === demoRequest.id}
-                  onClick={() => onConvert(demoRequest.id)}
-                >
-                  Convertir en client
-                </Button>
-              )}
-              {demoRequest.status !== 'closed' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={busyId === demoRequest.id}
-                  onClick={() => onSetStatus(demoRequest.id, 'closed')}
-                >
-                  Clore
-                </Button>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
-    </Card>
-  )
-}
-
-function PlansPanel({ plans, onToggleStatus, busyCode }) {
-  return (
-    <Card>
-      <CardHeader title="Offres" />
-      <p className="mb-4 text-sm text-ink-600">
-        Publier ou retirer une offre est immédiat et ne demande aucun redéploiement. Une offre
-        retirée disparaît du site public mais reste attachée à ses abonnés.
-      </p>
-      <div className="space-y-3">
-        {plans.map((plan) => (
-          <div
-            key={plan.code}
-            className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-ink-200 p-4"
-          >
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm font-medium text-ink-900">{plan.name}</p>
-                <Badge variant={plan.status === 'published' ? 'ok' : 'neutral'}>
-                  {plan.status_label}
-                </Badge>
-                {plan.is_highlighted && <Badge variant="brand">Mise en avant</Badge>}
-              </div>
-              <p className="mt-1 text-xs text-ink-500">
-                {plan.is_quote_only
-                  ? 'Sur devis'
-                  : `${plan.price_monthly} ${plan.currency} / mois`}{' '}
-                — {plan.monitored_assets} actif(s), {plan.monthly_scans} analyses,{' '}
-                {plan.max_users === 0 ? 'utilisateurs illimités' : `${plan.max_users} utilisateurs`}
-              </p>
-              <p className="mt-1 text-xs text-ink-500">
-                {plan.feature_labels.join(' · ') || 'Aucune fonctionnalité optionnelle'}
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={busyCode === plan.code}
-              onClick={() =>
-                onToggleStatus(plan.code, plan.status === 'published' ? 'retired' : 'published')
-              }
-            >
-              {plan.status === 'published' ? 'Retirer' : 'Publier'}
-            </Button>
-          </div>
-        ))}
-      </div>
-    </Card>
   )
 }
 
@@ -549,38 +362,33 @@ export default function PlatformAdminPage() {
   const [health, setHealth] = useState(null)
   const [config, setConfig] = useState(null)
   const [audit, setAudit] = useState(null)
-  const [demoRequests, setDemoRequests] = useState(null)
-  const [busyId, setBusyId] = useState(null)
+  // Pré-remplissage du formulaire de création quand on convertit un prospect :
+  // retaper des informations déjà saisies est le meilleur moyen d'en perdre.
+  const [clientPrefill, setClientPrefill] = useState(null)
+  const [focusedTenant, setFocusedTenant] = useState(null)
 
   // La sonde de santé interroge Celery et met quelques secondes : elle est
   // chargée SÉPARÉMENT, sans bloquer le reste. L'exploitant ouvre cette page
   // d'abord pour voir ses ressources rares, pas pour attendre un ping.
   const loadCore = useCallback(async () => {
-    const [capacityRes, tenantsRes, plansRes, configRes, auditRes, demoRes] =
-      await Promise.all([
-        platformApi.capacity(),
-        platformApi.listTenants(),
-        platformApi.listPlans(),
-        platformApi.configuration(),
-        platformApi.audit(),
-        platformApi.listDemoRequests(),
-      ])
+    const [capacityRes, tenantsRes, plansRes, configRes, auditRes] = await Promise.all([
+      platformApi.capacity(),
+      platformApi.listTenants(),
+      platformApi.listPlans(),
+      platformApi.configuration(),
+      platformApi.audit(),
+    ])
     setCapacity(capacityRes.data)
     setTenants(tenantsRes.data)
     setPlans(plansRes.data)
     setConfig(configRes.data)
     setAudit(auditRes.data)
-    setDemoRequests(demoRes.data)
   }, [])
 
   const loadHealth = useCallback(async () => {
     const response = await platformApi.health()
     setHealth(response.data)
   }, [])
-
-  const loadAll = useCallback(async () => {
-    await Promise.all([loadCore(), loadHealth().catch(() => setHealth(null))])
-  }, [loadCore, loadHealth])
 
   useEffect(() => {
     loadCore()
@@ -592,72 +400,18 @@ export default function PlatformAdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function handleSubscriptionAction(tenantId, action) {
-    setBusyId(tenantId)
-    try {
-      await platformApi.subscriptionAction(tenantId, { action })
-      await loadAll()
-      showToast({ type: 'success', message: 'Abonnement mis à jour.' })
-    } catch (err) {
-      // 409 = la plateforme ne peut pas honorer l'opération. Le message du
-      // serveur dit ce qui reste et ce qu'il faudrait libérer : on l'affiche
-      // tel quel plutôt que de le résumer.
-      showToast({
-        type: 'error',
-        message: err.response?.data?.detail || 'L’opération a échoué.',
-      })
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  async function handleConvertDemoRequest(demoRequestId) {
-    setBusyId(demoRequestId)
-    try {
-      const response = await platformApi.convertDemoRequest(demoRequestId)
-      await loadAll()
-      showToast({
-        type: 'success',
-        message: `${response.data.name} créée, essai ouvert.`,
-      })
-    } catch (err) {
-      // 409 = la conversion engagerait plus d'emplacements que la plateforme
-      // n'en a. Le message du serveur dit ce qui reste : on l'affiche tel quel.
-      showToast({
-        type: 'error',
-        message: err.response?.data?.detail || 'La conversion a échoué.',
-      })
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  async function handleDemoRequestStatus(demoRequestId, nextStatus) {
-    setBusyId(demoRequestId)
-    try {
-      await platformApi.updateDemoRequest(demoRequestId, { status: nextStatus })
-      await loadCore()
-    } catch {
-      showToast({ type: 'error', message: 'La demande n’a pas pu être mise à jour.' })
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  async function handleTogglePlan(code, nextStatus) {
-    setBusyId(code)
-    try {
-      await platformApi.updatePlan(code, { status: nextStatus })
-      await loadAll()
-      showToast({ type: 'success', message: 'Offre mise à jour.' })
-    } catch (err) {
-      showToast({
-        type: 'error',
-        message: err.response?.data?.detail || 'L’offre n’a pas pu être mise à jour.',
-      })
-    } finally {
-      setBusyId(null)
-    }
+  /** Conversion d'un prospect : on bascule sur l'écran Clients avec le
+   *  formulaire déjà rempli, et le lien prospect → client est conservé. */
+  function convertProspect(prospect) {
+    setClientPrefill({
+      name: prospect.company,
+      owner_email: prospect.email,
+      owner_first_name: (prospect.full_name || '').split(' ')[0] || '',
+      owner_last_name: (prospect.full_name || '').split(' ').slice(1).join(' '),
+      contact_phone: prospect.phone || '',
+      prospect_id: prospect.id,
+    })
+    setActiveTab('tenants')
   }
 
   return (
@@ -666,14 +420,27 @@ export default function PlatformAdminPage() {
           sonde de santé interroge Celery et prend quelques secondes, et une
           page entièrement remplacée par des squelettes ne dit même pas où
           l'on se trouve. */}
-      <div>
-        <h1 className="font-display text-2xl font-semibold text-ink-900">
-          Administration de la plateforme
-        </h1>
-        <p className="mt-1 text-sm text-ink-500">
-          Clients, offres et ressources partagées. Cet espace ne donne pas accès aux
-          compromissions des clients.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-ink-900">
+            Administration de la plateforme
+          </h1>
+          <p className="mt-1 text-sm text-ink-500">
+            Clients, offres et ressources partagées. Cet espace ne donne pas accès aux
+            compromissions des clients.
+          </p>
+        </div>
+        <div className="w-full max-w-md">
+          <div className="rounded-md bg-brand-900 p-1">
+            <GlobalSearch
+              onSelectTenant={(id) => {
+                setFocusedTenant(id)
+                setActiveTab('tenants')
+              }}
+              onSelectProspect={() => setActiveTab('prospects')}
+            />
+          </div>
+        </div>
       </div>
 
       <Tabs tabs={TABS} activeId={activeTab} onChange={setActiveTab} />
@@ -687,23 +454,26 @@ export default function PlatformAdminPage() {
 
       {!loading && activeTab === 'capacity' && <CapacityPanel data={capacity} />}
       {!loading && activeTab === 'tenants' && (
-        <TenantsPanel
+        <ClientsPanel
+          key={focusedTenant || 'liste'}
           tenants={tenants}
-          onAction={handleSubscriptionAction}
-          busyId={busyId}
+          plans={plans}
+          onRefresh={loadCore}
+          prefill={clientPrefill}
+          onPrefillConsumed={() => setClientPrefill(null)}
+          initialTenantId={focusedTenant}
+          onFocusConsumed={() => setFocusedTenant(null)}
         />
       )}
-      {!loading && activeTab === 'demo' && (
-        <DemoRequestsPanel
-          demoRequests={demoRequests}
-          onConvert={handleConvertDemoRequest}
-          onSetStatus={handleDemoRequestStatus}
-          busyId={busyId}
-        />
+      {!loading && activeTab === 'prospects' && (
+        <ProspectsPanel onConvertToClient={convertProspect} />
       )}
       {!loading && activeTab === 'plans' && (
-        <PlansPanel plans={plans} onToggleStatus={handleTogglePlan} busyCode={busyId} />
+        <PlansPanel plans={plans} featureCatalog={config?.features || []} onRefresh={loadCore} />
       )}
+      {!loading && activeTab === 'admins' && <AdminsPanel />}
+      {!loading && activeTab === 'settings' && <SettingsPanel configuration={config} />}
+      {!loading && activeTab === 'trash' && <TrashPanel onRefresh={loadCore} />}
       {!loading && activeTab === 'health' && (health ? <HealthPanel health={health} /> : <SkeletonCard />)}
       {!loading && activeTab === 'config' && <ConfigPanel config={config} />}
       {!loading && activeTab === 'audit' && <AuditPanel audit={audit} />}

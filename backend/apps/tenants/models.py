@@ -46,15 +46,15 @@ class Tenant(models.Model):
     )
     archive_reason = models.CharField(max_length=200, blank=True)
 
-    @property
-    def is_archived(self) -> bool:
-        return self.archived_at is not None
-
     class Meta:
         ordering = ["name"]
 
     def __str__(self):
         return self.name
+
+    @property
+    def is_archived(self) -> bool:
+        return self.archived_at is not None
 
 
 class TenantScopedModel(models.Model):

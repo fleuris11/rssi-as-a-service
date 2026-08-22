@@ -291,9 +291,7 @@ class AdminDemoRequestListView(PlatformAdminView):
         return Response(
             {
                 "requests": DemoRequestAdminSerializer(requests, many=True).data,
-                "open_count": DemoRequest.objects.exclude(
-                    status=DemoRequest.Status.CLOSED
-                ).count(),
+                "open_count": DemoRequest.objects.exclude(status=DemoRequest.Status.CLOSED).count(),
             }
         )
 
@@ -303,9 +301,7 @@ class AdminDemoRequestListView(PlatformAdminView):
         demo_request = get_object_or_404(DemoRequest, id=demo_request_id)
         new_status = request.data.get("status")
         if new_status not in DemoRequest.Status.values:
-            return Response(
-                {"detail": "Statut inconnu."}, status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"detail": "Statut inconnu."}, status=status.HTTP_400_BAD_REQUEST)
         demo_request.status = new_status
         demo_request.save(update_fields=["status"])
         self.audit(

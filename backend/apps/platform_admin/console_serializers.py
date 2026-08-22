@@ -18,19 +18,29 @@ from apps.tenants.models import Membership, Tenant
 class ClientCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200)
     owner_email = serializers.EmailField()
-    owner_first_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
-    owner_last_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
+    owner_first_name = serializers.CharField(
+        max_length=150, required=False, allow_blank=True, default=""
+    )
+    owner_last_name = serializers.CharField(
+        max_length=150, required=False, allow_blank=True, default=""
+    )
     plan_code = serializers.CharField(required=False, allow_blank=True, default="")
     engagement = serializers.ChoiceField(choices=["trial", "active"], default="trial")
-    trial_days = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=365)
+    trial_days = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0, max_value=365
+    )
 
     sector = serializers.CharField(max_length=120, required=False, allow_blank=True, default="")
     headcount = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     contact_email = serializers.EmailField(required=False, allow_blank=True, default="")
-    contact_phone = serializers.CharField(max_length=40, required=False, allow_blank=True, default="")
+    contact_phone = serializers.CharField(
+        max_length=40, required=False, allow_blank=True, default=""
+    )
     address = serializers.CharField(required=False, allow_blank=True, default="")
     website = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
-    account_manager = serializers.CharField(max_length=120, required=False, allow_blank=True, default="")
+    account_manager = serializers.CharField(
+        max_length=120, required=False, allow_blank=True, default=""
+    )
     internal_notes = serializers.CharField(required=False, allow_blank=True, default="")
 
     # Conversion depuis un prospect : le lien est conservé pour retrouver
@@ -99,7 +109,16 @@ class MemberSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Membership
-        fields = ["id", "email", "name", "role", "role_label", "is_active", "has_usable_password", "last_login"]
+        fields = [
+            "id",
+            "email",
+            "name",
+            "role",
+            "role_label",
+            "is_active",
+            "has_usable_password",
+            "last_login",
+        ]
         read_only_fields = fields
 
     def get_has_usable_password(self, membership):

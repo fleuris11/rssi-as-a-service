@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PlatformAdminPage from './PlatformAdminPage'
@@ -22,6 +22,10 @@ vi.mock('../../api/endpoints', () => ({
     health: vi.fn(),
     subscriptionAction: vi.fn(),
     updatePlan: vi.fn(),
+    clientDetail: vi.fn(),
+    listMembers: vi.fn(),
+    search: vi.fn(),
+    exportUrl: vi.fn(() => '/export.csv'),
   },
 }))
 
@@ -104,6 +108,16 @@ function mockOk() {
   platformApi.audit.mockResolvedValue({ data: { entries: [] } })
   platformApi.listDemoRequests.mockResolvedValue({ data: { requests: [], open_count: 0 } })
   platformApi.health.mockResolvedValue({ data: { checks: [], scheduled: [], volumes: {} } })
+  platformApi.clientDetail.mockResolvedValue({
+    data: {
+      id: 1,
+      name: 'Menuiserie Lambert',
+      usage: { users: 1, assets: 0, monitored_assets: 1, findings_total: 0 },
+      subscription: null,
+      fiche: { name: 'Menuiserie Lambert', is_archived: false },
+    },
+  })
+  platformApi.listMembers.mockResolvedValue({ data: [] })
 }
 
 describe('PlatformAdminPage', () => {
@@ -140,22 +154,16 @@ describe('PlatformAdminPage', () => {
     expect(screen.getByText('Non — plafond atteint')).toBeInTheDocument()
   })
 
-  it('affiche tel quel le motif de refus du serveur sur un 409', async () => {
+  it('ouvre la fiche d’un client depuis la liste', async () => {
     const user = userEvent.setup()
-    const detail =
-      'Cette opération engagerait 17 emplacements de surveillance continue pour un ' +
-      'plafond plateforme de 15. Il en reste 1 disponible(s).'
-    platformApi.subscriptionAction.mockRejectedValue({
-      response: { status: 409, data: { detail } },
-    })
     render(<PlatformAdminPage />)
 
     await user.click(await screen.findByRole('tab', { name: /Clients/ }))
-    await user.click(await screen.findByRole('button', { name: /Activer/ }))
+    await user.click(await screen.findByText('Menuiserie Lambert'))
 
-    // Le message du serveur dit ce qui reste et ce qu'il faut libérer : le
-    // résumer ferait perdre l'information utile à l'exploitant.
-    expect(showToast).toHaveBeenCalledWith({ type: 'error', message: detail })
+    // La fiche charge ses propres données : c'est elle qui porte les
+    // opérations d'écriture (utilisateurs, abonnement, quotas, actions).
+    await waitFor(() => expect(platformApi.clientDetail).toHaveBeenCalledWith(1))
   })
 
   it('garde le titre et les onglets visibles pendant le chargement', async () => {

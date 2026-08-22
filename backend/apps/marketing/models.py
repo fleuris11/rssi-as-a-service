@@ -71,9 +71,7 @@ class DemoRequest(models.Model):
     user_agent = models.CharField(max_length=255, blank=True)
 
     # --- Suivi commercial (phase 11) ---------------------------------------
-    source = models.CharField(
-        max_length=12, choices=Source.choices, default=Source.PUBLIC_FORM
-    )
+    source = models.CharField(max_length=12, choices=Source.choices, default=Source.PUBLIC_FORM)
     phone = models.CharField(max_length=40, blank=True)
     # Motif de perte : la question qu'on se pose en relisant les affaires
     # perdues est « pourquoi », et elle ne se reconstitue pas après coup.
@@ -128,9 +126,7 @@ class ProspectNote(models.Model):
     dans l'ordre. Un champ texte perd les deux au premier copier-coller.
     """
 
-    demo_request = models.ForeignKey(
-        DemoRequest, on_delete=models.CASCADE, related_name="notes"
-    )
+    demo_request = models.ForeignKey(DemoRequest, on_delete=models.CASCADE, related_name="notes")
     body = models.TextField()
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,

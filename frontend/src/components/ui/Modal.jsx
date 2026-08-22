@@ -46,7 +46,11 @@ export default function Modal({ open, onClose, title, children, className = '' }
         aria-modal="true"
         aria-labelledby="modal-title"
         tabIndex={-1}
-        className={`relative w-full max-w-lg rounded-lg bg-surface p-6 shadow-elevated outline-none ${className}`}
+        // ``max-h`` + ``overflow-y-auto`` : sans eux, un formulaire long
+        // (création d'offre, création de client) déborde sous le bas de
+        // l'écran et son bouton de validation devient inatteignable — la
+        // modale n'a alors plus aucune issue que la touche Échap.
+        className={`relative flex max-h-[calc(100vh-3rem)] w-full max-w-lg flex-col overflow-y-auto rounded-lg bg-surface p-6 shadow-elevated outline-none ${className}`}
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           <h2 id="modal-title" className="font-display text-lg font-semibold text-ink-900">

@@ -137,9 +137,7 @@ def create_prospect(*, actor=None, **fields) -> DemoRequest:
 
     payload = {k: v for k, v in fields.items() if k in EDITABLE_PROSPECT_FIELDS}
     payload.update({"company": company, "full_name": full_name, "email": email})
-    return DemoRequest.objects.create(
-        source=DemoRequest.Source.MANUAL, created_by=actor, **payload
-    )
+    return DemoRequest.objects.create(source=DemoRequest.Source.MANUAL, created_by=actor, **payload)
 
 
 def update_prospect(*, prospect: DemoRequest, **fields) -> tuple[DemoRequest, dict]:

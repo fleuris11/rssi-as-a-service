@@ -11,6 +11,7 @@ const DemoRequestPage = lazy(() => import('./marketing/pages/DemoRequestPage'))
 const LegalPage = lazy(() => import('./marketing/pages/LegalPage'))
 const AppRoutes = lazy(() => import('./AppRoutes'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
+const InvitationPage = lazy(() => import('./pages/InvitationPage'))
 const RegisterPage = lazy(() => import('./pages/RegisterPage'))
 
 function RouteFallback() {
@@ -35,6 +36,9 @@ function App() {
         {/* Authentification */}
         <Route path="/connexion" element={<LoginPage />} />
         <Route path="/inscription" element={<RegisterPage />} />
+        {/* Lien d'invitation : public par construction, la personne invitée
+            n'a pas encore de mot de passe. */}
+        <Route path="/invitation/:token" element={<InvitationPage />} />
 
         {/* Application */}
         <Route path="/*" element={<AppRoutes />} />

@@ -281,11 +281,15 @@ def set_trial_end(*, subscription, ends_at, actor=None, reason="") -> Subscripti
     previous = subscription.trial_ends_at
     subscription.trial_ends_at = ends_at
     subscription.save(update_fields=["trial_ends_at", "updated_at"])
+
+    # L'échéance précédente est portée au journal : « prolongé » sans dire
+    # depuis quand ne permet pas de reconstituer une négociation.
+    moved_from = f" (auparavant {previous:%d/%m/%Y})" if previous else ""
     _record_event(
         subscription,
         from_status=subscription.status,
         to_status=subscription.status,
-        reason=reason or f"Échéance d'essai portée au {ends_at:%d/%m/%Y}.",
+        reason=reason or f"Échéance d'essai portée au {ends_at:%d/%m/%Y}{moved_from}.",
         actor=actor,
     )
     return subscription
@@ -333,9 +337,7 @@ def set_quota_overrides(*, subscription, actor=None, **overrides) -> Subscriptio
 
     if "override_monitored_assets" in changed:
         new_quota = changed["override_monitored_assets"]
-        effective = (
-            subscription.plan.monitored_assets if new_quota is None else int(new_quota)
-        )
+        effective = subscription.plan.monitored_assets if new_quota is None else int(new_quota)
         if subscription.is_operational and effective > subscription.monitored_assets_quota:
             capacity.ensure_monitored_slots_available(
                 additional=effective, excluding_subscription_id=subscription.id
@@ -400,9 +402,7 @@ def plan_impact(*, plan, changes: dict) -> dict:
     modifier tous ses clients à l'aveugle — et la question « combien de clients
     est-ce que j'impacte ? » n'a aucune réponse accessible depuis l'interface.
     """
-    subscriptions = list(
-        Subscription.objects.filter(plan=plan).select_related("tenant", "plan")
-    )
+    subscriptions = list(Subscription.objects.filter(plan=plan).select_related("tenant", "plan"))
     rows = []
     lowered = []
 
@@ -423,9 +423,7 @@ def plan_impact(*, plan, changes: dict) -> dict:
             if field not in changes:
                 continue
             override = getattr(subscription, f"override_{field}")
-            current = (
-                override if override is not None else getattr(plan, field)
-            )
+            current = override if override is not None else getattr(plan, field)
             affected[field] = {
                 "current": current,
                 "after": current if override is not None else int(changes[field]),
