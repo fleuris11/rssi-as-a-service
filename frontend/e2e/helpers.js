@@ -104,3 +104,33 @@ export function resetDemoRequestThrottle() {
     { cwd: REPO_ROOT, stdio: 'pipe' }
   )
 }
+
+
+/** Rend au pool les emplacements engagés par les entreprises de test.
+ *
+ * Le pool de surveillance est PARTAGÉ par toute la plateforme (ADR-013), et un
+ * essai en consomme réellement. Sans ce nettoyage, chaque exécution laisse des
+ * abonnements ouverts, et au bout de quelques passages la garde de capacité
+ * refuse — à juste titre — les inscriptions des exécutions suivantes. Le
+ * symptôme ressemble à une régression ; c'en est l'inverse.
+ *
+ * Cible les préfixes utilisés par les parcours, jamais les données de
+ * démonstration ni de vrais clients.
+ */
+export function releaseE2ETenants(prefixes = ["E2E "]) {
+  const script = [
+    "from apps.tenants.models import Tenant",
+    `for prefix in ${JSON.stringify(prefixes)}:`,
+    "    Tenant.objects.filter(name__startswith=prefix).delete()",
+  ].join('\n')
+  try {
+    execFileSync(
+      "docker",
+      ["compose", "exec", "-T", "web", "python", "manage.py", "shell", "--no-imports", "-c", script],
+      { cwd: REPO_ROOT, stdio: "pipe" }
+    )
+  } catch {
+    // Le nettoyage est un confort : son échec ne doit pas faire échouer un
+    // parcours par ailleurs vert.
+  }
+}

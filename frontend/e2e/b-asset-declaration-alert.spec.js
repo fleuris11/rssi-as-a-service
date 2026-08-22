@@ -1,12 +1,13 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
-import {
-  assertNoCriticalViolations,
-  getCurrentTenantSlug,
-  registerNewTenant,
-  simulateAssetDown,
-  uniqueSuffix,
-} from './helpers.js'
+import { assertNoCriticalViolations, getCurrentTenantSlug, registerNewTenant, releaseE2ETenants, simulateAssetDown, uniqueSuffix } from './helpers.js'
+
+// Les emplacements de surveillance engagés par ce parcours retournent au
+// pool partagé : sans cela, les exécutions suivantes se voient refuser
+// l'inscription, et la garde a raison de le faire.
+test.afterAll(() => {
+  releaseE2ETenants()
+})
 
 // Flow (b): déclaration d'actif -> check simulé -> alerte visible.
 // The "check simulé" step goes through the real alert engine

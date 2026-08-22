@@ -155,15 +155,22 @@ test.describe('administration plateforme', () => {
     // La liste a été chargée à l'ouverture de la page : on la recharge après
     // avoir déposé la demande.
     await page.reload()
-    await page.getByRole('tab', { name: /Demandes/ }).click()
+    await page.getByRole('tab', { name: /Prospects/ }).click()
     const card = page.locator('li', { hasText: company })
     await expect(card).toBeVisible()
     await card.getByRole('button', { name: 'Convertir en client' }).click()
 
-    // Le client existe, avec son essai ouvert. On vérifie l'état durable —
-    // la demande devenue « déjà cliente », puis la ligne dans les clients —
-    // plutôt que la notification, qui s'efface d'elle-même.
-    await expect(card.getByText('Déjà cliente')).toBeVisible()
+    // Depuis la phase 11, la conversion ouvre le formulaire de creation
+    // PRE-REMPLI : on ne cree pas un client dans le dos de l'exploitant.
+    const form = page.getByRole('dialog')
+    await expect(form.getByLabel('Nom de l’entreprise')).toHaveValue(company)
+    await form.getByRole('button', { name: 'Créer le client' }).click()
+    // Un lien d'invitation, jamais un mot de passe.
+    await expect(form.getByText(/\/invitation\//)).toBeVisible()
+    await form.getByRole('button', { name: 'Terminé' }).click()
+
+    // On verifie l'etat durable — la ligne dans les clients — plutot que la
+    // notification, qui s'efface d'elle-meme.
     await page.getByRole('tab', { name: /Clients/ }).click()
     const row = page.locator('tr', { hasText: company })
     await expect(row).toBeVisible()
@@ -185,15 +192,20 @@ test.describe('administration plateforme', () => {
     )
 
     await page.reload()
-    await page.getByRole('tab', { name: /Demandes/ }).click()
+    await page.getByRole('tab', { name: /Prospects/ }).click()
     const blocked = page.locator('li', { hasText: secondCompany })
     await blocked.getByRole('button', { name: 'Convertir en client' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Créer le client' }).click()
 
     // Le message doit dire ce qui reste disponible : sans cela, l'exploitant
     // ne sait pas s'il doit libérer un emplacement ou changer de palier.
     await expect(
       page.getByText(/plafond plateforme de \d+\. Il en reste \d+ disponible/)
     ).toBeVisible()
+
+    // Le formulaire reste OUVERT apres un refus : l'exploitant doit pouvoir
+    // corriger sa saisie sans tout retaper. On le ferme pour la suite.
+    await page.getByRole('dialog').getByRole('button', { name: 'Annuler' }).click()
 
     // Et rien n'a été enregistré.
     const created = djangoShell(
@@ -214,7 +226,9 @@ test.describe('administration plateforme', () => {
     await expect(page.getByText('Base de données')).toBeVisible()
 
     // --- 5. Les clés sont décrites, jamais divulguées -----------------------
-    await page.getByRole('tab', { name: /Configuration/ }).click()
+    // L'onglet « Configuration » de la phase 10 a fusionne avec « Reglages »,
+    // qui porte a la fois les valeurs modifiables et l'etat des cles.
+    await page.getByRole('tab', { name: /Réglages/ }).click()
     await expect(page.getByText('Clés et secrets')).toBeVisible()
     const configText = await page.locator('main').innerText()
     expect(configText).not.toMatch(/[A-Za-z0-9_-]{43}=/) // forme d'une clé Fernet

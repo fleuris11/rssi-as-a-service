@@ -1,6 +1,13 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
-import { assertNoCriticalViolations, registerNewTenant, uniqueSuffix } from './helpers.js'
+import { assertNoCriticalViolations, registerNewTenant, releaseE2ETenants, uniqueSuffix } from './helpers.js'
+
+// Les emplacements de surveillance engagés par ce parcours retournent au
+// pool partagé : sans cela, les exécutions suivantes se voient refuser
+// l'inscription, et la garde a raison de le faire.
+test.afterAll(() => {
+  releaseE2ETenants()
+})
 
 // RGAA baseline (mission Phase 5, point 8): the 3 critical-flow specs already
 // scan the pages they pass through, but several principal pages aren't on

@@ -1,6 +1,13 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
-import { assertNoCriticalViolations, registerNewTenant, uniqueSuffix } from './helpers.js'
+import { assertNoCriticalViolations, registerNewTenant, releaseE2ETenants, uniqueSuffix } from './helpers.js'
+
+// Les emplacements de surveillance engagés par ce parcours retournent au
+// pool partagé : sans cela, les exécutions suivantes se voient refuser
+// l'inscription, et la garde a raison de le faire.
+test.afterAll(() => {
+  releaseE2ETenants()
+})
 
 // Flow (c): génération de charte (API mockée) -> relecture -> validation.
 // CLAUDE.md forbids AI calls in the request/response cycle and this suite
