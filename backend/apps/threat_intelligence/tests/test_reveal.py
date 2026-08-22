@@ -26,6 +26,23 @@ from apps.threat_intelligence.providers.base import RawFinding
 
 pytestmark = pytest.mark.django_db
 
+@pytest.fixture(autouse=True)
+def _grant_secret_reveal(settings):
+    """Place les entreprises de ce fichier sur une offre comprenant
+    « Révélation de mot de passe ».
+
+    Porté sur l'OFFRE D'ESSAI du module, et non sur un abonnement précis :
+    plusieurs tests créent une seconde entreprise en cours de route, et elle
+    doit disposer de la même fonctionnalité.
+
+    Sans cette déclaration, ce fichier dépendait silencieusement de l'offre
+    d'essai de production. Le jour où elle a changé, des tests sont passés au
+    rouge en 402 sans que rien ne concerne leur objet. Un test déclare ses
+    préconditions, il ne les hérite pas d'un réglage commercial.
+    """
+    settings.BILLING_DEFAULT_TRIAL_PLAN_CODE = "pilotage"
+
+
 PASSWORD = "Str0ng!Passw0rd123"
 
 
