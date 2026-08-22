@@ -2346,14 +2346,37 @@ modifiables sans redémarrage, corbeille avec durée de conservation, recherche 
   8C et 10) : **7 tests de refus rougissent**, dont le nouveau chemin de création de client et
   l'inscription libre. Garde restaurée, tout revient au vert.
 
+### Ce que la vérification de bout en bout a révélé
+
+Le parcours complet passe (créer une offre → prospect → conversion → invitation → quota →
+suspension → réactivation → retrait → journal), **15 parcours Playwright verts**. Trois défauts
+supplémentaires en sont sortis :
+
+- **L'essai démarrait sur l'offre la plus chère en ressource rare.** « Pilotage » consomme 3 des
+  15 emplacements de la licence : la plateforme n'autorisait donc que **cinq essais au total**, et
+  zéro une fois le jeu de démonstration chargé (13/15 engagés). Le problème existait avant cette
+  phase, mais restait invisible : l'inscription « réussissait » en produisant un compte sans
+  abonnement. C'est le refus explicite qui l'a rendu mesurable. L'essai démarre désormais sur
+  « Veille » (1 emplacement, quinze essais possibles) ; le réglage se change depuis la console.
+- **Deux fichiers de tests héritaient silencieusement de l'offre d'essai de production** pour
+  disposer de leurs fonctionnalités. Changer un réglage commercial faisait rougir treize tests
+  sans rapport avec leur objet. Ils déclarent maintenant leur précondition.
+- **Quatre parcours e2e ne rendaient jamais leurs emplacements** au pool partagé. Chaque exécution
+  saturait un peu plus la plateforme, jusqu'à ce que la garde refuse — à juste titre — les
+  inscriptions suivantes. Nettoyage systématique ajouté.
+
+Deux améliorations d'interface en sont également sorties : la liste des prospects est devenue une
+vraie liste (`ul`/`li`, annoncée comme telle par un lecteur d'écran), et l'onglet « Clés » a été
+supprimé — il affichait la même information que « Réglages », qui porte en plus les valeurs
+modifiables.
+
 ### Reste à faire
 
-- **Parcours Playwright de la phase** (créer une offre → prospect → conversion → invitation →
-  quota → suspension → retrait → journal) : écrit et débogué jusqu'à l'étape 7 sur 8, interrompu
-  par l'arrêt du moteur Docker. À rejouer d'un bout à l'autre.
-- **Extension de `seed_demo_tenant`** : prospects à divers statuts, essai proche de l'expiration.
 - Les points de la phase 10 restent ouverts : paiement réel, informations légales, palier de
   licence.
+- **Une fonction morte traîne dans `apps/threat_intelligence/providers/replay_provider.py`**
+  (`send_test_alert`, docstring incohérente). Présente avant cette session, laissée hors des
+  commits de la phase — à supprimer après confirmation.
 
 ### Difficulté d'environnement
 
