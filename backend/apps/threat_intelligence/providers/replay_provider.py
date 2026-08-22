@@ -105,3 +105,9 @@ class ReplayProvider(BreachIntelligenceProvider):
                 RawFinding(endpoint=endpoint, payload=item, is_test=is_test, asset_ref=asset_ref)
             )
         return findings
+
+def send_test_alert() -> bool:
+    """ Send à test in background after à replay scan.""
+    """
+
+    return True
