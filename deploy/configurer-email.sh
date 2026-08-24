@@ -22,14 +22,29 @@ read -rs motdepasse
 echo
 [ -z "$motdepasse" ] && { echo "Mot de passe vide, abandon." >&2; exit 1; }
 
+# Le nom du serveur SMTP est celui que le serveur ANNONCE, pas l'alias du
+# domaine. Chez la plupart des hébergeurs mutualisés, smtp.<votre-domaine>
+# n'est qu'un alias : le certificat TLS est émis pour le vrai nom de la
+# machine, et la vérification échoue sur l'alias
+# (« Hostname mismatch, certificate is not valid for ... »).
+domaine="${adresse#*@}"
+echo "Détection du serveur SMTP..."
+hote=$(timeout 12 bash -c "exec 3<>/dev/tcp/smtp.$domaine/587; head -1 <&3" 2>/dev/null | awk '{print $2}')
+if [ -z "$hote" ]; then
+    hote="smtp.$domaine"
+    echo "  serveur muet, on garde $hote"
+else
+    echo "  serveur annoncé : $hote"
+fi
+
 cp "$ENV_FILE" "$ENV_FILE.avant-email"
 
-ADRESSE="$adresse" MOTDEPASSE="$motdepasse" python3 - "$ENV_FILE" <<'PY'
+ADRESSE="$adresse" MOTDEPASSE="$motdepasse" HOTE="$hote" python3 - "$ENV_FILE" <<'PY'
 import os, sys
 chemin = sys.argv[1]
 adresse, motdepasse = os.environ["ADRESSE"], os.environ["MOTDEPASSE"]
 valeurs = {
-    "EMAIL_HOST": "smtp.rssiasservice.online",
+    "EMAIL_HOST": os.environ["HOTE"],
     "EMAIL_PORT": "587",
     "EMAIL_USE_TLS": "True",
     "EMAIL_HOST_USER": adresse,
@@ -74,6 +89,14 @@ try:
     )
     print('ENVOI ACCEPTE par le serveur —', n, 'message(s). Verifiez votre boite.')
 except Exception as e:
-    print('ECHEC :', type(e).__name__, '-', str(e)[:220])
+    nom = type(e).__name__
+    print('ECHEC :', nom, '-', str(e)[:220])
+    if 'Authentication' in nom:
+        print()
+        print('Identifiants refuses par le serveur. Causes les plus frequentes :')
+        print('  - la boite email n existe pas encore chez l hebergeur ;')
+        print('  - le mot de passe saisi est celui du PANNEAU CLIENT, pas celui')
+        print('    de la boite email : ce sont deux mots de passe differents ;')
+        print('  - une faute de frappe au collage.')
     raise SystemExit(1)
 "
