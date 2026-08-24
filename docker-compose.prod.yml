@@ -8,6 +8,18 @@
 # depuis la racine du dépôt, avec backend/.env rempli pour la production
 # (DJANGO_ALLOWED_HOSTS=rssiasservice.online,www.rssiasservice.online,
 # ANTHROPIC_API_KEY, AI_PSEUDONYMIZATION_KEY, TOTP_ENCRYPTION_KEY, etc.).
+#
+# PRÉREQUIS, sinon la construction échoue immédiatement : Compose interpole
+# les `${VAR}` ci-dessous depuis un `.env` situé À CÔTÉ de ce fichier (racine
+# du dépôt), et NON depuis `backend/.env` — celui-ci n'est chargé que dans les
+# conteneurs, via `env_file`. Sans cela, POSTGRES_PASSWORD arrive vide et
+# Compose refuse de démarrer.
+#
+#     ln -s backend/.env .env
+#
+# Un lien plutôt qu'une copie : dupliquer les identifiants de base à deux
+# endroits garantit qu'ils divergeront à la première rotation. Le motif `.env`
+# du .gitignore couvre les deux emplacements.
 
 services:
   postgres:
