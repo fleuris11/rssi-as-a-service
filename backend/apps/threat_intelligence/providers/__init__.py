@@ -51,7 +51,18 @@ def resolve_mode() -> str:
     """Turns the configured (possibly "auto") mode into a concrete one.
     Exposed for the back-office/diagnostics so an operator can see which
     source is actually in use, rather than inferring it."""
-    mode = (getattr(settings, "BREACHSENSE_MODE", MODE_AUTO) or MODE_AUTO).strip().lower()
+    # Lu depuis les réglages d'exploitation (phase 11) : basculer entre
+    # « rejeu » et « réel » est une décision d'exploitation courante, elle ne
+    # doit pas demander un accès SSH et un redémarrage. Le registre retombe
+    # sur la variable d'environnement tant que le réglage n'a jamais été
+    # modifié depuis la console.
+    from apps.platform_admin import settings_registry
+
+    try:
+        configured = settings_registry.get(settings_registry.CTI_MODE)
+    except Exception:  # noqa: BLE001 - base indisponible au démarrage
+        configured = getattr(settings, "BREACHSENSE_MODE", MODE_AUTO)
+    mode = (configured or MODE_AUTO).strip().lower()
 
     if mode == MODE_LIVE:
         # A "live" request without a licence can't work — fall back rather

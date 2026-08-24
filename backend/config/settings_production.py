@@ -62,7 +62,13 @@ CORS_ALLOW_ALL_ORIGINS = False
 #
 # Reste volontairement surchargeable : un environnement de préproduction
 # pointant sur cette configuration doit pouvoir repasser en "replay".
-BREACHSENSE_MODE = env("BREACHSENSE_MODE", default="live")
+#
+# AUCUN DÉFAUT, à dessein. Le paragraphe ci-dessus pose que « un .env
+# incomplet ne doit pas basculer silencieusement en live » ; un
+# `default="live"` faisait exactement l'inverse, et le code contredisait son
+# propre commentaire. Sans valeur explicite, le démarrage échoue — bruyamment,
+# et avant d'avoir dépensé la moindre requête.
+BREACHSENSE_MODE = env("BREACHSENSE_MODE")
 
 # --- Garde-fou de démarrage (Phase 8D) --------------------------------------
 #

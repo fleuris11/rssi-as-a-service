@@ -49,6 +49,7 @@ ALERT_CRITICAL_RATIO = "alert_critical_ratio"
 SIGNUP_OPEN = "signup_open"
 MAINTENANCE_MESSAGE = "maintenance_message"
 TRASH_RETENTION_DAYS = "trash_retention_days"
+CTI_MODE = "cti_mode"
 
 REGISTRY: dict[str, SettingSpec] = {
     spec.key: spec
@@ -163,6 +164,20 @@ REGISTRY: dict[str, SettingSpec] = {
             group="Accès à la plateforme",
         ),
         SettingSpec(
+            CTI_MODE,
+            "Source du renseignement sur les fuites",
+            "« live » interroge réellement l'API du fournisseur et consomme "
+            "votre quota mensuel, non reconstituable. « replay » rejoue des "
+            "données enregistrées : rien n'est consommé, mais les résultats "
+            "sont fictifs — à ne jamais servir à un client payant. « null » "
+            "ne renvoie aucune donnée. « auto » choisit replay si des données "
+            "enregistrées existent, sinon null : jamais live.",
+            "text",
+            django_setting="BREACHSENSE_MODE",
+            group="Licence de renseignement",
+            sensitive=True,
+        ),
+        SettingSpec(
             TRASH_RETENTION_DAYS,
             "Durée de conservation en corbeille (jours)",
             "Un objet archivé reste restaurable pendant cette durée avant de "
@@ -238,6 +253,16 @@ def coerce(spec: SettingSpec, raw: Any) -> Any:
         raise SettingError(f"« {spec.label} » attend oui ou non.")
 
     value = "" if raw is None else str(raw).strip()
+
+    if spec.key == CTI_MODE:
+        modes = ("live", "replay", "null", "auto")
+        if value.lower() not in modes:
+            raise SettingError(
+                f"« {spec.label} » accepte uniquement : {', '.join(modes)}. "
+                f"Reçu : {value!r}."
+            )
+        return value.lower()
+
     if len(value) > 2000:
         raise SettingError(f"« {spec.label} » est trop long (2000 caractères maximum).")
     return value

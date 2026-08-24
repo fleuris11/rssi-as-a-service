@@ -479,3 +479,78 @@ class TestSearchAndExport:
             reverse("platform-export", kwargs={"kind": "inconnu"}), **staff_headers
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestCtiModeSetting:
+    """Le mode de renseignement est le réglage le plus coûteux de la
+    plateforme : « live » consomme un quota mensuel non reconstituable."""
+
+    def test_switches_the_source_without_a_restart(self, api_client, staff_headers):
+        from apps.threat_intelligence.providers import resolve_mode
+
+        response = api_client.patch(
+            reverse("platform-settings"),
+            {"key": "cti_mode", "value": "null"},
+            format="json",
+            **staff_headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        # Pris en compte immédiatement : c'est tout l'intérêt d'un réglage
+        # plutôt qu'une variable d'environnement.
+        assert resolve_mode() == "null"
+
+    @pytest.mark.parametrize("mode", ["live", "replay", "null", "auto"])
+    def test_accepts_the_four_documented_modes(self, api_client, staff_headers, mode):
+        response = api_client.patch(
+            reverse("platform-settings"),
+            {"key": "cti_mode", "value": mode},
+            format="json",
+            **staff_headers,
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_refuses_anything_else(self, api_client, staff_headers):
+        """Une faute de frappe ne doit pas dégrader silencieusement la source :
+        « lve » tomberait en 'auto' par la clause défensive du résolveur, et
+        l'exploitant croirait interroger l'API réelle."""
+        response = api_client.patch(
+            reverse("platform-settings"),
+            {"key": "cti_mode", "value": "lve"},
+            format="json",
+            **staff_headers,
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert "live, replay, null, auto" in response.data["detail"]
+
+    def test_live_without_a_licence_degrades_to_no_data(
+        self, api_client, staff_headers, settings
+    ):
+        """Plutôt que de faire échouer chaque analyse en 500 : une
+        configuration incomplète doit dégrader, pas s'effondrer."""
+        from apps.threat_intelligence.providers import resolve_mode
+
+        settings.BREACHSENSE_LICENSE_KEY = ""
+        api_client.patch(
+            reverse("platform-settings"),
+            {"key": "cti_mode", "value": "live"},
+            format="json",
+            **staff_headers,
+        )
+
+        assert resolve_mode() == "null"
+
+    def test_the_change_is_audited(self, api_client, staff_headers):
+        api_client.patch(
+            reverse("platform-settings"),
+            {"key": "cti_mode", "value": "replay"},
+            format="json",
+            **staff_headers,
+        )
+
+        entry = AdminAuditLog.objects.filter(
+            action=AdminAuditLog.Action.SETTING_CHANGED
+        ).first()
+        assert entry is not None
+        assert entry.changes["cti_mode"][1] == "replay"
