@@ -354,7 +354,46 @@ class Command(BaseCommand):
         if not created and tenant.name != DEMO_TENANT_NAME:
             tenant.name = DEMO_TENANT_NAME
             tenant.save(update_fields=["name"])
+
+        self._ensure_subscription(tenant)
         return tenant
+
+    def _ensure_subscription(self, tenant: Tenant) -> None:
+        """Abonnement du tenant de démonstration.
+
+        Sans lui, le client le plus riche du jeu de démonstration est celui
+        dont TOUTES les fonctionnalités sont refusées : les gardes
+        d'entitlements traitent « aucun abonnement » comme un abonnement non
+        opérationnel. La démonstration s'arrête au premier bouton.
+
+        Créé via le service, jamais en écriture directe : la garde de capacité
+        s'applique donc à ce tenant comme à un vrai client, et une plateforme
+        saturée fait échouer le seed au lieu de fabriquer un engagement que la
+        licence ne peut pas honorer.
+        """
+        from apps.billing import services as billing_services
+        from apps.billing.models import Plan, Subscription
+
+        if Subscription.objects.filter(tenant=tenant).exists():
+            return
+
+        # « Pilotage » et non l'offre d'essai par défaut : c'est le client
+        # vitrine, il doit avoir de quoi montrer (synthèse, corrélation,
+        # révélation de mot de passe).
+        plan = Plan.objects.filter(code="pilotage").first()
+        if plan is None:
+            self.stdout.write(
+                self.style.WARNING(
+                    "Offre 'pilotage' absente : tenant de démonstration créé sans abonnement, "
+                    "ses fonctionnalités seront refusées."
+                )
+            )
+            return
+
+        subscription = billing_services.start_trial(tenant=tenant, plan=plan)
+        billing_services.activate(
+            subscription=subscription, reason="Client vitrine de démonstration."
+        )
 
     def _reset_demo_data(self, tenant: Tenant) -> None:
         """Efface uniquement les données CTI/alertes du tenant de démo —
