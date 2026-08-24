@@ -31,11 +31,13 @@ export const LEGAL_ENTITY = {
 }
 
 export const HOSTING = {
-  providerName: '',
-  providerAddress: '',
-  // Renseigné : c'est une caractéristique du service, pas une mention
-  // d'identité — et elle est vérifiable.
-  dataLocation: "Union européenne",
+  // Renseigné parce que VÉRIFIABLE, contrairement à l'identité de l'éditeur :
+  // le serveur est un VPS OVHcloud, région SBG (Strasbourg). Mentions légales
+  // relevées sur le site d'OVH, à revérifier si l'hébergeur change.
+  providerName: 'OVH SAS (OVHcloud)',
+  providerAddress: '2 rue Kellermann, 59100 Roubaix, France — RCS Lille Métropole 424 761 419',
+  // Précis plutôt que vague : le serveur est physiquement à Strasbourg.
+  dataLocation: "France (Strasbourg) — Union européenne",
 }
 
 /**
