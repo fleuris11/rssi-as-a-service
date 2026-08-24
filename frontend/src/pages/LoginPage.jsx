@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AuthLayout from '../components/AuthLayout'
 import Button from '../components/ui/Button'
-import { useAuth } from '../context/AuthContext'
+import { landingPathFor, useAuth } from '../context/AuthContext'
 
 const inputClass =
   'transition-smooth mt-1 w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-brand-600'
@@ -108,11 +108,11 @@ function TwoFactorStep({ challengeToken, onBack }) {
     setError('')
     setSubmitting(true)
     try {
-      await completeTwoFactorLogin(
+      const user = await completeTwoFactorLogin(
         challengeToken,
         useRecoveryCode ? { recoveryCode: code } : { code }
       )
-      navigate('/tableau-de-bord')
+      navigate(landingPathFor(user))
     } catch {
       setError('Code invalide.')
     } finally {
@@ -175,7 +175,9 @@ export default function LoginPage() {
     if (result.mfaRequired) {
       setChallenge(result.challengeToken)
     } else {
-      navigate('/tableau-de-bord')
+      // Chacun arrive dans SON espace : un administrateur plateforme sans
+      // entreprise n'a rien à faire sur un tableau de bord client.
+      navigate(landingPathFor(result.user))
     }
   }
 

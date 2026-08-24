@@ -4,6 +4,24 @@ import { authApi } from '../api/endpoints'
 
 const AuthContext = createContext(null)
 
+/**
+ * Où conduire quelqu'un après sa connexion.
+ *
+ * Un administrateur plateforme n'est, par construction, membre d'aucune
+ * entreprise cliente (ADR-014, ADR-022) : l'envoyer sur le tableau de bord
+ * client lui affichait « Aucune entreprise associée à votre compte » et le
+ * laissait devant un écran vide, sans aucun lien vers sa propre console.
+ *
+ * Un administrateur qui est AUSSI membre d'une entreprise garde son tableau
+ * de bord : il y va pour travailler, la console reste à un clic dans son
+ * en-tête.
+ */
+export function landingPathFor(user) {
+  const hasTenant = (user?.memberships || []).length > 0
+  if (user?.is_staff && !hasTenant) return '/admin/plateforme'
+  return '/tableau-de-bord'
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [tenants, setTenants] = useState([])
@@ -43,8 +61,8 @@ export function AuthProvider({ children }) {
         return { mfaRequired: true, challengeToken: response.data.challenge_token }
       }
       tokenStorage.setTokens(response.data.access, response.data.refresh)
-      await loadMe()
-      return { mfaRequired: false }
+      const me = await loadMe()
+      return { mfaRequired: false, user: me }
     },
     [loadMe]
   )
@@ -53,7 +71,7 @@ export function AuthProvider({ children }) {
     async (challengeToken, credentials) => {
       const response = await authApi.verifyTwoFactor(challengeToken, credentials)
       tokenStorage.setTokens(response.data.access, response.data.refresh)
-      await loadMe()
+      return await loadMe()
     },
     [loadMe]
   )
