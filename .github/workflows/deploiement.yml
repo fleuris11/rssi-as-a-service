@@ -1,0 +1,131 @@
+# Déploiement en production — DÉCLENCHÉ À LA MAIN, jamais sur push.
+#
+# Ce choix est délibéré et documenté (ADR-023) : la production sert à la fois
+# de démonstration commerciale et de support de certification. Un déploiement
+# qui part tout seul pendant une soutenance est un risque sans contrepartie,
+# pour un produit dont le rythme de livraison ne l'exige pas.
+#
+# Le workflow refuse de s'exécuter si la CI n'est pas verte sur le commit visé.
+name: Déploiement production
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "Commit ou branche à déployer (défaut : main)"
+        required: false
+        default: "main"
+      raison:
+        description: "Motif du déploiement (apparaît dans le journal)"
+        required: true
+
+concurrency:
+  # Deux déploiements simultanés se disputeraient le dépôt sur le serveur.
+  group: deploiement-production
+  cancel-in-progress: false
+
+jobs:
+  deployer:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+
+      - name: Résoudre le commit visé
+        id: cible
+        run: |
+          sha=$(git rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Commit visé : $sha"
+          git log --oneline -1 "$sha"
+
+      # Garde-fou principal : on ne déploie pas du rouge. CLAUDE.md l'interdit
+      # pour une fusion ; à plus forte raison pour une mise en production.
+      - name: Vérifier que la CI est verte sur ce commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sha="${{ steps.cible.outputs.sha }}"
+          reponse=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs?head_sha=$sha&status=completed")
+
+          conclusion=$(echo "$reponse" | python3 -c "
+          import json,sys
+          runs = [r for r in json.load(sys.stdin)['workflow_runs'] if r['name'] == 'CI']
+          print(runs[0]['conclusion'] if runs else 'aucune')
+          ")
+
+          echo "Conclusion de la CI : $conclusion"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::La CI n'est pas verte sur $sha (état : $conclusion). Déploiement refusé."
+            exit 1
+          fi
+
+      - name: Préparer la clé SSH de déploiement
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploiement
+          chmod 600 ~/.ssh/deploiement
+          # Empreinte connue plutôt que StrictHostKeyChecking=no : sans elle,
+          # un détournement DNS suffirait à livrer le code à un autre serveur.
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Déployer
+        env:
+          HOTE: ${{ secrets.DEPLOY_HOST }}
+          UTILISATEUR: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/deploiement -o BatchMode=yes "$UTILISATEUR@$HOTE" bash -s <<EOF
+          set -euo pipefail
+          cd ~/rssi
+
+          echo "--- Version en place avant déploiement ---"
+          git log --oneline -1
+
+          git fetch --quiet origin
+          git checkout --quiet ${{ steps.cible.outputs.sha }}
+          chmod +x deploy/*.sh
+
+          echo "--- Version déployée ---"
+          git log --oneline -1
+
+          # --build : le frontend est compilé dans l'image Caddy, un simple
+          # redémarrage ne prendrait pas les changements d'interface.
+          docker compose -f docker-compose.prod.yml up -d --build
+          EOF
+
+      - name: Vérifier depuis l'extérieur
+        run: |
+          # Vu d'Internet, pas depuis le serveur : c'est la seule mesure qui
+          # dit ce qu'un visiteur constate réellement.
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+                   "https://${{ secrets.DEPLOY_DOMAIN }}/healthz" || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "Site opérationnel après $((i * 5))s"
+              curl -s -o /dev/null -w 'Page d accueil : HTTP %{http_code}\n' \
+                   "https://${{ secrets.DEPLOY_DOMAIN }}/"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Le site ne répond pas après le déploiement (dernier code : $code)"
+          exit 1
+
+      - name: Journaliser le déploiement
+        if: always()
+        run: |
+          {
+            echo "### Déploiement production"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Commit | \`${{ steps.cible.outputs.sha }}\` |"
+            echo "| Motif | ${{ inputs.raison }} |"
+            echo "| Déclenché par | @${{ github.actor }} |"
+            echo "| Résultat | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
