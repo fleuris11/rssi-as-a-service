@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 
 const SITE_URL = 'https://rssiasservice.online'
-const DEFAULT_IMAGE = `${SITE_URL}/og-image.svg`
+const DEFAULT_IMAGE = `${SITE_URL}/og-image.jpg`
 
 function setMeta(attr, key, content) {
   if (!content) return

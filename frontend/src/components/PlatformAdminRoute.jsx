@@ -1,5 +1,5 @@
 import { Loader2 } from 'lucide-react'
-import { LogOut, ShieldEllipsis } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { Link, Navigate, NavLink, Outlet } from 'react-router-dom'
 import { STAFF_NAV_ITEMS } from '../config/navigation'
 import { useAuth } from '../context/AuthContext'
@@ -35,8 +35,17 @@ export default function PlatformAdminRoute() {
           qu'on n'est pas dans l'espace d'un client. */}
       <header className="border-b border-brand-800 bg-brand-900">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3">
-          <span className="flex items-center gap-2 text-white">
-            <ShieldEllipsis className="size-5" aria-hidden="true" />
+          <span className="flex items-center gap-3 text-white">
+            {/* Le seul endroit où le logo complet s'affiche tel quel : cet
+                en-tête est déjà sombre, aucune adaptation n'est nécessaire. */}
+            <img
+              src="/logo-complet.webp"
+              srcSet="/logo-complet.webp 1x, /logo-complet@2x.webp 2x"
+              width="132"
+              height="54"
+              alt="RSSI as a Service"
+              className="h-8 w-auto"
+            />
             <span className="font-display text-sm font-semibold">Administration plateforme</span>
           </span>
 

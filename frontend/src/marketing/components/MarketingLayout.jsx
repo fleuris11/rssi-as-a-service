@@ -7,12 +7,19 @@ import { FOOTER, NAV, SITE } from '../content'
 function Wordmark() {
   return (
     <span className="flex items-center gap-2.5">
-      <span
+      {/* Le logo est dessiné sur fond sombre : on le pose dans une tuile
+          foncée plutôt que de le détourer. Un détourage sur un dégradé et un
+          halo laisse toujours un liseré, visible précisément sur la première
+          chose que voit un visiteur. */}
+      <img
+        src="/logo-embleme.webp"
+        srcSet="/logo-embleme.webp 1x, /logo-embleme@2x.webp 2x"
+        width="32"
+        height="32"
+        alt=""
         aria-hidden="true"
-        className="flex size-8 items-center justify-center rounded-md bg-brand-700 font-display text-sm font-semibold text-white"
-      >
-        R
-      </span>
+        className="size-8 rounded-md bg-ink-950 object-cover"
+      />
       <span className="font-display text-base font-semibold text-ink-900">{SITE.name}</span>
     </span>
   )

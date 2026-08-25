@@ -2,7 +2,11 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Le .ico d'abord : c'est ce que réclament les navigateurs anciens et
+         les agrégateurs de flux. Les modernes préfèrent le PNG déclaré ensuite. -->
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" href="/apple-touch-icon.png" sizes="180x180" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <title>RSSI as a Service — Surveillance des fuites de données pour les PME</title>
@@ -25,7 +29,11 @@
       property="og:description"
       content="Nous surveillons neuf sources de renseignement sur les fuites de données et vous alertons en langage clair, avec l'action à mener."
     />
-    <meta property="og:image" content="https://rssiasservice.online/og-image.svg" />
+    <meta property="og:image" content="https://rssiasservice.online/og-image.jpg" />
+    <!-- JPEG et non WebP : plusieurs générateurs d'aperçu de lien (messageries,
+         réseaux) ignorent encore le WebP et n'afficheraient aucune image. -->
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="canonical" href="https://rssiasservice.online/" />
     <meta name="theme-color" content="#2c4a7c" />
