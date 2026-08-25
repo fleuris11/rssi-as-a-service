@@ -9,8 +9,18 @@ import Card, { CardHeader } from '../../../components/ui/Card'
 import Modal from '../../../components/ui/Modal'
 import { useToast } from '../../../components/ui/Toast'
 
-const STATUS_LABEL = { draft: 'Brouillon', published: 'Publiée', retired: 'Retirée' }
-const STATUS_VARIANT = { draft: 'neutral', published: 'ok', retired: 'warning' }
+const STATUS_LABEL = {
+  draft: 'Brouillon',
+  published: 'Publiée',
+  retired: 'Retirée',
+  internal: 'Interne',
+}
+const STATUS_VARIANT = {
+  draft: 'neutral',
+  published: 'ok',
+  retired: 'warning',
+  internal: 'brand',
+}
 const QUOTA_LABEL = {
   monitored_assets: 'emplacements surveillés',
   monthly_scans: 'analyses par mois',
@@ -191,6 +201,10 @@ function PlanEditor({ open, onClose, plan, featureCatalog, onSaved }) {
                 { value: 'draft', label: 'Brouillon (invisible)' },
                 { value: 'published', label: 'Publiée (sur la vitrine)' },
                 { value: 'retired', label: 'Retirée de la vente' },
+                // Attribuable sans être vendue : c'est le cas de l'offre
+                // d'essai (ADR-024), attribuée à l'inscription et absente
+                // de la grille tarifaire publique.
+                { value: 'internal', label: 'Interne (attribuable, non affichée)' },
               ]}
             />
             <Field label="Sur devis" name="is_quote_only" type="checkbox" value={form.is_quote_only} onChange={update} />

@@ -328,14 +328,16 @@ PLATFORM_MONTHLY_SCAN_CAP = env.int("PLATFORM_MONTHLY_SCAN_CAP", default=1000)
 PLATFORM_ALERT_EMAIL = env("PLATFORM_ALERT_EMAIL", default="")
 # Essai ouvert automatiquement à la création d'une entreprise.
 BILLING_TRIAL_DAYS = env.int("BILLING_TRIAL_DAYS", default=14)
-# Offre de l'essai : la MOINS coûteuse en ressource rare, pas la plus
-# vendeuse. Un essai engage de vrais emplacements sur le pool partagé de la
-# licence (ADR-013) : le faire démarrer sur « Pilotage » (3 emplacements)
-# limitait la plateforme à 5 essais au total, et les refusait tous une fois
-# le jeu de démonstration en place. « Veille » (1 emplacement) en autorise
-# quinze. Monter d'offre reste un acte commercial délibéré.
+# Offre de l'essai : une offre DÉDIÉE, pas une offre du catalogue (ADR-024).
+# Aucune des deux ne convenait, et pour des raisons opposées. « Pilotage »
+# engage 3 des 15 emplacements du pool partagé (ADR-013) : cinq essais au
+# total, zéro une fois le jeu de démonstration en place. « Veille » n'en
+# engage qu'un, mais ne contient pas le diagnostic ANSSI — un prospect
+# s'inscrivait donc pour ne pas pouvoir faire la première chose promise.
+# « Essai » sépare les deux contraintes : un emplacement, et les
+# fonctionnalités qui donnent envie de payer.
 # Réglable depuis la console sans redéploiement (settings_registry.TRIAL_PLAN_CODE).
-BILLING_DEFAULT_TRIAL_PLAN_CODE = env("BILLING_DEFAULT_TRIAL_PLAN_CODE", default="veille")
+BILLING_DEFAULT_TRIAL_PLAN_CODE = env("BILLING_DEFAULT_TRIAL_PLAN_CODE", default="essai")
 
 # --- Score d'exposition par actif (Phase 8B, ADR-016) ----------------------
 #

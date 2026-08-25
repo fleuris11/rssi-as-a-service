@@ -30,6 +30,11 @@ class Plan(models.Model):
         DRAFT = "draft", "Brouillon"
         PUBLISHED = "published", "Publiée"
         RETIRED = "retired", "Retirée"
+        # Attribuable, jamais affichée au catalogue public. « Brouillon »
+        # aurait pu servir de repli, mais dire « brouillon » d'une offre
+        # réellement attribuée à de vrais essais serait faux : un statut qui
+        # ment finit par tromper la personne qui administre le catalogue.
+        INTERNAL = "internal", "Interne (non affichée)"
 
     code = models.SlugField(max_length=40, unique=True)
     name = models.CharField(max_length=80)
