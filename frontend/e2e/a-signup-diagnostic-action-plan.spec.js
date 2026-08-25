@@ -1,6 +1,5 @@
-import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
-import { assertNoCriticalViolations, registerNewTenant, releaseE2ETenants, uniqueSuffix } from './helpers.js'
+import { auditAccessibility, registerNewTenant, releaseE2ETenants, uniqueSuffix, waitForContentLoaded } from './helpers.js'
 
 // Les emplacements de surveillance engagés par ce parcours retournent au
 // pool partagé : sans cela, les exécutions suivantes se voient refuser
@@ -36,9 +35,10 @@ test('inscription, diagnostic complet et plan d’action généré', async ({ pa
 
   await page.getByRole('link', { name: 'Diagnostic' }).click()
   await page.waitForURL(/\/diagnostic$/)
+  await waitForContentLoaded(page)
   await expect(page.getByRole('heading', { name: 'Diagnostic de maturité' })).toBeVisible()
 
-  await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+  await auditAccessibility(page)
 
   const finishButton = page.getByRole('button', { name: 'Terminer l’évaluation' })
   const nextButton = page.getByRole('button', { name: 'Suivant' })
@@ -85,11 +85,14 @@ test('inscription, diagnostic complet et plan d’action généré', async ({ pa
   await page.getByRole('link', { name: 'Voir mes résultats' }).click()
 
   await page.waitForURL(/\/resultats\/\d+$/)
+
+  await waitForContentLoaded(page)
   await expect(page.getByRole('heading', { name: 'Résultats' })).toBeVisible()
   await expect(page.getByText('Score global de maturité')).toBeVisible()
 
   await page.getByRole('link', { name: 'Plan d’action' }).click()
   await page.waitForURL(/\/plan-action$/)
+  await waitForContentLoaded(page)
 
   // Every measure was answered "Non" (a full-scope gap), so at least one
   // action card must render — this is what actually proves
@@ -99,5 +102,5 @@ test('inscription, diagnostic complet et plan d’action généré', async ({ pa
   // tenantsApi.listMembers, actionsApi.projectedScore) for 42 items.
   await expect(page.getByText(/^Priorité \d+(\.\d+)?$/).first()).toBeVisible({ timeout: 15_000 })
 
-  await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+  await auditAccessibility(page)
 })

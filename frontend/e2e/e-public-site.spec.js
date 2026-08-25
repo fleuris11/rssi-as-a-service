@@ -1,6 +1,5 @@
-import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
-import { assertNoCriticalViolations, resetDemoRequestThrottle, uniqueSuffix } from './helpers.js'
+import { auditAccessibility, resetDemoRequestThrottle, uniqueSuffix, waitForContentLoaded } from './helpers.js'
 
 // Site vitrine public (phase 9). Deux parcours réels : le visiteur qui
 // découvre le produit et demande une démonstration, et le client existant qui
@@ -11,6 +10,8 @@ test('parcours visiteur : accueil, sections, demande de démonstration', async (
   const suffix = uniqueSuffix()
 
   await page.goto('/')
+
+  await waitForContentLoaded(page)
   await expect(
     page.getByRole('heading', { level: 1, name: /identifiants ont fuité/ })
   ).toBeVisible()
@@ -25,11 +26,12 @@ test('parcours visiteur : accueil, sections, demande de démonstration', async (
   await expect(page.getByText('Le plus demandé')).toBeVisible()
   await expect(page.getByRole('button', { name: /Faut-il installer quelque chose/ })).toBeVisible()
 
-  await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+  await auditAccessibility(page)
 
   // Conversion
   await page.getByRole('link', { name: /Demander une démonstration/ }).first().click()
   await page.waitForURL('**/demonstration')
+  await waitForContentLoaded(page)
   await expect(page.getByRole('heading', { level: 1, name: 'Demander une démonstration' })).toBeVisible()
 
   await page.getByLabel(/Nom et prénom/).fill('Camille Prospect')
@@ -40,7 +42,7 @@ test('parcours visiteur : accueil, sections, demande de démonstration', async (
   await page.getByLabel(/Créneau souhaité/).selectOption('morning')
   await page.getByLabel(/Votre message/).fill('Nous aimerions voir la détection de fuites.')
 
-  await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+  await auditAccessibility(page)
 
   await page.getByRole('button', { name: /Envoyer ma demande/ }).click()
 
@@ -50,9 +52,11 @@ test('parcours visiteur : accueil, sections, demande de démonstration', async (
 
 test('parcours client : accueil vers connexion', async ({ page }) => {
   await page.goto('/')
+  await waitForContentLoaded(page)
 
   await page.getByRole('link', { name: 'Se connecter' }).first().click()
   await page.waitForURL('**/connexion')
+  await waitForContentLoaded(page)
 
   await expect(page.getByLabel('Email')).toBeVisible()
   await expect(page.getByLabel('Mot de passe')).toBeVisible()
@@ -61,6 +65,7 @@ test('parcours client : accueil vers connexion', async ({ page }) => {
 test('la vitrine est lisible sur un écran de téléphone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
+  await waitForContentLoaded(page)
 
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
 
@@ -77,21 +82,24 @@ test('la vitrine est lisible sur un écran de téléphone', async ({ page }) => 
     page.getByRole('link', { name: /Demander une démonstration/ }).last()
   ).toBeVisible()
 
-  await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+  await auditAccessibility(page)
 })
 
 test('les pages légales sont accessibles et annoncent ce qui reste à compléter', async ({
   page,
 }) => {
   await page.goto('/mentions-legales')
+  await waitForContentLoaded(page)
   await expect(page.getByRole('heading', { level: 1, name: 'Mentions légales' })).toBeVisible()
   await expect(page.getByText(/à compléter par l’éditeur/)).toBeVisible()
 
   await page.goto('/confidentialite')
+
+  await waitForContentLoaded(page)
   await expect(
     page.getByRole('heading', { level: 1, name: 'Politique de confidentialité' })
   ).toBeVisible()
   await expect(page.getByText(/90 jours/).first()).toBeVisible()
 
-  await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+  await auditAccessibility(page)
 })

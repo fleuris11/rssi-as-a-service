@@ -1,6 +1,5 @@
-import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
-import { assertNoCriticalViolations, getCurrentTenantSlug, registerNewTenant, releaseE2ETenants, simulateAssetDown, uniqueSuffix } from './helpers.js'
+import { auditAccessibility, getCurrentTenantSlug, registerNewTenant, releaseE2ETenants, simulateAssetDown, uniqueSuffix, waitForContentLoaded } from './helpers.js'
 
 // Les emplacements de surveillance engagés par ce parcours retournent au
 // pool partagé : sans cela, les exécutions suivantes se voient refuser
@@ -26,10 +25,12 @@ test('déclaration d’un actif puis alerte visible après un check en échec', 
   })
 
   await page.goto('/surveillance')
+
+  await waitForContentLoaded(page)
   await expect(page.getByRole('heading', { name: 'Surveillance' })).toBeVisible()
   await expect(page.getByText('Aucune alerte ouverte.')).toBeVisible()
 
-  await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+  await auditAccessibility(page)
 
   // Two "Déclarer un actif" buttons exist while the asset list is empty
   // (the page header action and the EmptyState's own CTA) — .first() picks
@@ -55,5 +56,5 @@ test('déclaration d’un actif puis alerte visible après un check en échec', 
   await expect(page.getByText('1 alerte ouverte.')).toBeVisible()
   await expect(page.getByText('Site indisponible')).toBeVisible()
 
-  await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+  await auditAccessibility(page)
 })

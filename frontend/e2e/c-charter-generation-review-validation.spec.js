@@ -1,6 +1,5 @@
-import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
-import { assertNoCriticalViolations, registerNewTenant, releaseE2ETenants, uniqueSuffix } from './helpers.js'
+import { auditAccessibility, registerNewTenant, releaseE2ETenants, uniqueSuffix, waitForContentLoaded } from './helpers.js'
 
 // Les emplacements de surveillance engagés par ce parcours retournent au
 // pool partagé : sans cela, les exécutions suivantes se voient refuser
@@ -103,9 +102,11 @@ test('génération de charte mockée, relecture puis validation', async ({ page 
   })
 
   await page.goto('/documents')
+
+  await waitForContentLoaded(page)
   await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible()
 
-  await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+  await auditAccessibility(page)
 
   await page.getByRole('button', { name: 'Générer la charte informatique' }).click()
 
@@ -119,7 +120,7 @@ test('génération de charte mockée, relecture puis validation', async ({ page 
   const textarea = page.getByRole('textbox')
   await expect(textarea).toHaveValue(GENERATED_MARKDOWN)
 
-  await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+  await auditAccessibility(page)
 
   // Export PDF (US-4.1, ADR-012) — available before validation too, same as
   // the markdown export.
@@ -133,5 +134,5 @@ test('génération de charte mockée, relecture puis validation', async ({ page 
   await expect(page.getByText('Validé', { exact: true }).first()).toBeVisible()
   await expect(textarea).toHaveAttribute('readonly')
 
-  await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+  await auditAccessibility(page)
 })

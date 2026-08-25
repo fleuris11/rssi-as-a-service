@@ -1,5 +1,13 @@
 export default function Skeleton({ className = '' }) {
-  return <div className={`animate-pulse rounded-md bg-ink-200/70 ${className}`} aria-hidden="true" />
+  return (
+    // `data-loading` : repère stable pour les tests de bout en bout, qui
+    // attendent la fin du chargement plutôt qu'un délai arbitraire.
+    <div
+      className={`animate-pulse rounded-md bg-ink-200/70 ${className}`}
+      aria-hidden="true"
+      data-loading="true"
+    />
+  )
 }
 
 export function SkeletonText({ lines = 3, className = '' }) {

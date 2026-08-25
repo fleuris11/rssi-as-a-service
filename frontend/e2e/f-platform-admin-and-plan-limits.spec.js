@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
-import { registerNewTenant, uniqueSuffix } from './helpers.js'
+import { registerNewTenant, uniqueSuffix, waitForContentLoaded } from './helpers.js'
 
 /**
  * Phase 10 — administration plateforme et limites d'offre, en conditions
@@ -96,10 +96,12 @@ function removeTestTenants() {
 
 async function loginAsPlatformAdmin(page) {
   await page.goto('/connexion')
+  await waitForContentLoaded(page)
   await page.getByLabel('Email').fill(ADMIN_EMAIL)
   await page.getByLabel('Mot de passe').fill(ADMIN_PASSWORD)
   await page.getByRole('button', { name: 'Se connecter' }).click()
   await page.waitForURL(/tableau-de-bord|admin/)
+  await waitForContentLoaded(page)
 }
 
 // Les emplacements de surveillance sont une ressource PARTAGÉE : un test qui
@@ -126,6 +128,7 @@ test.describe('administration plateforme', () => {
 
     // --- 1. L'état du pool partagé, visible en permanence -------------------
     await page.goto('/admin/plateforme')
+    await waitForContentLoaded(page)
     await expect(
       page.getByRole('heading', { name: 'Administration de la plateforme' })
     ).toBeVisible()
@@ -174,7 +177,16 @@ test.describe('administration plateforme', () => {
     await page.getByRole('tab', { name: /Clients/ }).click()
     const row = page.locator('tr', { hasText: company })
     await expect(row).toBeVisible()
-    await expect(row.getByText('Essai')).toBeVisible()
+    // Colonnes : Entreprise | Offre | Statut | Emplacements | Utilisateurs.
+    // Depuis ADR-024 l'offre d'essai s'appelle « Essai » et le statut d'un
+    // essai s'affiche « Essai » : le même mot dans deux colonnes. On cible
+    // donc chaque colonne, ce qui vérifie en plus ce qu'un `getByText`
+    // laissait passer — l'offre attribuée, et pas seulement le statut.
+    await expect(row.getByRole('cell').nth(1)).toHaveText('Essai')
+    await expect(row.getByRole('cell').nth(2)).toHaveText('Essai')
+    // Un seul emplacement engagé sur le pool partagé : c'est ce qui permet
+    // quinze essais simultanés au lieu de cinq.
+    await expect(row.getByRole('cell').nth(3)).toHaveText('1')
 
     // --- 3. Le dépassement est REFUSÉ, pas constaté après coup --------------
     // La plateforme est remplie avec de vrais abonnements jusqu'au plafond de
@@ -272,6 +284,8 @@ test.describe('client sur une offre limitée', () => {
     )
 
     await page.goto('/exposition')
+
+    await waitForContentLoaded(page)
     // La fonctionnalité n'est pas masquée : le client voit qu'elle existe…
     const locked = page.locator('[data-feature-locked="exposure_synthesis"]')
     await expect(locked).toBeVisible()
@@ -301,6 +315,7 @@ test.describe('client sur une offre limitée', () => {
     // On ne prend jamais les données d'un client en otage : la lecture reste
     // ouverte, seules les analyses et la surveillance sont bloquées.
     await page.goto('/tableau-de-bord')
+    await waitForContentLoaded(page)
     await expect(page.getByRole('heading').first()).toBeVisible()
     await expect(page.getByText(/Aucune entreprise associée/)).toHaveCount(0)
 
@@ -327,6 +342,7 @@ test.describe('client sur une offre limitée', () => {
 test.describe('vitrine publique', () => {
   test('affiche la grille tarifaire servie par l’API', async ({ page }) => {
     await page.goto('/')
+    await waitForContentLoaded(page)
     await page.locator('#tarifs').scrollIntoViewIfNeeded()
     await expect(page.getByText('Souverain')).toBeVisible()
     await expect(page.getByText('Sur devis')).toBeVisible()
@@ -334,6 +350,7 @@ test.describe('vitrine publique', () => {
 
   test('énonce ce que le service ne fait pas', async ({ page }) => {
     await page.goto('/securite-donnees')
+    await waitForContentLoaded(page)
     await expect(
       page.getByRole('heading', { name: /Sécurité et traitement des données/ })
     ).toBeVisible()

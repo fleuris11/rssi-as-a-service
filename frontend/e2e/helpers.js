@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,15 +22,92 @@ export function assertNoCriticalViolations(axeResults) {
   const blocking = axeResults.violations.filter((violation) =>
     BLOCKING_IMPACTS.has(violation.impact)
   )
-  if (blocking.length > 0) {
-    const details = blocking
-      .map((v) => {
-        const targets = v.nodes.map((n) => n.target.join(' ')).join(', ')
-        return `- [${v.impact}] ${v.id}: ${v.help} — ${targets}`
-      })
-      .join('\n')
-    throw new Error(`Violations d'accessibilité bloquantes détectées :\n${details}`)
-  }
+  if (blocking.length === 0) return
+
+  // Ce que le message doit contenir pour être exploitable : la RAISON, pas
+  // seulement l'endroit. L'ancien format concaténait les sélecteurs de tous
+  // les nœuds sur une seule ligne — quarante sélecteurs illisibles qui
+  // disaient « ça ne va pas quelque part » sans jamais dire pourquoi.
+  // `failureSummary` porte les chiffres d'axe : contraste obtenu, contraste
+  // attendu, couleurs calculées. Sur un défaut de contraste, c'est la
+  // différence entre chercher et voir.
+  const details = blocking
+    .map((v) => {
+      const exemples = v.nodes
+        .slice(0, 3)
+        .map((n) => `      ${n.target.join(' ')}\n${indenter(n.failureSummary)}`)
+        .join('\n')
+      const reste = v.nodes.length > 3 ? `\n      (+ ${v.nodes.length - 3} autres éléments)` : ''
+      return `- [${v.impact}] ${v.id} — ${v.nodes.length} élément(s) : ${v.help}\n${exemples}${reste}`
+    })
+    .join('\n')
+  throw new Error(`Violations d'accessibilité bloquantes détectées :\n${details}`)
+}
+
+function indenter(texte = '') {
+  return texte
+    .split('\n')
+    .map((ligne) => `        ${ligne.trim()}`)
+    .join('\n')
+}
+
+/**
+ * Attend la fin du chargement d'une page — c'est-à-dire la disparition des
+ * squelettes (`data-loading`, voir `components/ui/Skeleton.jsx`).
+ *
+ * Ce n'est PAS un délai de confort déguisé : la condition attendue est un
+ * état de l'interface, et si le chargement n'aboutit jamais, l'attente
+ * échoue au lieu de laisser passer.
+ *
+ * Nécessaire parce que le premier rendu du tableau de bord demande environ
+ * 6 s sur le poste de développement (contre ~1 s en intégration continue),
+ * au-delà du délai par défaut d'une assertion. La cause de fond est
+ * mesurée et connue : le tableau de bord appelle `/auth/me/` TROIS fois,
+ * `/assessments/` et `/monitoring/dashboard/` deux fois chacun. Attendre ici
+ * ne corrige pas ce gaspillage — c'est une dette ouverte au journal, pas un
+ * problème réglé.
+ */
+export async function waitForContentLoaded(page) {
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-loading="true"]').length === 0,
+    undefined,
+    { timeout: 30_000 }
+  )
+}
+
+/**
+ * Audit d'accessibilité d'une page, une fois celle-ci STABILISÉE.
+ *
+ * L'attente n'est pas un délai de confort : elle porte sur un état défini —
+ * « plus aucune transition CSS en cours ». Sans elle, axe mesure des éléments
+ * en plein fondu (`Reveal`, 700 ms) et calcule le contraste sur une couleur
+ * mélangée au fond. Le symptôme est déroutant : un texte quasi noir
+ * (`text-ink-800`) est signalé en défaut de contraste, ce qui est impossible
+ * une fois l'apparition terminée.
+ *
+ * Ce défaut ne se voit que sur une machine RAPIDE. Le même parcours prend
+ * 2 s en intégration continue et 45 s sur le poste de développement : ici,
+ * les apparitions sont posées depuis longtemps quand axe mesure, et le test
+ * passe. C'est l'inverse du réflexe habituel — ce n'est pas le poste lent qui
+ * révèle la fragilité, c'est le serveur rapide.
+ *
+ * On attend la fin des TRANSITIONS uniquement, jamais des animations : une
+ * animation en boucle (indicateur de chargement) ne se termine par définition
+ * jamais, et attendre sa fin bloquerait indéfiniment.
+ */
+export async function auditAccessibility(page) {
+  await waitForContentLoaded(page)
+  await page.waitForFunction(
+    () =>
+      typeof CSSTransition === 'undefined' ||
+      document
+        .getAnimations()
+        .every((a) => !(a instanceof CSSTransition) || a.playState === 'finished'),
+    undefined,
+    { timeout: 10_000 }
+  )
+  const resultats = await new AxeBuilder({ page }).exclude('svg').analyze()
+  assertNoCriticalViolations(resultats)
 }
 
 /** Fills the registration form and submits — leaves the browser on
@@ -41,6 +119,7 @@ export async function registerNewTenant(page, { companyName, email }) {
   await page.getByLabel('Mot de passe').fill(E2E_PASSWORD)
   await page.getByRole('button', { name: 'Créer mon compte' }).click()
   await page.waitForURL('**/tableau-de-bord')
+  await waitForContentLoaded(page)
 }
 
 /** Reads the freshly-registered user's own tenant slug straight from the

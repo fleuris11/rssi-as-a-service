@@ -1,6 +1,5 @@
-import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
-import { assertNoCriticalViolations, registerNewTenant, releaseE2ETenants, uniqueSuffix } from './helpers.js'
+import { auditAccessibility, registerNewTenant, releaseE2ETenants, uniqueSuffix, waitForContentLoaded } from './helpers.js'
 
 // Les emplacements de surveillance engagés par ce parcours retournent au
 // pool partagé : sans cela, les exécutions suivantes se voient refuser
@@ -17,12 +16,15 @@ test.afterAll(() => {
 // one axe-core pass.
 test('pages publiques (connexion, inscription) sans violation critique', async ({ page }) => {
   await page.goto('/connexion')
+  await waitForContentLoaded(page)
   await expect(page.getByRole('button', { name: 'Se connecter' })).toBeVisible()
-  await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+  await auditAccessibility(page)
 
   await page.goto('/inscription')
+
+  await waitForContentLoaded(page)
   await expect(page.getByRole('button', { name: 'Créer mon compte' })).toBeVisible()
-  await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+  await auditAccessibility(page)
 })
 
 test('pages principales authentifiées sans violation critique', async ({ page }) => {
@@ -50,12 +52,13 @@ test('pages principales authentifiées sans violation critique', async ({ page }
 
   for (const { path, heading, text } of pages) {
     await page.goto(path)
-    if (heading) {
+    await waitForContentLoaded(page)
+        if (heading) {
       await expect(page.getByRole('heading', { name: heading })).toBeVisible()
     }
     if (text) {
       await expect(page.getByText(text, { exact: false })).toBeVisible()
     }
-    await new AxeBuilder({ page }).exclude('svg').analyze().then(assertNoCriticalViolations)
+    await auditAccessibility(page)
   }
 })

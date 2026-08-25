@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
-import { uniqueSuffix } from './helpers.js'
+import { uniqueSuffix, waitForContentLoaded } from './helpers.js'
 
 /**
  * Phase 11 — le parcours qui valide la phase.
@@ -62,11 +62,15 @@ test.describe('console d administration', () => {
     const company = `Console E2E ${suffix}`
 
     await page.goto('/connexion')
+
+    await waitForContentLoaded(page)
     await page.getByLabel('Email').fill(ADMIN_EMAIL)
     await page.getByLabel('Mot de passe').fill(ADMIN_PASSWORD)
     await page.getByRole('button', { name: 'Se connecter' }).click()
     await page.waitForURL(/tableau-de-bord|admin/)
+    await waitForContentLoaded(page)
     await page.goto('/admin/plateforme')
+    await waitForContentLoaded(page)
     await expect(page.getByRole('heading', { name: 'Administration de la plateforme' })).toBeVisible()
 
     // --- 1. Creer une offre de zero -----------------------------------------
