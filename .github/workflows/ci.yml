@@ -257,7 +257,14 @@ jobs:
         run: docker build -t rssi-backend:ci -f backend/Dockerfile backend
 
       - name: Scan image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        # Épinglé au COMMIT, pas au tag. Deux raisons, dont une constatée ici :
+        # le tag « 0.28.0 » a disparu (le projet est passé à des tags préfixés
+        # « v »), et le job a cassé sans qu'une seule ligne de ce dépôt ne
+        # change. Un tag est mutable ; un commit ne l'est pas. Pour l'outil
+        # qui contrôle les vulnérabilités de l'image, c'est aussi la seule
+        # façon d'être sûr d'exécuter le code qu'on a choisi d'exécuter.
+        # Mettre à jour délibérément, en relisant les notes de version.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: rssi-backend:ci
           severity: HIGH,CRITICAL
