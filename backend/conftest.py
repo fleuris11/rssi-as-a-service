@@ -35,6 +35,22 @@ def _breach_secret_encryption_key(settings):
 
 
 @pytest.fixture(autouse=True)
+def _totp_encryption_key(settings):
+    # Clé Fernet fixe et valide, GLOBALE et non cantonnée à
+    # apps/accounts/tests : le chiffrement du secret 2FA est declenche depuis
+    # d'autres apps (creation d'utilisateur, back-office), et plusieurs tests
+    # verifient que cette cle ne fuite pas dans une reponse d'API.
+    #
+    # Sans cela, la suite dependait silencieusement d'un backend/.env local.
+    # En integration continue, ou ce fichier n'existe pas, la cle valait la
+    # chaine vide : le chiffrement echouait, et l'assertion « la cle n'est pas
+    # dans la reponse » devenait toujours fausse (une chaine vide est contenue
+    # dans n'importe quelle chaine). Meme raisonnement que
+    # _breach_secret_encryption_key ci-dessus.
+    settings.TOTP_ENCRYPTION_KEY = "wdnStF9mSlY1ADOjw5Tc_M8-nLQw_ay8TUFePY6rNpo="
+
+
+@pytest.fixture(autouse=True)
 def _clear_cache():
     # DRF throttling (apps.accounts/apps.tenants throttling.py) and the
     # account+IP lockout (apps.accounts.services) both key off the shared
