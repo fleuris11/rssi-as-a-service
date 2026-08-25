@@ -524,9 +524,7 @@ class TestCtiModeSetting:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         assert "live, replay, null, auto" in response.data["detail"]
 
-    def test_live_without_a_licence_degrades_to_no_data(
-        self, api_client, staff_headers, settings
-    ):
+    def test_live_without_a_licence_degrades_to_no_data(self, api_client, staff_headers, settings):
         """Plutôt que de faire échouer chaque analyse en 500 : une
         configuration incomplète doit dégrader, pas s'effondrer."""
         from apps.threat_intelligence.providers import resolve_mode
@@ -549,8 +547,6 @@ class TestCtiModeSetting:
             **staff_headers,
         )
 
-        entry = AdminAuditLog.objects.filter(
-            action=AdminAuditLog.Action.SETTING_CHANGED
-        ).first()
+        entry = AdminAuditLog.objects.filter(action=AdminAuditLog.Action.SETTING_CHANGED).first()
         assert entry is not None
         assert entry.changes["cti_mode"][1] == "replay"

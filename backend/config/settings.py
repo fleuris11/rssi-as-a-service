@@ -309,9 +309,7 @@ BREACH_SECRET_RETENTION_DAYS = env.int("BREACH_SECRET_RETENTION_DAYS", default=9
 # des secrets : c'est une piste d'audit de sécurité (qui a consulté quoi), sa
 # valeur est justement de survivre à la donnée qu'elle protège. Ne contient
 # aucun secret (ADR-014).
-BREACH_REVEAL_AUDIT_RETENTION_DAYS = env.int(
-    "BREACH_REVEAL_AUDIT_RETENTION_DAYS", default=365
-)
+BREACH_REVEAL_AUDIT_RETENTION_DAYS = env.int("BREACH_REVEAL_AUDIT_RETENTION_DAYS", default=365)
 
 # Destinataire des notifications de demande de démonstration (site vitrine).
 # Vide = notification exploitant désactivée (l'accusé de réception au
@@ -354,9 +352,7 @@ EXPOSURE_LEVEL_THRESHOLDS = {
 # Délai minimal entre deux générations de synthèse IA d'exposition pour un
 # même tenant (anti-rebond du bouton « Actualiser l'analyse » — le quota IA
 # par tenant reste le plafond réel, ceci évite juste les clics répétés).
-EXPOSURE_SYNTHESIS_COOLDOWN_MINUTES = env.int(
-    "EXPOSURE_SYNTHESIS_COOLDOWN_MINUTES", default=10
-)
+EXPOSURE_SYNTHESIS_COOLDOWN_MINUTES = env.int("EXPOSURE_SYNTHESIS_COOLDOWN_MINUTES", default=10)
 
 # --- 2FA TOTP (Phase 5, US-1.3, cadrage §6) : clé Fernet chiffrant le
 # secret TOTP au repos — dédiée, distincte de AI_PSEUDONYMIZATION_KEY

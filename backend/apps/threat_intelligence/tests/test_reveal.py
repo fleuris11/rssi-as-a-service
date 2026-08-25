@@ -26,6 +26,7 @@ from apps.threat_intelligence.providers.base import RawFinding
 
 pytestmark = pytest.mark.django_db
 
+
 @pytest.fixture(autouse=True)
 def _grant_secret_reveal(settings):
     """Place les entreprises de ce fichier sur une offre comprenant

@@ -215,9 +215,7 @@ class TestRetentionPolicyIsReadable:
 
 
 class TestKeyRotation:
-    def test_secret_encrypted_with_an_old_key_stays_readable(
-        self, tenant, website_asset, settings
-    ):
+    def test_secret_encrypted_with_an_old_key_stays_readable(self, tenant, website_asset, settings):
         """Le cœur de la rotation sans coupure : la nouvelle clé chiffre, mais
         l'ancienne déchiffre toujours l'existant."""
         settings.BREACH_SECRET_ENCRYPTION_KEYS = [KEY_A]

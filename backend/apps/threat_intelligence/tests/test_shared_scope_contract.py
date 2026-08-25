@@ -78,9 +78,7 @@ class TestAssistantContextScope:
         context = ai_services.build_assistant_context(demo_tenant)
 
         endpoints = {row["type"] for row in context["compromissions_ouvertes"]}
-        expected_labels = {
-            BreachFinding.SourceEndpoint(e).label for e in PRE_INCIDENT_ENDPOINTS
-        }
+        expected_labels = {BreachFinding.SourceEndpoint(e).label for e in PRE_INCIDENT_ENDPOINTS}
         assert expected_labels <= endpoints
 
     def test_assistant_sees_every_open_finding(self, demo_tenant):
@@ -100,9 +98,7 @@ class TestWeatherContextScope:
         context = notifications_services.build_weather_context(demo_tenant)
 
         labels = {row["source_label"] for row in context["open_breach_findings"]}
-        expected_labels = {
-            BreachFinding.SourceEndpoint(e).label for e in PRE_INCIDENT_ENDPOINTS
-        }
+        expected_labels = {BreachFinding.SourceEndpoint(e).label for e in PRE_INCIDENT_ENDPOINTS}
         assert expected_labels <= labels
 
     def test_weather_sees_every_open_finding(self, demo_tenant):

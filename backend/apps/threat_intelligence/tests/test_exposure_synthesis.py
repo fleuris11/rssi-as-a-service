@@ -21,6 +21,7 @@ from apps.threat_intelligence.providers.base import RawFinding
 
 pytestmark = pytest.mark.django_db
 
+
 @pytest.fixture(autouse=True)
 def _grant_exposure_synthesis(settings):
     """Place les entreprises de ce fichier sur une offre comprenant

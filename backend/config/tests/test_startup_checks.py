@@ -116,9 +116,7 @@ class TestDevelopmentLeftovers:
         assert any("*" in error for error in errors)
 
     def test_placeholder_secret_key_is_rejected(self):
-        errors = collect_production_errors(
-            _settings(SECRET_KEY="change-me-to-a-random-value")
-        )
+        errors = collect_production_errors(_settings(SECRET_KEY="change-me-to-a-random-value"))
         assert any("SECRET_KEY" in error for error in errors)
 
 

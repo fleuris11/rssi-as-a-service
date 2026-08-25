@@ -258,8 +258,7 @@ def coerce(spec: SettingSpec, raw: Any) -> Any:
         modes = ("live", "replay", "null", "auto")
         if value.lower() not in modes:
             raise SettingError(
-                f"« {spec.label} » accepte uniquement : {', '.join(modes)}. "
-                f"Reçu : {value!r}."
+                f"« {spec.label} » accepte uniquement : {', '.join(modes)}. Reçu : {value!r}."
             )
         return value.lower()
 

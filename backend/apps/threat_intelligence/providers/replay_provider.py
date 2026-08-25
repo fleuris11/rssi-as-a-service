@@ -106,8 +106,8 @@ class ReplayProvider(BreachIntelligenceProvider):
             )
         return findings
 
+
 def send_test_alert() -> bool:
-    """ Send à test in background after à replay scan.""
-    """
+    """Send à test in background after à replay scan."" """
 
     return True

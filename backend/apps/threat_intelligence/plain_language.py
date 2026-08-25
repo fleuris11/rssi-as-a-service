@@ -128,12 +128,9 @@ _EXPLANATIONS: dict[str, dict[str, str]] = {
         ),
     },
     BreachFinding.SourceEndpoint.WEBHOOK: {
-        "meaning": (
-            "Une compromission a été signalée en temps réel par la surveillance continue."
-        ),
+        "meaning": ("Une compromission a été signalée en temps réel par la surveillance continue."),
         "action": (
-            "Ouvrez le détail pour identifier le compte concerné, puis changez son mot de "
-            "passe."
+            "Ouvrez le détail pour identifier le compte concerné, puis changez son mot de passe."
         ),
     },
     FALLBACK_KEY: {
