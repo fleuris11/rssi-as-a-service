@@ -499,17 +499,41 @@ Puis, une fois ces cinq causes levées, deux autres sont apparues :
 La course aux migrations n'est pas la cause la plus spectaculaire, c'est la
 plus coûteuse : elle empêchait la pile de démarrer, donc **aucun parcours de
 bout en bout ne s'était exécuté en intégration continue depuis des semaines**.
-Deux défauts produits réels attendaient derrière, dont un sérieux :
+Trois défauts réels attendaient derrière :
 
-- **l'essai ne donnait pas accès au diagnostic ANSSI** — un prospect
-  s'inscrivait pour ne pas pouvoir faire la première chose promise (corrigé,
-  ADR-024) ;
+- **le référentiel ANSSI manquait dans tout environnement neuf** — chargé par
+  une commande de gestion que rien n'exécutait automatiquement. Le poste de
+  développement fonctionnait parce que la commande y avait été passée une fois,
+  des mois plus tôt. **Tout nouveau déploiement de production était concerné :
+  pas de référentiel, donc pas de diagnostic.** Le service `migrate` s'en
+  charge désormais, dans les deux fichiers Compose ;
+- **six fonctionnalités vendues ne sont appliquées nulle part** (voir plus
+  bas) ;
 - trois parcours en échec sur des mesures d'accessibilité prises pendant les
   animations d'apparition.
 
-Aucun test unitaire ne pouvait voir le premier : chacun déclare l'offre dont il
-a besoin. **Seul un parcours partant d'une inscription réelle traverse la
-configuration commerciale.**
+Le premier est le plus instructif pour un dossier de déploiement : **une étape
+manuelle exécutée une fois sur le poste de développement devient invisible.**
+Elle ne manque à personne tant qu'aucun environnement n'est reconstruit —
+et elle manque à tous le jour où il l'est.
+
+#### Six fonctionnalités vendues, appliquées nulle part
+
+Sur les neuf clés du registre des fonctionnalités
+(`backend/apps/billing/features.py`), **trois seulement sont lues quelque
+part** : `exposure_synthesis`, `secret_reveal`, `realtime_monitoring`.
+
+`anssi_assessment`, `assistant`, `pdf_export`, `reuse_correlation`,
+`charter_generation` et `extended_history` sont déclarées, affichées dans la
+grille tarifaire, et gardées par rien.
+
+**Un client « Veille » à 89 € obtient donc l'essentiel de ce qui est vendu
+249 € au titre de « Pilotage ».** Ce n'est pas une panne — rien ne casse,
+personne ne se plaint. C'est une fuite commerciale, invisible par
+construction : aucun test ne peut échouer sur une garde qui n'existe pas.
+
+Le registre **donne l'apparence** d'un contrôle d'accès. Seule la recherche des
+points d'usage montre que les deux tiers des clés ne servent à rien.
 
 ### Empêcher la récidive
 
@@ -574,6 +598,7 @@ modèle économe par défaut selon le cadrage Green IT) et licence Breachsense.
 | **Sauvegarde externalisée automatique** | La copie hors serveur est manuelle. | Élevée |
 | **Surveillance externe à activer** | La surveillance interne fonctionne et son alerte a été vérifiée. La sonde externe (UptimeRobot, §11 bis) demande une inscription : sans elle, une panne du serveur lui-même ne déclenche rien. | Élevée |
 | **Relecture juridique** | Les CGV sont une trame minimale ; le contrat de sous-traitance (DPA) reste à rédiger (`docs/legal/README.md`). | Élevée |
+| **Six gardes de fonctionnalité à poser** | `anssi_assessment`, `assistant`, `pdf_export`, `reuse_correlation`, `charter_generation`, `extended_history` sont vendues et appliquées nulle part. Un client « Veille » (89 €) obtient aujourd'hui l'essentiel de « Pilotage » (249 €). À faire **après** ADR-024, sinon poser les gardes casse l'essai. | **Élevée — perte de revenu directe** |
 | **Correctif de la course aux migrations à déployer** | Corrigé dans le dépôt et vérifié sur une base vierge, pas encore appliqué au serveur : la production tourne toujours avec les trois services appliquant les migrations en parallèle. | Élevée |
 | **Protection de la branche `main` à activer** | Marche à suivre au §11 ter. Sans elle, rien n'empêche techniquement de fusionner sur du rouge — ce qui vient de se produire pendant deux semaines. | Élevée |
 | **Palier de licence CTI** | 15 emplacements partagés, dont 13 engagés par le jeu de démonstration. Deux restent disponibles. | Moyenne |

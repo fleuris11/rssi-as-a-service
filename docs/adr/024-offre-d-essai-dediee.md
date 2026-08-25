@@ -14,18 +14,33 @@ convient, et **pour des raisons opposées** :
 | Offre | Emplacements engagés | Diagnostic ANSSI | Conséquence |
 |---|---|---|---|
 | Pilotage | 3 sur 15 | oui | 5 essais possibles au total, **zéro** une fois le jeu de démonstration chargé (13/15 déjà engagés) |
-| Veille | 1 sur 15 | **non** | 15 essais possibles, mais l'inscrit ne peut pas faire le diagnostic |
+| Veille | 1 sur 15 | **non**, d'après le catalogue | 15 essais possibles, mais l'essai porte une offre qui exclut le diagnostic |
 | Souverain | 5 sur 15 | oui | sur devis : n'a pas de sens pour un essai |
 
 La phase 10 a basculé l'essai de « Pilotage » vers « Veille » pour régler le
-premier problème. Elle a créé le second, et personne ne l'a vu pendant deux
-semaines : **un prospect s'inscrivait pour ne pas pouvoir faire la première
-chose qu'on lui avait promise.**
+premier problème, sans voir le second.
 
-Aucun test unitaire ne pouvait le détecter — chacun déclare l'offre dont il a
-besoin, c'est même une bonne pratique posée en phase 10 après un incident
-inverse. Seul un parcours de bout en bout partant d'une inscription réelle
-l'a révélé, et seulement une fois la CI capable d'exécuter ces parcours.
+### Correction d'une erreur d'analyse
+
+Cet ADR a d'abord été rédigé en affirmant qu'un prospect **ne pouvait pas**
+faire le diagnostic pendant son essai. **C'est faux, et il faut le dire.**
+
+Vérification faite, `anssi_assessment` est une clé **déclarée dans le registre
+des fonctionnalités et appliquée nulle part** : aucune vue, aucun sérialiseur,
+aucun composant ne la contrôle. Un client sur « Veille » accède donc
+aujourd'hui au diagnostic, essai ou pas.
+
+Ce n'est pas une bonne nouvelle, c'est un défaut plus large — voir plus bas.
+
+Il n'y avait donc **aucune panne visible** à réparer. Ce qui reste vrai :
+
+- l'essai porte une offre dont le catalogue dit qu'elle **n'inclut pas** le
+  diagnostic ;
+- le jour où cette garde sera posée — et elle doit l'être, c'est la
+  différence vendue entre 89 € et 249 € — **l'essai cassera**, sans que rien
+  dans le code ne change ;
+- l'offre d'essai est donc le **préalable** à l'application des gardes, pas la
+  réparation d'une panne.
 
 ## Le raisonnement
 
@@ -44,10 +59,10 @@ Ce sont deux réglages, pas un.
 
 ### A. Ajouter le diagnostic à « Veille »
 
-Réglerait le symptôme en une ligne. Mais le diagnostic est ce qui distingue
-« Pilotage » (249 €) de « Veille » (89 €) : le donner à 89 € supprime la
-raison de monter d'offre. On corrigerait un défaut produit en détruisant le
-modèle commercial.
+Réglerait la question en une ligne. Mais le diagnostic est ce qui distingue
+« Pilotage » (249 €) de « Veille » (89 €) : le donner à 89 € supprime la raison
+de monter d'offre. Ce serait entériner la situation actuelle — où la garde
+n'est pas appliquée — au lieu de la corriger.
 
 ### B. Revenir à « Pilotage » et augmenter le palier de licence
 
@@ -91,15 +106,29 @@ close sans explication.
 - L'essai devient modifiable depuis la console (fonctionnalités, quotas,
   offre par défaut) sans redéploiement.
 
-## Ce que cet épisode dit du dispositif de test
+## Le vrai défaut découvert au passage
 
-C'est le **deuxième** défaut de cette nature : un réglage commercial juste au
-regard d'une contrainte, faux au regard d'une autre, invisible pour toute la
-suite unitaire. Le premier était la saturation du pool (phase 10).
+En vérifiant si « Veille » bloquait réellement le diagnostic, un problème plus
+sérieux est apparu : **neuf fonctionnalités sont déclarées au registre, trois
+seulement sont appliquées.**
 
-La leçon n'est pas « écrire plus de tests unitaires » — ils auraient continué
-à passer. C'est qu'**un parcours partant d'une inscription réelle est le seul
-qui traverse la configuration commerciale**, et qu'une CI incapable de les
-exécuter ne protège pas de cette classe de défaut. La course aux migrations
-qui empêchait la pile de démarrer en intégration continue (corrigée le même
-jour) coûtait donc bien plus que ce qu'elle affichait.
+| Appliquée | Déclarée mais sans garde |
+|---|---|
+| `exposure_synthesis`, `secret_reveal`, `realtime_monitoring` | `assistant`, `pdf_export`, `reuse_correlation`, `anssi_assessment`, `charter_generation`, `extended_history` |
+
+Autrement dit : **un client « Veille » à 89 € obtient aujourd'hui l'essentiel
+de ce qui est vendu 249 € au titre de « Pilotage ».** Ce n'est pas une panne —
+rien ne casse, tout le monde a tout — c'est une fuite commerciale, invisible
+par construction : aucun test ne peut échouer sur une garde qui n'existe pas,
+et aucun client ne se plaindra d'avoir trop de fonctionnalités.
+
+C'est le mode de défaillance le plus discret de ce projet : le registre des
+fonctionnalités **donne l'apparence** d'un contrôle d'accès. Lire
+`features.py` laisse croire que les offres sont appliquées. Seule la recherche
+des points d'usage montre que six clés sur neuf ne sont lues nulle part.
+
+La suite est traitée hors de cet ADR (voir `docs/deploiement_production.md`
+§10) : poser les six gardes manquantes est un travail à part entière, qui
+touche l'interface autant que l'API, et qui doit être fait **après** que
+l'essai a cessé de dépendre d'une offre du catalogue — sans quoi le poser
+casserait l'essai. C'est précisément ce que cet ADR met en place.

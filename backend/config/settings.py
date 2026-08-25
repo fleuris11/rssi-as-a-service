@@ -332,8 +332,9 @@ BILLING_TRIAL_DAYS = env.int("BILLING_TRIAL_DAYS", default=14)
 # Aucune des deux ne convenait, et pour des raisons opposées. « Pilotage »
 # engage 3 des 15 emplacements du pool partagé (ADR-013) : cinq essais au
 # total, zéro une fois le jeu de démonstration en place. « Veille » n'en
-# engage qu'un, mais ne contient pas le diagnostic ANSSI — un prospect
-# s'inscrivait donc pour ne pas pouvoir faire la première chose promise.
+# engage qu'un, mais son catalogue exclut le diagnostic ANSSI : la garde
+# n'étant pas encore appliquée rien ne cassait, mais l'essai se serait cassé
+# le jour où elle le serait.
 # « Essai » sépare les deux contraintes : un emplacement, et les
 # fonctionnalités qui donnent envie de payer.
 # Réglable depuis la console sans redéploiement (settings_registry.TRIAL_PLAN_CODE).

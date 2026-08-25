@@ -1,14 +1,17 @@
 """Offre d'essai dédiée (ADR-024).
 
 Ce qui est protégé ici est le tout début du parcours commercial : ce qu'un
-prospect peut faire dans les minutes qui suivent son inscription. Le défaut
-corrigé n'était pas une erreur de code — le code faisait exactement ce qu'on
-lui demandait — mais un réglage commercial dont personne ne mesurait la
-conséquence : l'essai démarrait sur une offre qui ne contient pas le
-diagnostic ANSSI, c'est-à-dire l'entrée du produit.
+prospect peut faire dans les minutes qui suivent son inscription.
 
-Aucun test unitaire ne pouvait le voir : chacun déclarait son offre. Seul un
-parcours de bout en bout, partant d'une inscription réelle, l'a révélé.
+L'essai démarrait sur « Veille », une offre dont le catalogue dit qu'elle
+n'inclut PAS le diagnostic ANSSI — l'entrée du produit. Rien ne cassait
+aujourd'hui, parce que la garde `anssi_assessment` est déclarée et appliquée
+nulle part (voir ADR-024). Mais le jour où elle le sera — c'est ce qui
+distingue 89 € de 249 € — l'essai se serait cassé sans qu'une ligne de code
+ne change.
+
+Ces tests fixent donc une précondition : l'essai ne dépend plus d'une offre du
+catalogue, et poser les gardes manquantes ne le mettra pas en panne.
 """
 
 import pytest

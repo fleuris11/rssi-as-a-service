@@ -2437,20 +2437,47 @@ correction :
 Dès que la pile a démarré, deux défauts réels sont apparus, invisibles
 jusque-là.
 
-**1. L'essai ne donnait pas accès au diagnostic (ADR-024).** En phase 10, pour
-éviter la saturation du pool d'emplacements, l'essai avait basculé de
-« Pilotage » (3 emplacements sur 15) vers « Veille » (1). Mais « Veille » ne
-contient pas le diagnostic ANSSI. **Un prospect s'inscrivait donc pour ne pas
-pouvoir faire la première chose qu'on lui avait promise**, et ce depuis deux
-semaines.
+**1. Le référentiel ANSSI manquait dans tout environnement neuf.** Le parcours
+d'inscription échouait sur « Diagnostic indisponible ». Cause : le référentiel
+(10 domaines, 42 mesures) est chargé par une **commande de gestion** que rien
+n'exécute automatiquement. Le poste de développement fonctionnait uniquement
+parce que la commande y avait été passée une fois, il y a des mois. Tout
+environnement frais — intégration continue, **et tout nouveau déploiement de
+production** — n'a donc pas de diagnostic du tout.
 
-Aucun test unitaire ne pouvait le voir : chacun déclare l'offre dont il a
-besoin — bonne pratique posée en phase 10 après un incident inverse.
-Correction : une offre `essai` dédiée, statut `internal` (attribuable, jamais
-affichée au catalogue), un emplacement et les fonctionnalités qui donnent envie
-de payer. La révélation de secret en clair reste hors de l'essai (ADR-014).
+Correction : le service `migrate` applique les migrations **puis** charge le
+référentiel, dans les deux fichiers Compose. La commande est idempotente. Le
+`docker compose up` promis par le README redevient suffisant. Vérifié sur base
+vierge : « Référentiel chargé : 10 domaines, 42 mesures », sortie 0.
 
-**2. Trois parcours en échec sur des défauts de contraste** — en CI seulement.
+**Erreur d'analyse à consigner.** J'ai d'abord attribué cet échec à l'offre
+d'essai, écrit un ADR et un commit sur cette base, avant de vérifier que
+l'échec d'origine disait **déjà** « Diagnostic indisponible » — donc pas un
+blocage d'offre. La cause annoncée était fausse ; l'ADR, le journal et la
+documentation ont été corrigés. Ce qui manquait à ma méthode : comparer la
+capture d'écran de l'échec **avant** ma correction avec celle d'après, au lieu
+de conclure d'un test redevenu vert en local pour d'autres raisons.
+
+**2. Six fonctionnalités vendues sont appliquées nulle part (ADR-024).** En
+vérifiant si « Veille » bloquait réellement le diagnostic, j'ai trouvé bien
+pire : sur les **neuf** clés du registre des fonctionnalités, **trois
+seulement** sont lues quelque part (`exposure_synthesis`, `secret_reveal`,
+`realtime_monitoring`). `anssi_assessment`, `assistant`, `pdf_export`,
+`reuse_correlation`, `charter_generation` et `extended_history` sont déclarées,
+vendues, et gardées par rien.
+
+Conséquence : **un client « Veille » à 89 € obtient l'essentiel de ce qui est
+vendu 249 €.** Rien ne casse, personne ne se plaint — c'est le mode de
+défaillance le plus discret du projet. Le registre *donne l'apparence* d'un
+contrôle d'accès ; seule la recherche des points d'usage montre que les deux
+tiers ne servent à rien.
+
+Correction partielle seulement : une offre `essai` dédiée (statut `internal`,
+un emplacement, les fonctionnalités du parcours), qui est le **préalable** à la
+pose des gardes — les poser aujourd'hui casserait l'essai, puisqu'il porte une
+offre du catalogue qui les exclut. Poser les six gardes reste à faire.
+
+**3. Trois parcours en échec sur des défauts de contraste** — en CI seulement.
 Le symptôme n'avait pas de sens : un texte quasi noir (`text-ink-800`) signalé
 en défaut de contraste. La première hypothèse (les apparitions au défilement)
 a été **infirmée** par une reproduction locale : 28 transitions en cours, dix
