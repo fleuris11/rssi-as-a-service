@@ -409,6 +409,103 @@ git sans bit d'exécution, perdant ce droit à chaque `git pull`.
 
 ---
 
+## 7 bis. Supervision
+
+Deux niveaux, complémentaires et **aucun suffisant seul**.
+
+### Surveillance interne (`deploy/surveillance.sh`, toutes les 5 minutes)
+
+Contrôle ce que l'extérieur ne peut pas voir :
+
+| Contrôle | Ce qu'il détecte |
+|---|---|
+| État des six conteneurs | un service arrêté ou en redémarrage permanent |
+| `/healthz` vu de la machine | l'application ne répond plus |
+| Réponse d'un worker Celery | un worker « running » mais bloqué — cas qu'un contrôle d'état ne voit pas |
+| Occupation du disque (seuil 85 %) | un disque plein casse PostgreSQL tardivement et bruyamment |
+| Échéance du certificat (seuil 10 jours) | un renouvellement automatique qui aurait échoué |
+
+**Alerte après trois échecs consécutifs, jamais au premier** — même règle
+anti-faux positif que les alertes du produit (`CLAUDE.md`). Une seule alerte
+par incident, puis un message de retour à la normale : une alerte répétée
+toutes les cinq minutes cesse d'être lue.
+
+**Limite assumée** : cette surveillance tourne **sur** le serveur qu'elle
+surveille, et son alerte part par le conteneur `web`. Elle ne verra jamais une
+panne du serveur lui-même. C'est précisément pourquoi la suivante n'est pas
+optionnelle.
+
+**Vérifiée réellement** : arrêt contrôlé du worker Celery, trois contrôles en
+échec, alerte émise et acceptée par le serveur SMTP, absence de répétition aux
+contrôles suivants, message de retour à la normale après rétablissement.
+
+### Surveillance externe (UptimeRobot)
+
+Interroge `https://rssiasservice.online/healthz` depuis Internet toutes les
+5 minutes et alerte par email. C'est la seule qui voie une panne du serveur,
+une expiration de domaine ou une rupture réseau.
+
+Offre gratuite : 50 sondes, intervalle de 5 minutes, alertes par email,
+3 mois d'historique. **L'inscription demande une action humaine** — la marche
+à suivre figure au §11 bis.
+
+---
+
+## 7 ter. Intégration continue
+
+### Ce qui est vérifié à chaque poussée
+
+Cinq travaux (`.github/workflows/ci.yml`) : lint et format du backend,
+détection de migrations manquantes, tests unitaires, audit des dépendances
+Python ; lint, compilation et audit du frontend ; tests de composants ;
+parcours de bout en bout sur la pile Docker complète ; analyse de
+vulnérabilités de l'image conteneur.
+
+### La CI est restée rouge deux semaines
+
+Du 11 au 25 août, alors que `CLAUDE.md` interdit de fusionner sur du rouge.
+Des commits ont été fusionnés pendant toute cette période. Quatre causes
+distinctes, toutes réelles :
+
+| Cause | Nature |
+|---|---|
+| `ruff format --check` échouait sur dix fichiers | la vérification locale documentée était `ruff format .`, qui **applique** le format au lieu de **vérifier** qu'il l'est. On pouvait croire avoir vérifié sans l'avoir fait. |
+| `npm audit` : vulnérabilité haute dans `nanoid` | dépendance transitive non mise à jour |
+| `pip-audit` : Django 5.2.16 vulnérable (PYSEC-2026-3717) | exploitable à distance sans authentification |
+| **`TOTP_ENCRYPTION_KEY` absente en intégration continue** | la suite dépendait d'un `backend/.env` présent sur le poste. La fixture qui la simule existait, mais cantonnée à `apps/accounts/tests`. Conséquence secondaire notable : l'assertion « cette clé n'apparaît pas dans la réponse » devenait **toujours fausse**, une chaîne vide étant contenue dans n'importe quelle chaîne — le test censé prouver l'absence de fuite prouvait l'inverse. |
+
+À quoi s'ajoutait une **course aux migrations** : `web`, `worker` et `beat`
+partagent le même point d'entrée et appliquaient donc les migrations **tous les
+trois en parallèle**, se disputant la création des mêmes tables. Le perdant
+s'arrêtait sur `duplicate key value violates unique constraint`. Course, donc
+intermittente — et d'autant plus déroutante que le service survivant faisait
+croire à un démarrage réussi. Un service `migrate` dédié les applique désormais
+une seule fois, les autres attendant qu'il ait terminé.
+
+### Empêcher la récidive
+
+`verifier.sh`, à la racine, reproduit **exactement** ce que la CI contrôle.
+Toute étape ajoutée au workflow doit l'être aussi dans ce script.
+
+```bash
+./verifier.sh          # tout
+./verifier.sh back     # backend seulement
+./verifier.sh front    # frontend seulement
+```
+
+La branche `main` doit par ailleurs être protégée pour exiger une CI verte
+avant fusion — marche à suivre au §11 ter.
+
+### Déploiement
+
+Automatisé mais **déclenché à la main** (`.github/workflows/deploiement.yml`),
+décision documentée en **ADR-023**. Le workflow refuse de s'exécuter si la CI
+n'est pas verte sur le commit visé, se connecte par une clé SSH **dédiée**,
+reconstruit, applique les migrations et vérifie `/healthz` **depuis
+l'extérieur**. Révocation de la clé : voir ADR-023.
+
+---
+
 ## 8. Traçabilité
 
 Sept commits documentent cette mise en production :
@@ -446,10 +543,10 @@ modèle économe par défaut selon le cadrage Green IT) et licence Breachsense.
 | **Identité légale de l'éditeur** | `frontend/src/marketing/legalConfig.js` attend la raison sociale, l'immatriculation et l'adresse. Les pages affichent un bandeau « à compléter » tant qu'elles manquent. | **Bloquant avant toute commercialisation** |
 | **Structure juridique** | Sans entité, aucun encaissement n'est possible. Le produit est prêt, le cadre ne l'est pas. | **Bloquant** |
 | **Sauvegarde externalisée automatique** | La copie hors serveur est manuelle. | Élevée |
+| **Surveillance externe à activer** | La surveillance interne fonctionne et son alerte a été vérifiée. La sonde externe (UptimeRobot, §11 bis) demande une inscription : sans elle, une panne du serveur lui-même ne déclenche rien. | Élevée |
 | **Relecture juridique** | Les CGV sont une trame minimale ; le contrat de sous-traitance (DPA) reste à rédiger (`docs/legal/README.md`). | Élevée |
 | **Palier de licence CTI** | 15 emplacements partagés, dont 13 engagés par le jeu de démonstration. Deux restent disponibles. | Moyenne |
-| **Supervision** | Aucune alerte en cas d'arrêt du service. La console montre l'état, encore faut-il l'ouvrir. | Moyenne |
-| **Intégration continue vers la production** | Le déploiement est manuel (`git pull` + reconstruction). | Faible |
+| **Déploiement continu** | Le déploiement est automatisé mais déclenché à la main, par choix documenté (ADR-023). Trois conditions à réunir avant d'automatiser le déclenchement : CI verte durablement, préproduction, retour arrière automatique. | Faible |
 
 ---
 
@@ -486,6 +583,69 @@ serveur. Caddy obtient le certificat seul, dès que le DNS a propagé.
 
 ---
 
+## 11 bis. Activer la surveillance externe
+
+Cette étape demande une action humaine : la création d'un compte.
+
+1. Aller sur **uptimerobot.com** → **Register for FREE**
+2. Créer le compte avec l'adresse qui doit recevoir les alertes
+3. **Add New Monitor**, avec exactement ces valeurs :
+
+| Champ | Valeur |
+|---|---|
+| Monitor Type | `HTTP(s)` |
+| Friendly Name | `RSSI as a Service — production` |
+| URL | `https://rssiasservice.online/healthz` |
+| Monitoring Interval | `5 minutes` (minimum de l'offre gratuite) |
+| Alert Contacts To Notify | cocher l'adresse email |
+
+4. **Create Monitor**
+
+Pourquoi `/healthz` et non la page d'accueil : cette adresse ne répond `200`
+que si l'application **et** sa base de données répondent. La page d'accueil,
+elle, est un fichier statique servi par Caddy — elle continuerait de s'afficher
+alors que l'application serait morte.
+
+**Vérifier l'alerte, une fois créée.** Une alerte qu'on n'a pas vue se
+déclencher ne prouve rien :
+
+```bash
+ssh ubuntu@152.228.136.251
+cd ~/rssi
+docker compose -f docker-compose.prod.yml stop caddy   # le site devient injoignable
+# attendre l'email (jusqu'a 10 min : detection + confirmation)
+docker compose -f docker-compose.prod.yml start caddy  # retablissement
+```
+
+À faire à un moment choisi, pas pendant une démonstration.
+
+---
+
+## 11 ter. Protéger la branche `main`
+
+À faire dans l'interface GitHub — l'API ne suffit pas sans droits
+d'administration sur le dépôt.
+
+**Settings** → **Branches** → **Add branch protection rule**
+
+| Réglage | Valeur | Raison |
+|---|---|---|
+| Branch name pattern | `main` | |
+| Require status checks to pass before merging | **coché** | c'est le cœur : plus de fusion sur du rouge |
+| ↳ Require branches to be up to date before merging | **coché** | une CI verte sur un code obsolète ne prouve rien |
+| ↳ Status checks | `backend`, `frontend`, `frontend-unit`, `e2e` | les nommer explicitement ; sans cela, un travail supprimé passe inaperçu |
+| Do not allow bypassing the above settings | **coché** | sinon la règle ne s'applique pas à l'administrateur, c'est-à-dire à personne ici |
+
+**Ne pas cocher** « Require a pull request before merging » sur un dépôt à un
+seul mainteneur : cela empêcherait de pousser directement sans apporter de
+relecture — personne d'autre ne relirait.
+
+Les cases de vérification n'apparaissent dans la liste qu'après **au moins une
+exécution** du workflow sur le dépôt. Si la liste est vide, pousser un commit
+et revenir.
+
+---
+
 ## Annexe — Documents liés
 
 | Document | Contenu |
@@ -496,6 +656,7 @@ serveur. Caddy obtient le certificat seul, dès que le DNS a propagé.
 | `docs/adr/015-modes-cti-cassettes-rejouables.md` | modes du fournisseur de renseignement |
 | `docs/adr/021-propagation-des-modifications-d-offre.md` | propagation des modifications d'offre |
 | `docs/adr/022-droits-des-administrateurs-plateforme.md` | modèle de droits des administrateurs |
+| `docs/adr/023-deploiement-declenche-a-la-main.md` | pourquoi le déploiement n'est pas automatique |
 | `docs/legal/README.md` | état des textes juridiques, travail restant |
 | `docs/identite-visuelle/README.md` | logos et déclinaisons |
 | `docs/journal.md` | journal de bord, phase par phase |
