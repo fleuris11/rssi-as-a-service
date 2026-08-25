@@ -147,7 +147,20 @@ def demo_findings_payloads() -> list[tuple[str, dict, int]]:
         (
             "nhi",
             {
-                "token": "AKIADEMOFAKEKEY00000",
+                # Volontairement HORS du format d'une vraie clé AWS
+                # (« AKIA » suivi de 16 caractères alphanumériques) : les
+                # tirets suffisent à rompre le motif. La valeur précédente
+                # respectait ce format et faisait remonter une alerte
+                # « clé AWS critique » à chaque analyse de l'image — à juste
+                # titre, un scanner ne pouvant pas savoir qu'elle est fausse.
+                #
+                # On ne fait donc pas taire la règle : on retire du dépôt ce
+                # qui a la forme d'un identifiant vivant. Museler la règle
+                # l'aurait aussi désactivée le jour d'une VRAIE clé, et une
+                # alerte qu'on prend l'habitude d'ignorer finit par en masquer
+                # une autre. Reste lisible comme un identifiant AWS à l'écran,
+                # et manifestement factice pour un humain.
+                "token": "AKIA-DEMO-JETON-FICTIF",
                 "token_type": "aws_access_key",
                 "platform": "AWS",
                 "category": "service-account",
