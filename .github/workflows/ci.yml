@@ -177,13 +177,55 @@ jobs:
 
       - name: Wait for the backend to be ready
         run: |
+          # Trace de progression : sans elle, un echec au bout de 120 s ne dit
+          # pas si le serveur demarrait lentement ou n'a jamais demarre.
           for i in $(seq 1 60); do
-            if curl -sf http://localhost:8000/healthz >/dev/null; then exit 0; fi
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://localhost:8000/healthz || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "Backend pret apres $((i * 2))s (HTTP $code)"
+              exit 0
+            fi
+            [ $((i % 5)) -eq 0 ] && echo "  ${i}0s ecoulees — dernier code HTTP : $code"
             sleep 2
           done
-          echo "Backend not ready after 120s" >&2
-          docker compose logs web
+          echo "::error::Backend non disponible apres 120 s" >&2
           exit 1
+
+      # Diagnostic execute UNIQUEMENT si l'attente a echoue. On ne devine pas
+      # une cause qu'on peut lire : sans ces informations, l'echec precedent
+      # se resumait a « pas pret », ce qui n'oriente vers rien.
+      - name: Diagnostic (si le backend n'a pas demarre)
+        if: failure()
+        run: |
+          echo "===== Etat des conteneurs ====="
+          docker compose ps -a
+
+          echo "===== Etat de sante et codes de sortie ====="
+          for s in postgres redis web worker beat; do
+            cid=$(docker compose ps -aq "$s" 2>/dev/null | head -1)
+            [ -z "$cid" ] && { echo "$s : aucun conteneur"; continue; }
+            docker inspect "$cid" --format               "$s : {{.State.Status}} | sortie={{.State.ExitCode}} | redemarrages={{.RestartCount}} | sante={{if .State.Health}}{{.State.Health.Status}}{{else}}aucune{{end}}"
+          done
+
+          echo "===== Dernier echec de healthcheck ====="
+          for s in postgres redis worker beat; do
+            cid=$(docker compose ps -aq "$s" 2>/dev/null | head -1)
+            [ -z "$cid" ] && continue
+            docker inspect "$cid" --format               "$s : {{if .State.Health}}{{range .State.Health.Log}}{{.ExitCode}} {{.Output}}{{end}}{{else}}aucun healthcheck{{end}}" 2>/dev/null | tail -3
+          done
+
+          echo "===== Variables vues par Compose (valeurs masquees) ====="
+          # Le defaut n2 de docs/deploiement_production.md : Compose interpole
+          # depuis un .env situe A COTE du fichier compose. Un mot de passe
+          # vide produit une erreur qui ne designe pas la cause.
+          ls -la .env backend/.env 2>&1 || true
+          docker compose config 2>&1 | grep -iE "POSTGRES_(DB|USER)|DATABASE_URL" | sed 's/:[^@]*@/:***@/' | head -5
+
+          echo "===== Journaux, tous services ====="
+          for s in postgres redis web worker beat; do
+            echo "----- $s -----"
+            docker compose logs --no-color --tail=60 "$s" 2>&1 || true
+          done
 
       - name: Run Playwright E2E tests
         working-directory: frontend
