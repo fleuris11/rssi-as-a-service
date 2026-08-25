@@ -2384,3 +2384,142 @@ modifiables.
 figé ne répondant plus à `docker version`). Symptôme connu de cette machine, sans rapport avec le
 code — mais il interrompt les vérifications en conditions réelles, qui sont précisément celles qui
 ont révélé la moitié des défauts ci-dessus.
+
+## 2026-08-25 — Remise au vert de l'intégration continue et supervision de la production
+
+Séance consacrée à une dette qui n'était plus tenable : **la CI était rouge
+depuis le 11 août**, alors que `CLAUDE.md` interdit de fusionner sur du rouge.
+Le dépôt est public et sert de pièce à un dossier de certification ; laisser
+deux semaines d'échecs visibles est en soi un défaut.
+
+### Ce que « la CI est rouge » cachait
+
+Un seul voyant rouge, **cinq causes distinctes**, découvertes en couches
+successives — chacune masquant la suivante :
+
+1. **Format non appliqué** (10 fichiers). `ruff format .` applique, `ruff
+   format --check .` échoue. La commande documentée localement était la
+   première : on pouvait croire avoir vérifié sans l'avoir fait.
+2. **Deux vulnérabilités** remontées par les audits (`nanoid`,
+   Django 5.2.16 → 5.2.17).
+3. **La clé de chiffrement 2FA héritée d'un `backend/.env` local.** En CI,
+   absente, elle valait la chaîne vide — et l'assertion « cette clé n'apparaît
+   pas dans la réponse » devenait **toujours fausse**, une chaîne vide étant
+   contenue dans n'importe quelle chaîne. Le test censé prouver l'absence de
+   fuite prouvait l'inverse.
+4. **Une course aux migrations.** `web`, `worker` et `beat` lançaient tous
+   `migrate` au démarrage. Trois processus créaient la même table :
+   `IntegrityError: duplicate key ... pg_type_typname_nsp_index`. La pile ne
+   démarrait pas, et **aucun parcours de bout en bout n'avait donc tourné en
+   intégration continue depuis des semaines.**
+5. **La configuration de production héritée de l'ambiance**, même mécanisme
+   que le point 3, sur cinq variables cette fois. Invisible tant que les
+   points 1 à 4 masquaient le job.
+
+Le point 4 est le plus coûteux, et pas pour la raison qu'on croit : ce n'est
+pas la panne qui pesait, c'est **ce qu'elle empêchait de voir**. Voir plus bas.
+
+### Méthode : lire le journal, pas deviner
+
+Le diagnostic est venu de la lecture des logs réels de la CI (jeton récupéré
+via `git credential fill`), puis d'une **reproduction locale** avant toute
+correction :
+
+- course aux migrations : rejouée sur une base vierge dans un projet Compose
+  isolé — `migrate` sort en 0, les trois services démarrent, zéro
+  redémarrage ;
+- configuration de production : `backend/.env` mis de côté et environnement
+  reconstitué à l'identique de la CI — l'ancien fichier de test produit
+  **exactement les deux mêmes échecs**, le nouveau passe.
+
+### Ce que la CI a révélé une fois capable d'exécuter les parcours
+
+Dès que la pile a démarré, deux défauts réels sont apparus, invisibles
+jusque-là.
+
+**1. L'essai ne donnait pas accès au diagnostic (ADR-024).** En phase 10, pour
+éviter la saturation du pool d'emplacements, l'essai avait basculé de
+« Pilotage » (3 emplacements sur 15) vers « Veille » (1). Mais « Veille » ne
+contient pas le diagnostic ANSSI. **Un prospect s'inscrivait donc pour ne pas
+pouvoir faire la première chose qu'on lui avait promise**, et ce depuis deux
+semaines.
+
+Aucun test unitaire ne pouvait le voir : chacun déclare l'offre dont il a
+besoin — bonne pratique posée en phase 10 après un incident inverse.
+Correction : une offre `essai` dédiée, statut `internal` (attribuable, jamais
+affichée au catalogue), un emplacement et les fonctionnalités qui donnent envie
+de payer. La révélation de secret en clair reste hors de l'essai (ADR-014).
+
+**2. Trois parcours en échec sur des défauts de contraste** — en CI seulement.
+Le symptôme n'avait pas de sens : un texte quasi noir (`text-ink-800`) signalé
+en défaut de contraste. La première hypothèse (les apparitions au défilement)
+a été **infirmée** par une reproduction locale : 28 transitions en cours, dix
+éléments à opacité intermédiaire, aucune violation.
+
+Ce qui a tranché est un chiffre : **le même parcours dure 2 s en CI et 45 s
+ici.** Localement, les apparitions sont posées depuis longtemps quand axe
+mesure ; en CI, il mesure en plein fondu, donc sur une couleur mélangée au
+fond. C'est l'inverse du réflexe habituel — ce n'est pas la machine lente qui
+révèle la fragilité, c'est la machine rapide. La première reproduction avait
+échoué faute de mesurer au bon instant.
+
+Correction : l'audit attend un **état défini** — plus aucune transition CSS en
+cours, plus aucun squelette de chargement — jamais un délai arbitraire. Les
+animations en boucle sont exclues explicitement : elles ne se terminent jamais.
+
+### Rendre l'échec lisible avant de le corriger
+
+- Le message d'échec d'accessibilité porte désormais les chiffres d'axe
+  (contraste obtenu, attendu, couleurs calculées). L'ancien concaténait
+  quarante sélecteurs sur une ligne : il disait *où*, jamais *pourquoi*.
+- L'attente du backend en CI trace sa progression : un échec au bout de 120 s
+  distingue « démarrait lentement » de « n'a jamais démarré ».
+
+### Empêcher la récidive
+
+- **`verifier.sh`** reproduit exactement ce que la CI contrôle, `--check`
+  compris, et détecte les scripts en fins de ligne Windows. Ce contrôle-là m'a
+  résisté deux fois : `grep -lU` mal cité, puis un `awk` dont l'implémentation
+  Git Bash lit le motif `\r` comme la lettre « r » — il signalait donc tout
+  fichier contenant cette lettre. Un contrôle qui ne contrôle rien est pire que
+  pas de contrôle. Version finale : comparaison du fichier à lui-même privé de
+  ses retours chariot, **vérifiée dans les deux sens** (arbre propre : passe ;
+  fichier piégé : échoue).
+- **Protection de la branche `main`** : marche à suivre écrite
+  (`docs/deploiement_production.md` §11ter) — action humaine, interface GitHub.
+
+### Déploiement et supervision
+
+- **ADR-023** : déploiement automatisé mais **déclenché à la main**. On ne
+  renonce pas à l'automatisation, seulement au déclenchement automatique — la
+  production sert de démonstration commerciale et de support de soutenance. Le
+  workflow **refuse de s'exécuter si la CI n'est pas verte** sur le commit
+  visé, exige un motif, épingle l'empreinte du serveur et vérifie `/healthz`
+  **depuis l'extérieur**.
+- **Clé SSH de déploiement dédiée**, distincte de celle du poste. Révocation
+  documentée dans l'ADR.
+- **Supervision à deux niveaux**, aucun ne suffisant seul : la surveillance
+  interne voit ce que l'extérieur ne peut pas voir (conteneur qui redémarre en
+  boucle, worker muet, disque plein) mais ne verra jamais une panne du serveur
+  — elle tourne dessus.
+- **Alerte vérifiée pour de vrai** : panne provoquée (arrêt du worker Celery),
+  puis constaté qu'aucune alerte ne part au 1er ni au 2e échec, qu'elle part au
+  3e, qu'elle ne se répète pas aux 4e et 5e, et qu'un message de rétablissement
+  suit. Au premier essai, un `head -3` de ma part tuait le script par SIGPIPE
+  et faisait croire que rien n'était parti.
+
+### Reste à faire
+
+- **Le tableau de bord appelle `/auth/me/` trois fois**, `/assessments/` et
+  `/monitoring/dashboard/` deux fois chacun, au même chargement. Mesuré, pas
+  supposé. Premier rendu à 6,3 s sur le poste de développement. Contraire à
+  l'exigence Green IT ; l'attente ajoutée dans les tests contourne le symptôme
+  et ne corrige rien.
+- Supervision externe (UptimeRobot) : marche à suivre écrite (§11bis), reste à
+  activer.
+- Protection de `main` : reste à activer (§11ter).
+- Secrets du dépôt à créer pour le workflow de déploiement : `DEPLOY_SSH_KEY`,
+  `DEPLOY_KNOWN_HOSTS`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_DOMAIN`.
+- Correctif de la course aux migrations à déployer en production.
+- Points antérieurs toujours ouverts : paiement réel, informations légales de
+  l'éditeur, palier de licence.
