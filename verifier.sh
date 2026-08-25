@@ -13,6 +13,10 @@
 #   ./verifier.sh          tout
 #   ./verifier.sh back     backend seulement
 #   ./verifier.sh front    frontend seulement
+#
+# Note : les trois tests d'export PDF (WeasyPrint) échouent sous Windows faute
+# de Pango/Cairo, et passent en conteneur comme en CI. C'est le seul écart
+# connu entre ce script et le résultat de la CI.
 set -uo pipefail
 
 RACINE="$(cd "$(dirname "$0")" && pwd)"
@@ -34,6 +38,34 @@ etape() {
         ECHECS+=("$nom")
     fi
 }
+
+# Fins de ligne des scripts : un fichier en CRLF est inexécutable sous Linux
+# (« /usr/bin/env: 'bash^M': No such file or directory », ou « set: Illegal
+# option - »), messages qui ne désignent pas la cause. Le .gitattributes
+# normalise à la validation, mais une image Docker construite depuis l'arbre
+# de travail lit le fichier tel quel : l'erreur n'apparaît qu'au démarrage du
+# conteneur, souvent en intégration continue.
+#
+# La détection compare le fichier à lui-même privé de ses retours chariot. Ni
+# grep ni awk ne conviennent : le motif dépend de leur implémentation, et
+# l'awk de Git Bash y voit la lettre « r », signalant donc tout fichier
+# contenant cette lettre. Un contrôle qui ne contrôle rien est pire qu'aucun.
+verifier_fins_de_ligne() {
+    local fautifs=""
+    local retour_chariot
+    retour_chariot=$(printf '\015')
+    while IFS= read -r f; do
+        if ! tr -d "$retour_chariot" < "$f" | cmp -s - "$f"; then
+            fautifs="$fautifs    $f"$'\n'
+        fi
+    done < <(find "$RACINE" -name '*.sh' -not -path '*/node_modules/*' -not -path '*/venv/*')
+    [ -z "$fautifs" ] && return 0
+    echo "Scripts avec des fins de ligne Windows (CRLF) :" >&2
+    printf '%s' "$fautifs" >&2
+    return 1
+}
+
+etape "fins de ligne des scripts" verifier_fins_de_ligne
 
 if [ "$PORTEE" = "tout" ] || [ "$PORTEE" = "back" ]; then
     cd "$RACINE/backend"
@@ -60,5 +92,5 @@ if [ ${#ECHECS[@]} -eq 0 ]; then
 fi
 printf '\033[31m✗ %d étape(s) en échec :\033[0m\n' "${#ECHECS[@]}"
 printf '    %s\n' "${ECHECS[@]}"
-printf '\nLa CI échouera. Ne pas fusionner en l'\''état (CLAUDE.md).\n'
+printf '\nLa CI échouera. Ne pas fusionner en l%stat (CLAUDE.md).\n' "'é"
 exit 1

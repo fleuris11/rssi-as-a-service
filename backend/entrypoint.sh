@@ -22,6 +22,15 @@ while True:
         time.sleep(1)
 PYEOF
 
-python manage.py migrate --noinput
-
+# Les migrations NE sont PLUS appliquees ici.
+#
+# web, worker et beat partagent cet entrypoint : ils les executaient donc tous
+# les trois en parallele, se disputant la creation des memes tables. Le
+# perdant s'arretait sur « duplicate key value violates unique constraint
+# pg_type_typname_nsp_index ». Une course, donc intermittente, et d'autant
+# plus deroutante que le service survivant faisait croire a un demarrage
+# reussi.
+#
+# Un service « migrate » dedie les applique une seule fois ; les autres
+# attendent qu'il ait termine (depends_on: service_completed_successfully).
 exec "$@"

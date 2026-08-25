@@ -27,6 +27,22 @@ services:
     ports:
       - "6379:6379"
 
+  # Applique les migrations UNE SEULE FOIS, avant que web/worker/beat ne
+  # demarrent. Sans ce service dedie, les trois les appliquaient en parallele
+  # et se disputaient la creation des memes tables (voir backend/entrypoint.sh).
+  migrate:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-rssiasservice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rssiasservice}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: python manage.py migrate --noinput
+    restart: "no"
+
   web:
     build: ./backend
     env_file:
@@ -44,6 +60,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
     volumes:
@@ -64,6 +82,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - ./backend:/app
     # Files séparées (cadrage §4.4) : un fournisseur IA en incident ne doit
@@ -93,6 +113,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - ./backend:/app
     command: celery -A config beat --loglevel=info --schedule=/tmp/celerybeat-schedule --pidfile=
