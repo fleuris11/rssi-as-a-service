@@ -464,8 +464,13 @@ vulnérabilités de l'image conteneur.
 ### La CI est restée rouge deux semaines
 
 Du 11 au 25 août, alors que `CLAUDE.md` interdit de fusionner sur du rouge.
-Des commits ont été fusionnés pendant toute cette période. Quatre causes
-distinctes, toutes réelles :
+Des commits ont été fusionnés pendant toute cette période.
+
+**Un seul voyant rouge, six causes distinctes**, découvertes en couches
+successives : chacune masquait la suivante, et il a fallu corriger les quatre
+premières pour seulement *voir* les deux dernières. C'est la leçon principale
+de cet épisode — un indicateur binaire ne dit pas combien de problèmes il
+recouvre, et le laisser rouge revient à s'interdire de le savoir.
 
 | Cause | Nature |
 |---|---|
@@ -481,6 +486,30 @@ s'arrêtait sur `duplicate key value violates unique constraint`. Course, donc
 intermittente — et d'autant plus déroutante que le service survivant faisait
 croire à un démarrage réussi. Un service `migrate` dédié les applique désormais
 une seule fois, les autres attendant qu'il ait terminé.
+
+Puis, une fois ces cinq causes levées, deux autres sont apparues :
+
+| Cause | Nature |
+|---|---|
+| **Cinq variables de production héritées de l'ambiance** | même mécanisme que `TOTP_ENCRYPTION_KEY`, sur les tests de `config/settings_production.py`. Second défaut au passage : le test « une variable manquante fait échouer le démarrage » plaçait l'import **hors** du bloc qui devait capturer l'exception ; il ne fonctionnait que si son voisin avait réussi et laissé le module en cache. Un test dont le résultat dépend de l'ordre ne prouve rien. |
+| **Le tag `aquasecurity/trivy-action@0.28.0` a disparu** | le projet est passé à des tags préfixés `v`. Le job d'analyse d'image a cassé **sans qu'une ligne de ce dépôt ne change**. Il était par ailleurs invisible depuis le 11 août : dépendant du job `backend` qui échouait, il était « ignoré » et non « en échec ». L'action est désormais épinglée au **commit**, pas au tag. |
+
+#### Ce que la panne empêchait de voir
+
+La course aux migrations n'est pas la cause la plus spectaculaire, c'est la
+plus coûteuse : elle empêchait la pile de démarrer, donc **aucun parcours de
+bout en bout ne s'était exécuté en intégration continue depuis des semaines**.
+Deux défauts produits réels attendaient derrière, dont un sérieux :
+
+- **l'essai ne donnait pas accès au diagnostic ANSSI** — un prospect
+  s'inscrivait pour ne pas pouvoir faire la première chose promise (corrigé,
+  ADR-024) ;
+- trois parcours en échec sur des mesures d'accessibilité prises pendant les
+  animations d'apparition.
+
+Aucun test unitaire ne pouvait voir le premier : chacun déclare l'offre dont il
+a besoin. **Seul un parcours partant d'une inscription réelle traverse la
+configuration commerciale.**
 
 ### Empêcher la récidive
 
@@ -545,7 +574,10 @@ modèle économe par défaut selon le cadrage Green IT) et licence Breachsense.
 | **Sauvegarde externalisée automatique** | La copie hors serveur est manuelle. | Élevée |
 | **Surveillance externe à activer** | La surveillance interne fonctionne et son alerte a été vérifiée. La sonde externe (UptimeRobot, §11 bis) demande une inscription : sans elle, une panne du serveur lui-même ne déclenche rien. | Élevée |
 | **Relecture juridique** | Les CGV sont une trame minimale ; le contrat de sous-traitance (DPA) reste à rédiger (`docs/legal/README.md`). | Élevée |
+| **Correctif de la course aux migrations à déployer** | Corrigé dans le dépôt et vérifié sur une base vierge, pas encore appliqué au serveur : la production tourne toujours avec les trois services appliquant les migrations en parallèle. | Élevée |
+| **Protection de la branche `main` à activer** | Marche à suivre au §11 ter. Sans elle, rien n'empêche techniquement de fusionner sur du rouge — ce qui vient de se produire pendant deux semaines. | Élevée |
 | **Palier de licence CTI** | 15 emplacements partagés, dont 13 engagés par le jeu de démonstration. Deux restent disponibles. | Moyenne |
+| **Appels d'API redondants au tableau de bord** | Mesuré : `/auth/me/` appelé **trois fois**, `/assessments/` et `/monitoring/dashboard/` deux fois chacun, au même chargement. Premier rendu à 6,3 s sur un poste lent. Contraire à l'exigence Green IT (budget de performance frontend). | Moyenne |
 | **Déploiement continu** | Le déploiement est automatisé mais déclenché à la main, par choix documenté (ADR-023). Trois conditions à réunir avant d'automatiser le déclenchement : CI verte durablement, préproduction, retour arrière automatique. | Faible |
 
 ---
