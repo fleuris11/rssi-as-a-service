@@ -59,7 +59,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: python manage.py migrate --noinput
+    # Migrations PUIS référentiel ANSSI. Le référentiel n'est pas une donnée
+    # de démonstration : sans lui, le diagnostic — l'entrée du produit — est
+    # indisponible. Le laisser à une commande qu'on lance à la main signifiait
+    # qu'il manquait dans tout environnement neuf, intégration continue
+    # comprise, et que le poste de développement fonctionnait seulement parce
+    # que la commande y avait été passée une fois. Idempotent
+    # (`update_or_create`) : rejouable à chaque démarrage sans effet de bord.
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py load_anssi_referential"
     restart: "no"
 
   web:
