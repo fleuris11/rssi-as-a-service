@@ -598,7 +598,8 @@ modèle économe par défaut selon le cadrage Green IT) et licence Breachsense.
 | **Sauvegarde externalisée automatique** | La copie hors serveur est manuelle. | Élevée |
 | **Surveillance externe à activer** | La surveillance interne fonctionne et son alerte a été vérifiée. La sonde externe (UptimeRobot, §11 bis) demande une inscription : sans elle, une panne du serveur lui-même ne déclenche rien. | Élevée |
 | **Relecture juridique** | Les CGV sont une trame minimale ; le contrat de sous-traitance (DPA) reste à rédiger (`docs/legal/README.md`). | Élevée |
-| **Six gardes de fonctionnalité à poser** | `anssi_assessment`, `assistant`, `pdf_export`, `reuse_correlation`, `charter_generation`, `extended_history` sont vendues et appliquées nulle part. Un client « Veille » (89 €) obtient aujourd'hui l'essentiel de « Pilotage » (249 €). À faire **après** ADR-024, sinon poser les gardes casse l'essai. | **Élevée — perte de revenu directe** |
+| **Six gardes de fonctionnalité à poser** | `anssi_assessment`, `assistant`, `pdf_export`, `reuse_correlation`, `charter_generation` sont vendues et appliquées nulle part. Un client « Veille » (89 €) obtient aujourd'hui l'essentiel de « Pilotage » (249 €). **Bloqué par la ligne suivante.** La sixième, `extended_history`, fait exception : clé sans référent, retrait recommandé plutôt que garde (analyse dans `apps/billing/features.py`). | **Élevée — perte de revenu directe** |
+| **ADR-024 et la bascule des essais à déployer** | L'offre `essai` (migration 0003) et la bascule des essais déjà ouverts (migration 0004, commande `basculer_essais`) sont dans le dépôt, testées, répétées sur une base reconstituée à l'identique de la production. **La production tourne onze commits en arrière** et ne connaît pas l'offre `essai`. Préalable strict à la pose des gardes : les poser avant casserait les essais en cours. | **Élevée — bloque la ligne précédente** |
 | **Correctif de la course aux migrations à déployer** | Corrigé dans le dépôt et vérifié sur une base vierge, pas encore appliqué au serveur : la production tourne toujours avec les trois services appliquant les migrations en parallèle. | Élevée |
 | **Protection de la branche `main` à activer** | Marche à suivre au §11 ter. Sans elle, rien n'empêche techniquement de fusionner sur du rouge — ce qui vient de se produire pendant deux semaines. | Élevée |
 | **Palier de licence CTI** | 15 emplacements partagés, dont 13 engagés par le jeu de démonstration. Deux restent disponibles. | Moyenne |
@@ -626,9 +627,15 @@ ln -s backend/.env .env
 
 docker compose -f docker-compose.prod.yml up -d --build
 
-# Données de démonstration (facultatif, refusé si DEBUG=False sans le drapeau)
+# Le référentiel ANSSI est chargé automatiquement par le service `migrate`
+# depuis le 25/08 ; la commande ci-dessous ne sert qu'au rattrapage et elle est
+# idempotente. Ce n'est PAS une donnée de démonstration : sans référentiel, le
+# diagnostic n'existe pas et l'inscription échoue sur « Diagnostic
+# indisponible ».
 docker compose -f docker-compose.prod.yml exec web \
     python manage.py load_anssi_referential
+
+# Données de démonstration (facultatif, refusé si DEBUG=False sans le drapeau)
 docker compose -f docker-compose.prod.yml exec web \
     python manage.py seed_demo_tenant --allow-production
 docker compose -f docker-compose.prod.yml exec web \

@@ -2550,3 +2550,160 @@ animations en boucle sont exclues explicitement : elles ne se terminent jamais.
 - Correctif de la course aux migrations à déployer en production.
 - Points antérieurs toujours ouverts : paiement réel, informations légales de
   l'éditeur, palier de licence.
+
+---
+
+## 2026-08-26 — Phase 12 (préalables) : bascule des essais, et une promesse sans référent
+
+Séance ouverte sur la pose des six gardes de fonctionnalité manquantes.
+**Elle ne les a pas posées** : le préalable annoncé par ADR-024 n'était pas
+rempli. Ce qui suit est le travail qui rend cette pose possible, plus deux
+constats trouvés en chemin.
+
+### Le préalable n'était pas rempli, et il fallait le prouver
+
+ADR-024 (offre d'essai dédiée) est le préalable à la pose des gardes : sans
+elle, l'essai porte une offre du catalogue qui les exclut, et poser les gardes
+casse l'essai. Le code est dans le dépôt depuis le 25 août. **Il n'est pas en
+production.** Trois vérifications indépendantes, plutôt qu'une déduction :
+
+1. **Le workflow de déploiement n'a jamais tourné** — `total_count: 0` sur
+   l'API GitHub Actions.
+2. **Le paquet JavaScript servi en production est antérieur au commit.** Le
+   fragment `AppRoutes-*.js` contient `Brouillon (invisible)` et
+   `Publiée (sur la vitrine)`, mais pas `Interne (attribuable, non affichée)`,
+   la ligne ajoutée par `f7d0fbf`.
+3. **Les horodatages concordent** : build de production à 12 h 30, commit
+   ADR-024 à 20 h 02, le même jour.
+
+Confirmé ensuite directement sur le serveur : `~/rssi` est sur `62f91bc`,
+**onze commits en retard**, et le catalogue en base ne contient que `veille`,
+`pilotage`, `souverain` — pas d'offre `essai`.
+
+L'enseignement n'est pas « il fallait déployer ». C'est que **« c'est dans le
+dépôt » et « c'est en production » sont deux affirmations différentes**, et
+qu'un projet à déploiement manuel (ADR-023) doit vérifier la seconde avant de
+bâtir dessus. Le décalage était déjà écrit dans `deploiement_production.md`
+§10 — pour un autre correctif — sans que personne n'en tire la conséquence
+pour celui-ci.
+
+### Un second trou, que le déploiement seul n'aurait pas bouché
+
+La migration 0003 **crée** l'offre `essai` et fait pointer le réglage dessus.
+Cela ne vaut que pour les inscriptions **futures** : un essai déjà ouvert
+reste sur l'offre qui le portait. Déployer ADR-024 puis poser les gardes
+aurait donc quand même cassé les essais en cours — le préalable ne réparait
+que la moitié du problème qu'il annonçait.
+
+Relevé en production : **un** essai concerné, `Demo — Agence Novaé`, sur
+« Veille ».
+
+D'où `apps/billing/trial_migration.py` et la migration `0004`, avec deux
+écarts assumés par rapport à `services.change_plan` :
+
+- **les surcharges sont conservées** (`change_plan` les efface, à raison :
+  elles appartenaient à l'ancienne négociation). Ici personne n'a renégocié —
+  c'est la correction d'un défaut de configuration. Effacer un
+  `override_features` posé à la main retirerait à un client ce qu'un
+  exploitant lui avait délibérément accordé, soit exactement ce que cette
+  bascule existe pour empêcher ;
+- **aucun contrôle de capacité**, parce que la bascule ne peut pas augmenter
+  l'engagement : elle est **refusée** si l'offre d'essai réclame plus
+  d'emplacements que l'offre quittée. L'offre d'essai étant modifiable en
+  console sans redéploiement, ce refus n'est pas théorique.
+
+Répétition sur base réelle, dans l'état exact de la production (six
+abonnements reconstitués) : un seul déplacé, nommé dans la sortie, une seule
+trace `SubscriptionEvent`, seconde passe sans effet.
+
+### La neutralisation des gardes a trouvé ce que dix-neuf tests verts ne montraient pas
+
+Méthode des phases 8C, 10 et 11 : casser chaque garde une par une et vérifier
+qu'un test rougit. Sept neutralisations, **deux n'ont rien fait rougir**.
+
+- **Une était un défaut de ma sonde** : j'avais remplacé
+  `rapport.empechement = (...)` par `rapport.empechement = "" or (...)`, qui
+  vaut exactement la même chose. Une sonde qui ne sonde rien conclut toujours
+  au vert — même piège que l'`awk` de la séance précédente.
+- **L'autre était un vrai trou.** Supprimer l'exclusion « déjà sur l'offre
+  d'essai » ne cassait aucun test, parce que la protection des offres
+  **internes** rattrapait le cas — par coïncidence, l'offre d'essai étant
+  interne. Le jour où quelqu'un la publierait depuis la console,
+  l'idempotence tomberait sans qu'un test ne le signale, et chaque passe
+  écrirait un changement d'offre fictif dans l'historique du client. Test
+  ajouté ; il rougit quand on retire l'exclusion.
+
+Deux gardes en apparence indépendantes se couvraient l'une l'autre : la suite
+verte ne le disait pas, et n'aurait pas pu le dire.
+
+### `extended_history` : pas une notion floue, une promesse sans référent
+
+Il fallait trancher la définition avant de poser la garde. Recherche faite,
+**il n'y a rien à définir** :
+
+- aucune rétention par client — les trois réglages de rétention (secrets,
+  audit de révélation, corbeille) sont des réglages **plateforme**, identiques
+  pour tous ;
+- aucune purge de l'historique métier — la purge de phase 8C efface le
+  *secret* d'une fuite, jamais la fuite ;
+- aucune fenêtre d'historique paramétrable — la seule fenêtre du produit est
+  le taux de disponibilité sur 24 h, en dur, la même pour toutes les offres ;
+- aucun rollup de série temporelle : cible Green IT, pas fonctionnalité
+  livrée.
+
+Tout le monde a déjà l'historique complet, pour toujours. « Étendu » ne se
+distingue de rien.
+
+Ce n'était donc pas le risque redouté (une notion inséparable d'un quota) :
+`monthly_scans` compte des analyses consommées dans le mois, il ne coupe aucun
+historique. C'est plus embarrassant — **une promesse affichée sur la grille
+tarifaire publique, sans rien derrière.**
+
+Et la définir se heurte à une règle qu'on ne veut pas plier : une garde
+d'historique consisterait à **masquer à un client des données que son propre
+compte détient déjà**, alors que la règle des six gardes est « on ne prend
+jamais en otage les données existantes, la lecture reste ouverte ». Les deux
+ne tiennent pas ensemble.
+
+Analyse consignée dans le registre. **Retrait recommandé, non appliqué** :
+c'est une décision commerciale, et retirer la clé la fait disparaître de
+« Souverain » (`sanitize` ignore les clés inconnues), donc de la grille
+publique.
+
+### Vérification demandée : le référentiel ANSSI en production
+
+Interrogé directement : **1 référentiel, 10 domaines, 42 mesures.** Le
+diagnostic est disponible en ligne aujourd'hui — le défaut trouvé à la séance
+précédente concernait tout environnement *neuf*, pas la production, chargée à
+la main lors de sa mise en service.
+
+Au passage, `deploiement_production.md` §11 rangeait `load_anssi_referential`
+sous « Données de démonstration (facultatif) ». C'est faux : le référentiel
+est une donnée de **fonctionnement**, sans laquelle le diagnostic n'existe
+pas. Corrigé.
+
+### Un désaccord à trancher, pas à masquer
+
+`Demo — Agence Novaé` est à la fois **l'un des trois clients « Veille » de
+démonstration** (à garder en l'état, pour montrer six tuiles grisées à 89 €)
+et **le seul essai en cours** (à basculer sur `essai`). Les deux consignes
+portent sur le même objet.
+
+La bascule l'emporte dans le code tel qu'il est écrit, et c'est défendable :
+un essai de démonstration doit montrer ce qu'un essai réel donne, et après
+ADR-024 un essai réel est sur `essai`. La différenciation à 89 € reste
+illustrée par `Menuiserie Lambert` (actif) et `Garage Peret` (suspendu).
+
+Mais ce n'est pas au code de trancher une question de démonstration
+commerciale. Si le choix est de garder Novaé sur « Veille », il faut le dire
+dans `seed_demo_clients` — sans quoi la commande de seed et la migration se
+contrediront à chaque rechargement du jeu de démonstration.
+
+### Reste à faire
+
+- **Déployer** (secrets `DEPLOY_*` puis `workflow_dispatch`), puis vérifier
+  que l'offre `essai` existe en base. Les gardes ne seront posées qu'après.
+- Arbitrage sur `Demo — Agence Novaé` (ci-dessus).
+- `extended_history` : retrait à confirmer.
+- Points antérieurs : paiement réel, informations légales de l'éditeur, palier
+  de licence, appels d'API redondants au tableau de bord.
