@@ -555,7 +555,72 @@ Automatisé mais **déclenché à la main** (`.github/workflows/deploiement.yml`
 décision documentée en **ADR-023**. Le workflow refuse de s'exécuter si la CI
 n'est pas verte sur le commit visé, se connecte par une clé SSH **dédiée**,
 reconstruit, applique les migrations et vérifie `/healthz` **depuis
-l'extérieur**. Révocation de la clé : voir ADR-023.
+l'extérieur**.
+
+#### La clé SSH de déploiement
+
+Paire **ed25519 dédiée**, distincte de la clé d'administration du poste, sans
+phrase de passe (un workflow ne peut pas en saisir une). Empreinte publique :
+
+```
+SHA256:HjEdWLX+KZqrTe3Mc6aB3Znqb190Sao4jxcUWoHJJLo   deploiement github-actions rssiasservice
+```
+
+Elle est installée sur le compte `ubuntu` du serveur avec l'option
+**`restrict`** :
+
+```
+restrict ssh-ed25519 AAAAC3Nza... deploiement github-actions rssiasservice
+```
+
+`restrict` refuse d'un coup la redirection de ports, la redirection d'agent,
+X11, l'allocation d'un terminal et le `~/.ssh/rc`. Autrement dit : cette clé
+peut **exécuter la commande de déploiement, et rien qui transforme le serveur
+en point de rebond**. Vérifié, avec témoin : une redirection `-R` est refusée
+avec la clé de déploiement et acceptée avec la clé d'administration ;
+l'allocation d'un terminal est refusée (`PTY allocation request failed`).
+
+> **Ce que `restrict` ne fait PAS.** Le compte reste membre du groupe `docker`,
+> **équivalent à root** sur l'hôte. Un compte séparé « aux droits strictement
+> nécessaires » n'y changerait rien : il faudrait l'y mettre aussi. Et le
+> déploiement doit tourner depuis `/home/ubuntu/rssi` — lancer `docker compose`
+> depuis un autre chemin créerait un **second** projet Compose, donc une pile
+> parallèle avec une base vide. L'isolement réel est apporté par la
+> **séparation des clés** (révocable sans couper l'accès de l'exploitant), pas
+> par une séparation de comptes qui serait cosmétique ici.
+
+> **`command=` n'a pas été posée**, et c'est un choix, pas un oubli. Le
+> workflow envoie un script *ad hoc* sur l'entrée standard (`ssh … bash -s`),
+> script qui contient le commit visé. Une commande forcée ignorerait ce script
+> et exécuterait un script fixe, incapable de savoir quel commit déployer. La
+> poser supposerait de modifier le workflow pour passer le SHA **en argument de
+> la commande SSH** et de valider ce SHA côté serveur. C'est le durcissement
+> suivant, à faire le jour où d'autres personnes pourront déclencher le
+> workflow.
+
+**Révocation.** Retirer la ligne du serveur coupe l'accès immédiatement, sans
+toucher à la clé personnelle de l'exploitant :
+
+```bash
+ssh ubuntu@152.228.136.251
+cp ~/.ssh/authorized_keys ~/.ssh/authorized_keys.avant-revocation
+sed -i '/github-actions/d' ~/.ssh/authorized_keys
+ssh-keygen -lf ~/.ssh/authorized_keys   # doit ne plus lister HjEdWLX+...
+```
+
+> **Filtrer sur `github-actions`, jamais sur `deploiement`.** Le commentaire de
+> la clé d'**administration** contient lui aussi le mot « deploiement »
+> (`deploiement rssiasservice depuis poste Fleuris`) : un `sed
+> '/deploiement/d'` effacerait les deux lignes et vous fermerait la porte du
+> serveur. Le mot `github-actions` n'apparaît que sur la clé de déploiement.
+
+Puis supprimer le secret `DEPLOY_SSH_KEY` dans **Settings → Secrets and
+variables → Actions** du dépôt. Avant de révoquer, garder une session SSH
+d'administration **ouverte** : c'est le filet si la commande se trompe de
+ligne.
+
+À faire si le compte GitHub est compromis, si le dépôt change de mainteneur,
+ou périodiquement.
 
 ---
 
