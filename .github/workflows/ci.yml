@@ -4,6 +4,17 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Relance à la main. Ajouté après un cas réel : un push sur `main` n'a
+  # produit aucun run de CI — workflow actif, branche correcte, aucun jeton
+  # « [skip ci] », événement de push bien enregistré. Cause côté GitHub, non
+  # reproductible depuis le dépôt.
+  #
+  # Ce qui coûtait cher n'était pas le run manquant, c'était l'absence de
+  # recours : le déploiement (ADR-023) refuse de partir tant qu'il ne trouve
+  # pas un run de CI **vert sur le commit visé**. Sans run du tout, la
+  # production devient inatteignable, et le seul contournement était de
+  # fabriquer un commit vide pour reprovoquer un push.
+  workflow_dispatch:
 
 env:
   DJANGO_SECRET_KEY: ci-secret-key-not-for-production
