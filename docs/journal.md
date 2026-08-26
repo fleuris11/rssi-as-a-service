@@ -2707,3 +2707,38 @@ contrediront à chaque rechargement du jeu de démonstration.
 - `extended_history` : retrait à confirmer.
 - Points antérieurs : paiement réel, informations légales de l'éditeur, palier
   de licence, appels d'API redondants au tableau de bord.
+
+### 2026-08-26 (suite) — Premier déploiement refusé, et ce qu'il a révélé
+
+Premier déclenchement réel du workflow de déploiement. **Refusé**, comme
+prévu : ``La CI n'est pas verte sur 3eded64 (état : failure). Déploiement
+refusé.`` La production n'a pas bougé — vérifié, toujours sur `62f91bc`.
+C'est le premier garde-fou d'ADR-023 qui s'exerce en conditions réelles, et il
+tient.
+
+Quatre travaux verts sur cinq. Seul `container-scan` échoue, sur
+**CVE-2026-14456** (OpenSSL) : trois paquets de l'image en 3.5.6, corrigé en
+3.5.7.
+
+**La cause n'est pas ce CVE.** Le Dockerfile faisait `apt-get update` puis
+`apt-get install`, jamais `apt-get upgrade` : tout paquet **hérité de
+l'image de base** restait donc figé à la version qu'elle embarquait, même
+après publication du correctif Debian. Vérifié plutôt que supposé —
+``Installed: 3.5.6-1~deb13u2 / Candidate: 3.5.7-1~deb13u2``. Ce défaut se
+serait reproduit à chaque décalage entre l'image amont et les dépôts, sur
+n'importe quel paquet.
+
+Correctif : `apt-get upgrade -y` avant l'installation. Contrepartie assumée
+et écrite dans le fichier — deux constructions à des dates différentes ne
+donnent plus une image identique. C'est le comportement voulu pour une image
+reconstruite à chaque déploiement.
+
+Vérification avant/après avec le même Trivy et les mêmes options que la CI :
+la CI donnait `Total: 3 (HIGH: 3)` ; après correctif, l'image construite
+localement donne **0**, et les trois paquets nommés sont en 3.5.7.
+
+À noter pour la lucidité du dossier : ce CVE est un déni de service dans le
+serveur **QUIC** d'OpenSSL, que la plateforme n'expose pas. Le risque pratique
+était nul. Le correctif a quand même été appliqué : un HIGH corrigible laissé
+rouge habitue au rouge, et c'est exactement ce qui a coûté deux semaines en
+août.

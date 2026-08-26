@@ -10,7 +10,19 @@ WORKDIR /app
 # Pango/Cairo/GDK-Pixbuf au niveau système — non fournis par l'image Python
 # slim. Voir aussi .github/workflows/ci.yml, qui installe les mêmes paquets
 # pour que les tests d'export PDF s'exécutent en CI.
+# `apt-get upgrade` avant l'installation : sans lui, tout paquet hérité de
+# l'image de base reste figé à la version qu'elle embarquait, même quand le
+# dépôt Debian publie un correctif de sécurité. C'est ainsi que l'image a
+# traîné OpenSSL 3.5.6 (CVE-2026-14456) alors que 3.5.7 était disponible — un
+# défaut qui n'a rien de propre à ce CVE et qui se reproduirait à chaque
+# décalage entre l'image de base et les dépôts.
+#
+# La contrepartie assumée : deux constructions du même Dockerfile à des dates
+# différentes ne produisent plus exactement la même image. C'est le comportement
+# voulu ici — une image reconstruite à chaque déploiement doit embarquer les
+# correctifs publiés depuis, pas ceux d'un instantané amont.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install --no-install-recommends -y \
         libpango-1.0-0 \
         libpangocairo-1.0-0 \
