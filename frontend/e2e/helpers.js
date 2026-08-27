@@ -139,17 +139,39 @@ export async function waitForContentLoaded(page) {
  * animation en boucle (indicateur de chargement) ne se termine par définition
  * jamais, et attendre sa fin bloquerait indéfiniment.
  */
-export async function auditAccessibility(page) {
-  await waitForContentLoaded(page)
+/**
+ * Attend que le mouvement soit retombé : plus aucune transition CSS en cours,
+ * et plus aucune de NOS animations d'apparition en cours.
+ *
+ * Les deux catégories sont nécessaires, et la seconde a été ajoutée le jour
+ * où les apparitions de la vitrine sont passées de `transition` à
+ * `animation` (pour que le contenu ne dépende plus du déclenchement — voir
+ * `marketing/components/Reveal.jsx`). Ce jour-là, l'attente ne couvrait plus
+ * rien sur la vitrine sans que rien ne le signale : axe se remettait à
+ * mesurer des couleurs fondues.
+ *
+ * On liste nos animations par leur NOM plutôt que d'attendre `getAnimations()`
+ * en bloc : une animation en boucle (indicateur de chargement) ne se termine
+ * par définition jamais, et l'attendre bloquerait indéfiniment.
+ */
+const NOS_ANIMATIONS = ['apparition', 'trace-ligne']
+
+export async function waitForMotionSettled(page) {
   await page.waitForFunction(
-    () =>
-      typeof CSSTransition === 'undefined' ||
-      document
-        .getAnimations()
-        .every((a) => !(a instanceof CSSTransition) || a.playState === 'finished'),
-    undefined,
+    (noms) =>
+      document.getAnimations().every((a) => {
+        if (a.playState === 'finished') return true
+        if (typeof CSSTransition !== 'undefined' && a instanceof CSSTransition) return false
+        return !noms.includes(a.animationName)
+      }),
+    NOS_ANIMATIONS,
     { timeout: 10_000 }
   )
+}
+
+export async function auditAccessibility(page) {
+  await waitForContentLoaded(page)
+  await waitForMotionSettled(page)
   const resultats = await new AxeBuilder({ page }).exclude('svg').analyze()
   assertNoCriticalViolations(resultats)
 }

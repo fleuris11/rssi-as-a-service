@@ -22,7 +22,16 @@ function Field({ label, name, children, error, required }) {
     <div>
       <label htmlFor={name} className="block text-sm font-medium text-ink-800">
         {label}
-        {required && <span className="text-critical-strong"> *</span>}
+        {/* L'astérisque n'est pas une alerte. En rouge critique — la teinte de
+            la gravité maximale du produit — répétée sur sept champs, elle
+            dépensait le vocabulaire du risque pour une convention de
+            formulaire. En gris : la convention est conservée, le rouge est
+            rendu aux erreurs réelles, juste en dessous. */}
+        {required && (
+          <span className="text-ink-400" aria-hidden="true">
+            {' *'}
+          </span>
+        )}
       </label>
       <div className="mt-1.5">{children}</div>
       {error && (

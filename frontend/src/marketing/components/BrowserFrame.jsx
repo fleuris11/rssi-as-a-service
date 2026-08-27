@@ -4,7 +4,12 @@
  * `public/screenshots/README.md`), affiche un substitut composé en CSS/SVG
  * plutôt qu'une image d'illustration générique : mieux vaut un schéma
  * honnête qu'une photo qui ne montre pas le produit.
+ *
+ * Largeur d'affichage maximale mesurée : 728 px (point de rupture 768 px, en
+ * colonne unique). Les captures sont donc à produire en 1456 px de large.
  */
+import CaptureProduit from './CaptureProduit'
+
 export default function BrowserFrame({ src, alt, caption, children, className = '' }) {
   return (
     <figure className={`overflow-hidden ${className}`}>
@@ -23,11 +28,9 @@ export default function BrowserFrame({ src, alt, caption, children, className = 
           </span>
         </div>
         <div className="bg-surface">
-          {src ? (
-            <img src={src} alt={alt} loading="lazy" className="block w-full" />
-          ) : (
-            children
-          )}
+          <CaptureProduit src={src} alt={alt}>
+            {children}
+          </CaptureProduit>
         </div>
       </div>
       {caption && (

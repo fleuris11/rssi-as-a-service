@@ -4,25 +4,44 @@ import { useEffect, useRef, useState } from 'react'
  * Apparition au défilement, discrète : translation de quelques pixels et
  * fondu, une seule fois.
  *
- * Respecte prefers-reduced-motion en ne faisant RIEN plutôt qu'en animant
- * plus lentement — le contenu est simplement là. Sans cette garde, un
- * visiteur sensible au mouvement subirait une animation à chaque section.
+ * **Le contenu ne dépend JAMAIS de l'animation pour être visible.**
+ *
+ * C'est une inversion par rapport à la première version, et elle corrige un
+ * défaut réel. Auparavant l'état initial était `opacity-0`, et un minuteur de
+ * 2 s servait de filet : si l'observateur ne se déclenchait pas, le contenu
+ * finissait par apparaître. Ce filet ne tenait pas.
+ *
+ * Constaté en capture pleine hauteur, sans défilement : la grille tarifaire
+ * était **entièrement absente de la page**. Les cartes existaient bien dans le
+ * DOM — elles étaient à `opacity-0`. La raison : elles sont rendues après la
+ * réponse de l'API, donc montées tardivement, donc leur minuteur de 2 s
+ * repartait de zéro à chaque remontage. Un filet dont le compte à rebours
+ * redémarre n'est pas un filet.
+ *
+ * La correction ne consiste pas à raccourcir le délai — ce serait déplacer le
+ * problème — mais à **renverser l'état par défaut** : l'élément est visible,
+ * et l'entrée dans le champ de vision ne fait qu'y *ajouter* une animation.
+ * Si l'observateur ne se déclenche jamais (défilement direct en bas de page,
+ * capture pleine hauteur, robot d'indexation, impression, navigateur sans
+ * IntersectionObserver), il ne se passe rien de plus : le contenu est là.
+ *
+ * On ne peut donc plus rendre du contenu invisible en cassant l'animation.
+ * C'est la seule garantie qui vaille sur une page dont l'objet est d'être lue.
+ *
+ * `prefers-reduced-motion` est respecté par la feuille de style (`.apparition`
+ * n'anime rien), et la garde JS reste : inutile d'observer quoi que ce soit
+ * pour un visiteur qui ne veut pas de mouvement.
  *
  * IntersectionObserver plutôt qu'un écouteur de défilement : pas de calcul à
  * chaque pixel parcouru, et l'observateur se débranche dès l'élément vu.
  */
 export default function Reveal({ children, delay = 0, className = '', as: Tag = 'div' }) {
   const ref = useRef(null)
-  const [visible, setVisible] = useState(false)
+  const [anime, setAnime] = useState(false)
 
   useEffect(() => {
-    const prefersReducedMotion = window.matchMedia?.(
-      '(prefers-reduced-motion: reduce)'
-    )?.matches
-    if (prefersReducedMotion || typeof IntersectionObserver === 'undefined') {
-      setVisible(true)
-      return undefined
-    }
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+    if (prefersReducedMotion || typeof IntersectionObserver === 'undefined') return undefined
 
     const element = ref.current
     if (!element) return undefined
@@ -30,29 +49,14 @@ export default function Reveal({ children, delay = 0, className = '', as: Tag = 
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setVisible(true)
+          setAnime(true)
           observer.disconnect()
         }
       },
       { threshold: 0.12, rootMargin: '0px 0px -40px 0px' }
     )
     observer.observe(element)
-
-    // Filet de sécurité : au bout de 2 s, on affiche quoi qu'il arrive.
-    // L'état initial d'une apparition est `opacity-0` — si l'observateur ne
-    // se déclenchait jamais (saut direct en bas de page, capture pleine
-    // hauteur, robot qui exécute le JS sans faire défiler), le contenu
-    // resterait invisible pour de bon. Sur une page dont l'objet est
-    // justement d'être lue, c'est un mode de défaillance inacceptable :
-    // l'animation est un agrément, la lisibilité est une exigence.
-    // Sans effet perceptible pour un visiteur qui fait défiler normalement,
-    // l'observateur se déclenchant alors bien avant ce délai.
-    const failsafe = setTimeout(() => setVisible(true), 2000)
-
-    return () => {
-      observer.disconnect()
-      clearTimeout(failsafe)
-    }
+    return () => observer.disconnect()
   }, [])
 
   // `as` permet de conserver la sémantique du parent : glisser une <div>
@@ -61,10 +65,8 @@ export default function Reveal({ children, delay = 0, className = '', as: Tag = 
   return (
     <Tag
       ref={ref}
-      className={`transition-all duration-700 ease-out motion-reduce:transition-none ${
-        visible ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
-      } ${className}`}
-      style={visible && delay ? { transitionDelay: `${delay}ms` } : undefined}
+      className={`${anime ? 'apparition' : ''} ${className}`}
+      style={anime && delay ? { animationDelay: `${delay}ms` } : undefined}
     >
       {children}
     </Tag>

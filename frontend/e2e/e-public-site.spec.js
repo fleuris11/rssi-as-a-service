@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { auditAccessibility, resetDemoRequestThrottle, uniqueSuffix, waitForContentLoaded } from './helpers.js'
+import { auditAccessibility, resetDemoRequestThrottle, uniqueSuffix, waitForContentLoaded, waitForMotionSettled } from './helpers.js'
 
 // Site vitrine public (phase 9). Deux parcours réels : le visiteur qui
 // découvre le produit et demande une démonstration, et le client existant qui
@@ -102,4 +102,42 @@ test('les pages légales sont accessibles et annoncent ce qui reste à compléte
   await expect(page.getByText(/90 jours/).first()).toBeVisible()
 
   await auditAccessibility(page)
+})
+
+test('aucun contenu ne dépend d’une animation pour être visible', async ({ page }) => {
+  // Règle posée en phase 9, et enfreinte jusqu'ici : constaté en capture
+  // pleine hauteur, la grille tarifaire était ABSENTE de la page. Les cartes
+  // existaient dans le DOM, à `opacity-0` — rendues après la réponse de
+  // l'API, donc montées tardivement, donc le filet de sécurité de 2 s de
+  // `Reveal` repartait de zéro. Un filet dont le compte à rebours redémarre
+  // n'est pas un filet.
+  //
+  // Ce test ne défile PAS, à dessein : c'est la condition qui reproduit le
+  // robot d'indexation, l'impression et la capture pleine hauteur.
+  await page.goto('/')
+  await waitForContentLoaded(page)
+  await page.getByRole('heading', { level: 1 }).waitFor()
+  // Les apparitions AU-DESSUS de la ligne de flottaison se déclenchent, elles :
+  // on attend qu'elles soient retombées, sinon on mesure un fondu en cours et
+  // le test échoue sur du mouvement légitime.
+  await waitForMotionSettled(page)
+
+  const invisibles = await page.evaluate(() =>
+    [...document.querySelectorAll('main *')]
+      .filter((el) => {
+        const opacite = Number.parseFloat(getComputedStyle(el).opacity)
+        return (
+          opacite < 0.99 &&
+          el.textContent.trim().length > 0 &&
+          el.getBoundingClientRect().height > 0
+        )
+      })
+      .map((el) => `${el.tagName} — ${el.textContent.trim().slice(0, 60)}`)
+  )
+
+  const message = ['Contenu invisible sans défilement :', ...invisibles].join('\n')
+  expect(invisibles, message).toEqual([])
+
+  // Et le contenu servi par l'API en fait partie : c'est lui qui manquait.
+  await expect(page.locator('#tarifs')).toContainText('Veille')
 })

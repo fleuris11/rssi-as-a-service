@@ -2,6 +2,7 @@ import { Check, ChevronDown } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { publicApi } from '../../api/endpoints'
+import ApercuProduit from '../components/ApercuProduit'
 import BrowserFrame from '../components/BrowserFrame'
 import ExposureMockup from '../components/ExposureMockup'
 import FlowDiagram from '../components/FlowDiagram'
@@ -21,20 +22,38 @@ import { ORGANISATION_JSON_LD, useSeo } from '../useSeo'
 
 function Section({ id, children, className = '' }) {
   return (
-    <section id={id} className={`px-5 py-20 sm:py-24 ${className}`}>
+    // Rythme vertical unique entre sections : deux valeurs voisines (80 px
+    // puis 96 px) ne créaient aucune régularité perceptible, seulement de
+    // l'irrégularité.
+    <section id={id} className={`px-5 py-20 sm:py-28 ${className}`}>
       <div className="mx-auto max-w-6xl">{children}</div>
     </section>
   )
 }
 
+/**
+ * Point d'entrée du regard, identique dans toutes les sections.
+ *
+ * Trois rôles typographiques dans un ordre fixe — surtitre, titre, phrase de
+ * tête — et un filet court sous le surtitre. Le filet n'est pas un ornement :
+ * il donne à l'œil un point d'accroche à hauteur constante, si bien qu'en
+ * faisant défiler la page on retrouve toujours le début d'une section au même
+ * endroit.
+ *
+ * Le surtitre passe du bleu au gris : en bleu, il rivalisait avec les actions,
+ * qui sont la seule chose bleue que le visiteur doive repérer d'un coup d'œil.
+ */
 function SectionTitle({ eyebrow, title, subtitle }) {
   return (
     <div className="max-w-2xl">
       {eyebrow && (
-        <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">{eyebrow}</p>
+        <p className="t-eyebrow flex items-center gap-2.5">
+          <span className="h-px w-6 bg-brand-600" aria-hidden="true" />
+          {eyebrow}
+        </p>
       )}
-      <h2 className="mt-2 font-display text-2xl font-semibold text-ink-900 sm:text-3xl">{title}</h2>
-      {subtitle && <p className="mt-3 text-base leading-relaxed text-ink-600">{subtitle}</p>}
+      <h2 className="t-display mt-3 text-2xl sm:text-3xl">{title}</h2>
+      {subtitle && <p className="t-lead mt-3">{subtitle}</p>}
     </div>
   )
 }
@@ -49,13 +68,21 @@ function Hero() {
       />
       <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 py-20 sm:py-24 lg:grid-cols-[1.05fr_1fr] lg:gap-16">
         <div>
+          {/* L'accroche doit se lire en une seconde. Trois leviers, aucun
+              n'étant du décor :
+              — une seule chose est grande sur cet écran, le titre ;
+              — la phrase de tête n'est pas un second paragraphe mais un
+                complément, d'où la largeur bornée qui l'empêche de rivaliser ;
+              — une seule action est remplie, comme partout ailleurs dans le
+                produit. « Se connecter » s'adresse à un client existant, pas
+                au prospect : elle n'a pas à peser autant. */}
           <Reveal>
-            <h1 className="font-display text-3xl font-semibold leading-tight text-ink-900 sm:text-4xl lg:text-[2.75rem]">
+            <h1 className="t-display max-w-[19ch] text-3xl leading-[1.08] sm:text-4xl lg:text-[3rem]">
               {HERO.title}
             </h1>
           </Reveal>
           <Reveal delay={80}>
-            <p className="mt-5 max-w-xl text-lg leading-relaxed text-ink-600">{HERO.subtitle}</p>
+            <p className="t-lead mt-5 max-w-[46ch] text-lg">{HERO.subtitle}</p>
           </Reveal>
           <Reveal delay={160}>
             <div className="mt-8 flex flex-wrap gap-3">
@@ -67,17 +94,21 @@ function Hero() {
               </Link>
               <Link
                 to="/connexion"
-                className="transition-smooth rounded-md border border-ink-300 px-5 py-3 text-sm font-medium text-ink-800 hover:bg-ink-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+                className="transition-smooth rounded-md px-5 py-3 text-sm font-medium text-ink-600 hover:bg-ink-100 hover:text-ink-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
               >
                 {HERO.secondaryCta}
               </Link>
             </div>
-            <p className="mt-4 text-sm text-ink-500">{HERO.note}</p>
+            <p className="t-meta mt-4">{HERO.note}</p>
           </Reveal>
         </div>
 
         <Reveal delay={220}>
-          <BrowserFrame caption="Page Exposition — reconstitution de l'interface réelle.">
+          <BrowserFrame
+            src="/screenshots/exposition.png"
+            alt="Page Exposition du produit : les actifs classés par niveau d’exposition, avec l’analyse en tête."
+            caption="Page Exposition — reconstitution de l’interface réelle."
+          >
             <ExposureMockup />
           </BrowserFrame>
         </Reveal>
@@ -90,7 +121,7 @@ function Problem() {
   return (
     <Section id="probleme" className="bg-ink-50/50">
       <Reveal>
-        <SectionTitle title={PROBLEM.title} />
+        <SectionTitle eyebrow="Le constat" title={PROBLEM.title} />
       </Reveal>
       <div className="mt-10 grid gap-6 md:grid-cols-3">
         {PROBLEM.items.map((item, index) => (
@@ -143,18 +174,17 @@ function Differentiators() {
 
               <div>
                 {item.example ? (
-                  <div className="rounded-lg border border-ink-200 bg-surface p-5 shadow-soft">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                      {item.example.label}
-                    </p>
-                    <p className="mt-3 rounded-md bg-ink-50 px-4 py-3 text-sm leading-relaxed text-ink-700">
-                      {item.example.meaning}
-                    </p>
-                    <p className="mt-2.5 rounded-md bg-accent-100/50 px-4 py-3 text-sm leading-relaxed text-accent-900">
+                  // Le bandeau « À faire » reproduit celui de l'application,
+                  // couleurs comprises. Il n'est donc légitime que DANS le
+                  // cadre produit — hors de lui, la vitrine s'en tient au bleu
+                  // et au gris.
+                  <ApercuProduit label={item.example.label}>
+                    <p className="t-body rounded-md bg-ink-50 px-4 py-3">{item.example.meaning}</p>
+                    <p className="t-body mt-2.5 rounded-md bg-accent-100/50 px-4 py-3 text-accent-900">
                       <span className="font-semibold">À faire : </span>
                       {item.example.action}
                     </p>
-                  </div>
+                  </ApercuProduit>
                 ) : (
                   <DifferentiatorVisual id={item.id} />
                 )}
@@ -185,12 +215,25 @@ function DifferentiatorVisual({ id }) {
             />
           ))}
           <circle cx="60" cy="75" r="7" className="fill-brand-700" />
-          <line x1="90" y1="52" x2="176" y2="40" className="stroke-warning-strong" strokeWidth="1.5" />
-          <rect x="176" y="26" width="150" height="28" rx="6" className="fill-surface stroke-warning-strong" strokeWidth="1" />
-          <text x="186" y="45" className="fill-ink-800 font-mono text-[11px]">votre-societe.fr</text>
-          <line x1="90" y1="88" x2="176" y2="100" className="stroke-critical-strong" strokeWidth="1.5" />
-          <rect x="176" y="86" width="150" height="28" rx="6" className="fill-surface stroke-critical-strong" strokeWidth="1" />
-          <text x="186" y="105" className="fill-ink-800 font-mono text-[11px]">votre-sociéte.fr</text>
+          {/* Ce schéma n'est pas une capture du produit : il illustre une idée.
+              Il employait pourtant l'ambre et le rouge de l'échelle de
+              gravité pour opposer les deux domaines — de la décoration payée
+              avec le vocabulaire du risque.
+              La différence est désormais portée par ce qui la constitue
+              réellement : le caractère qui change. C'est plus juste ET plus
+              accessible, la couleur n'étant jamais seule porteuse de sens. */}
+          <line x1="90" y1="52" x2="176" y2="40" className="stroke-ink-300" strokeWidth="1.5" />
+          <rect x="176" y="26" width="150" height="28" rx="6" className="fill-surface stroke-ink-300" strokeWidth="1" />
+          <text x="186" y="45" className="fill-ink-600 font-mono text-[11px]">votre-societe.fr</text>
+          <line x1="90" y1="88" x2="176" y2="100" className="stroke-brand-600" strokeWidth="1.5" />
+          <rect x="176" y="86" width="150" height="28" rx="6" className="fill-brand-50 stroke-brand-600" strokeWidth="1.5" />
+          <text x="186" y="105" className="fill-ink-800 font-mono text-[11px]">
+            votre-soci
+            <tspan className="fill-brand-800 font-semibold" style={{ textDecoration: 'underline' }}>
+              é
+            </tspan>
+            te.fr
+          </text>
         </svg>
         <p className="mt-3 text-xs text-ink-600">
           Un caractère de différence suffit à tromper un lecteur pressé.
@@ -200,7 +243,13 @@ function DifferentiatorVisual({ id }) {
   }
 
   return (
-    <div className="rounded-lg border border-ink-200 bg-surface p-5 shadow-soft">
+    // Reproduction fidèle d'un encadré de l'application : le cadre autorise
+    // ses couleurs, et dit au visiteur qu'il regarde l'écran.
+    <ApercuProduit
+      label="Dans l’application"
+      src="/screenshots/revelation.png"
+      alt="Encadré « Réutilisation possible » et accès tracé au mot de passe fuité."
+    >
       <div className="rounded-md border border-warning-strong/30 bg-warning-subtle px-4 py-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-warning-strong">
           Réutilisation possible — à vérifier
@@ -216,10 +265,10 @@ function DifferentiatorVisual({ id }) {
           Révéler le mot de passe
         </span>
       </div>
-      <p className="mt-2.5 text-xs text-ink-500">
+      <p className="t-meta mt-2.5">
         Consultation possible après vérification d’identité. Chaque accès est tracé.
       </p>
-    </div>
+    </ApercuProduit>
   )
 }
 
@@ -227,7 +276,7 @@ function HowItWorks() {
   return (
     <Section id="fonctionnement" className="bg-ink-50/50">
       <Reveal>
-        <SectionTitle title={HOW_IT_WORKS.title} subtitle={HOW_IT_WORKS.subtitle} />
+        <SectionTitle eyebrow="Fonctionnement" title={HOW_IT_WORKS.title} subtitle={HOW_IT_WORKS.subtitle} />
       </Reveal>
       <Reveal delay={100}>
         <div className="mt-12">
@@ -265,7 +314,7 @@ function Trust() {
             <div className="flex gap-4">
               <span
                 aria-hidden="true"
-                className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-ok-subtle text-ok-strong"
+                className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-brand-100 text-brand-700"
               >
                 <Check className="size-4" />
               </span>
@@ -322,7 +371,7 @@ function Pricing() {
   return (
     <Section id="tarifs" className="bg-ink-50/50">
       <Reveal>
-        <SectionTitle title={PRICING.title} subtitle={PRICING.subtitle} />
+        <SectionTitle eyebrow="Tarifs" title={PRICING.title} subtitle={PRICING.subtitle} />
       </Reveal>
       <div className="mt-10 grid gap-6 lg:grid-cols-3">
         {displayed.map((plan, index) => (
@@ -358,7 +407,7 @@ function Pricing() {
               <ul className="mt-6 flex-1 space-y-2.5">
                 {(plan.features || []).map((feature) => (
                   <li key={feature.key} className="flex gap-2.5 text-sm text-ink-700">
-                    <Check className="mt-0.5 size-4 shrink-0 text-ok-strong" aria-hidden="true" />
+                    <Check className="mt-0.5 size-4 shrink-0 text-brand-600" aria-hidden="true" />
                     {feature.label}
                   </li>
                 ))}
@@ -418,7 +467,7 @@ function Faq() {
   return (
     <Section id="questions">
       <Reveal>
-        <SectionTitle title={FAQ.title} />
+        <SectionTitle eyebrow="Questions" title={FAQ.title} />
       </Reveal>
       <div className="mt-8">
         {FAQ.items.map((item, index) => (

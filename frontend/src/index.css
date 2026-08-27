@@ -254,6 +254,63 @@ body {
 }
 
 /* ---------------------------------------------------------------------
+ * APPARITION AU DÉFILEMENT
+ *
+ * Une ANIMATION, jamais un état. La différence est tout l'intérêt : un
+ * élément qui n'a pas reçu cette classe reste parfaitement visible, alors
+ * qu'un élément laissé à `opacity-0` disparaît. Le contenu ne peut donc
+ * plus être perdu par une animation qui ne se déclenche pas (robot
+ * d'indexation, capture pleine hauteur, impression, saut direct en bas de
+ * page).
+ *
+ * `both` conserve l'état final : sans lui, l'élément retomberait à sa
+ * position d'origine à la fin de l'animation.
+ * ------------------------------------------------------------------- */
+@keyframes apparition {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.apparition {
+  animation: apparition 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .apparition {
+    animation: none;
+  }
+}
+
+/* Tracé du trait de liaison du schéma de fonctionnement. Même principe que
+   `.apparition` : le trait est dessiné par défaut, l'animation ne fait que
+   rejouer son tracé quand le schéma entre dans le champ de vision. */
+@keyframes trace-ligne {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.trace-ligne {
+  animation: trace-ligne 500ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trace-ligne {
+    animation: none;
+  }
+}
+
+
+/* ---------------------------------------------------------------------
  * FOCUS — un seul anneau, partout, visible sur fond clair comme sur la
  * barre latérale sombre. Posé sur `:focus-visible` uniquement : un
  * anneau au clic à la souris est du bruit, son absence au clavier est un
