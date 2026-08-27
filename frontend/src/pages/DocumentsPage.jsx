@@ -2,6 +2,7 @@ import { ChevronDown, ChevronUp, FileText, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { aiApi } from '../api/endpoints'
 import Badge from '../components/ui/Badge'
+import FeatureGate from '../components/FeatureGate'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
@@ -201,9 +202,14 @@ function DocumentEditor({ document: doc, onUpdated }) {
           <Button variant="secondary" size="sm" onClick={handleExport} disabled={isGenerating || !content}>
             Exporter (.md)
           </Button>
-          <Button variant="primary" size="sm" icon={FileText} onClick={handleExportPdf} disabled={isGenerating || !content}>
-            Exporter (.pdf)
-          </Button>
+          {/* L'export Markdown voisin n'est PAS gardé : le contenu du
+              document appartient au client et doit rester récupérable. Ce qui
+              relève de l'offre est le rendu PDF, pas l'accès aux données. */}
+          <FeatureGate feature="pdf_export">
+            <Button variant="primary" size="sm" icon={FileText} onClick={handleExportPdf} disabled={isGenerating || !content}>
+              Exporter (.pdf)
+            </Button>
+          </FeatureGate>
           {!isValidated && !isGenerating && (
             <>
               <Button variant="secondary" size="sm" loading={saving} onClick={handleSave}>
@@ -320,9 +326,11 @@ export default function DocumentsPage() {
         <>
           <PreviewPanel />
 
-          <Button variant="primary" icon={Sparkles} loading={generating} onClick={handleGenerate}>
-            Générer la charte informatique
-          </Button>
+          <FeatureGate feature="charter_generation">
+            <Button variant="primary" icon={Sparkles} loading={generating} onClick={handleGenerate}>
+              Générer la charte informatique
+            </Button>
+          </FeatureGate>
 
           {documents.length === 0 ? (
             <EmptyState

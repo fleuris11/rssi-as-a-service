@@ -1,6 +1,7 @@
 import { Bot, ChevronDown, ChevronUp, Send, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { aiApi } from '../api/endpoints'
+import FeatureGate from '../components/FeatureGate'
 import Card from '../components/ui/Card'
 import { useToast } from '../components/ui/Toast'
 
@@ -255,6 +256,10 @@ export default function AssistantPage() {
           {sending && <TypingIndicator />}
         </div>
 
+        {/* La zone de saisie est désactivée hors offre, jamais retirée :
+            l'historique des échanges reste lisible, et le client voit que
+            l'assistant existe. */}
+        <FeatureGate feature="assistant">
         <form onSubmit={handleSend} className="flex gap-2 border-t border-ink-200 p-3">
           <input
             aria-label="Votre question pour l’assistant"
@@ -273,6 +278,7 @@ export default function AssistantPage() {
             <Send className="size-4" aria-hidden="true" />
           </button>
         </form>
+        </FeatureGate>
       </div>
     </div>
   )

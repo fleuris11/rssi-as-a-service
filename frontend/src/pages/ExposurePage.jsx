@@ -12,7 +12,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { aiApi, threatIntelligenceApi } from '../api/endpoints'
 import ExposureScoreDial from '../components/ExposureScoreDial'
-import FeatureGate from '../components/FeatureGate'
+import FeatureGate, { FeatureLockedNotice } from '../components/FeatureGate'
 import PreIncidentRadar from '../components/PreIncidentRadar'
 import RevealSecretModal from '../components/RevealSecretModal'
 import Badge from '../components/ui/Badge'
@@ -258,7 +258,14 @@ function AssetCard({ group, canReveal, onReveal, expanded, onToggle, retentionDa
         </span>
       </button>
 
+      {/* Garde en forme d'omission côté serveur : hors offre, le flux est
+          servi sans les signaux. L'encart dit alors ce que le client ne voit
+          pas — sans lui, la section disparaîtrait en silence et il ne saurait
+          jamais que le produit sait rapprocher ses fuites. */}
       <ReuseSection signals={group.reuse_signals || []} />
+      <div className="mt-3">
+        <FeatureLockedNotice feature="reuse_correlation" />
+      </div>
 
       {expanded && (
         <>

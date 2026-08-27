@@ -2,6 +2,8 @@ import { CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { assessmentsApi } from '../api/endpoints'
+import { FeatureLockedNotice } from '../components/FeatureGate'
+import { useEntitlements } from '../context/EntitlementsContext'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import SegmentedControl from '../components/ui/SegmentedControl'
@@ -53,6 +55,8 @@ export default function DiagnosticPage() {
   const [justCompleted, setJustCompleted] = useState(false)
   const [currentDomainIndex, setCurrentDomainIndex] = useState(0)
   const initializedIndex = useRef(false)
+  const { hasFeature } = useEntitlements()
+  const diagnosticInclus = hasFeature('anssi_assessment')
 
   const loadAssessment = useCallback(async () => {
     let response
@@ -80,8 +84,13 @@ export default function DiagnosticPage() {
         const referentialRes = await assessmentsApi.referential()
         setReferential(referentialRes.data)
         await loadAssessment()
-      } catch {
-        showToast({ type: 'error', message: 'Impossible de charger le diagnostic.' })
+      } catch (err) {
+        // 402 = hors offre. Ce n'est pas une panne, et l'annoncer comme telle
+        // ferait croire le produit cassé là où il refuse poliment. L'encart
+        // plus bas explique et nomme l'offre qui débloque.
+        if (err.response?.status !== 402) {
+          showToast({ type: 'error', message: 'Impossible de charger le diagnostic.' })
+        }
       } finally {
         setLoading(false)
       }
@@ -133,6 +142,24 @@ export default function DiagnosticPage() {
       <div className="space-y-4">
         <SkeletonCard />
         <SkeletonCard />
+      </div>
+    )
+  }
+  // Hors offre AVANT le message d'indisponibilité : sans cet ordre, un client
+  // « Veille » lirait « Diagnostic indisponible » — un message de panne pour
+  // une limite commerciale. L'encart, lui, décrit la fonctionnalité et nomme
+  // l'offre qui la débloque.
+  if (!diagnosticInclus) {
+    return (
+      <div className="space-y-4">
+        <h1 className="font-display text-xl font-semibold text-ink-900">
+          Diagnostic de maturité
+        </h1>
+        <FeatureLockedNotice feature="anssi_assessment" />
+        <p className="text-sm text-ink-500">
+          Les diagnostics que vous avez déjà réalisés restent consultables depuis vos
+          résultats.
+        </p>
       </div>
     )
   }

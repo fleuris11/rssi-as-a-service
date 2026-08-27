@@ -17,6 +17,7 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from apps.accounts import services as accounts_services
+from apps.billing import api_guards, features
 from apps.monitoring import services as monitoring_services
 from apps.monitoring.models import Alert, Asset
 from apps.tenants import services as tenants_services
@@ -765,10 +766,25 @@ def build_exposure_feed(tenant) -> dict:
     # Corrélation calculée sur l'ENSEMBLE des fuites du tenant, pas par actif :
     # une réutilisation possible se voit précisément quand le même identifiant
     # traverse plusieurs actifs (ADR-017).
-    assets = list(monitoring_services.list_assets(tenant))
-    reuse_by_finding = correlation.correlate(
-        findings, tenant_emails=tenant_member_emails(tenant), assets=assets
-    )
+    #
+    # Garde d'offre en forme d'OMISSION, pas de refus : le flux d'exposition
+    # doit rester servi à tout le monde — ce sont les fuites du client, il ne
+    # peut pas en être privé. Ce qui relève de l'offre est l'ANALYSE ajoutée
+    # par-dessus : le rapprochement entre plusieurs fuites. Refuser l'appel
+    # entier reviendrait à cacher ses propres données à un client pour lui
+    # vendre un calcul.
+    #
+    # Conséquence assumée : le calcul est SAUTÉ, pas filtré après coup. Une
+    # corrélation calculée puis retirée du rendu coûterait le temps de calcul
+    # sans rien apporter (exigence Green IT), et laisserait la donnée
+    # atteignable au premier oubli de filtrage dans un sérialiseur.
+    if api_guards.has_feature(tenant, features.REUSE_CORRELATION):
+        assets = list(monitoring_services.list_assets(tenant))
+        reuse_by_finding = correlation.correlate(
+            findings, tenant_emails=tenant_member_emails(tenant), assets=assets
+        )
+    else:
+        reuse_by_finding = {}
 
     by_asset: dict[int, list[BreachFinding]] = {}
     for finding in findings:

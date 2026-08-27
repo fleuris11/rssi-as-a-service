@@ -16,6 +16,7 @@ import {
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { actionsApi, assessmentsApi, monitoringApi, threatIntelligenceApi } from '../api/endpoints'
+import FeatureGate from '../components/FeatureGate'
 import ScoreRing from '../components/ScoreRing'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
@@ -59,6 +60,9 @@ function OnboardingSteps() {
       to: '/diagnostic',
       cta: 'Démarrer le diagnostic',
       icon: ClipboardCheck,
+      // Conditionne l'étape à l'offre. Le nom de la clé vient du registre
+      // serveur : l'interface n'invente pas de fonctionnalité.
+      feature: 'anssi_assessment',
     },
     {
       title: 'Suivez votre plan',
@@ -91,12 +95,27 @@ function OnboardingSteps() {
           </div>
           <p className="mt-3 font-display text-base font-semibold text-ink-900">{step.title}</p>
           <p className="mt-1 flex-1 text-sm text-ink-500">{step.description}</p>
-          <Link to={step.to} className="mt-4">
-            <Button variant={index === 0 ? 'primary' : 'secondary'} className="w-full">
-              {step.cta}
-              <ArrowRight className="size-4" aria-hidden="true" />
-            </Button>
-          </Link>
+          {/* L'étape reste VISIBLE et décrite quand elle est hors offre :
+              seul son bouton est désactivé, avec le teaser et l'offre requise.
+              Retirer la carte ferait disparaître du parcours d'accueil la
+              première chose que le produit sait faire. */}
+          {step.feature ? (
+            <FeatureGate feature={step.feature}>
+              <Link to={step.to} className="mt-4 block">
+                <Button variant={index === 0 ? 'primary' : 'secondary'} className="w-full">
+                  {step.cta}
+                  <ArrowRight className="size-4" aria-hidden="true" />
+                </Button>
+              </Link>
+            </FeatureGate>
+          ) : (
+            <Link to={step.to} className="mt-4">
+              <Button variant={index === 0 ? 'primary' : 'secondary'} className="w-full">
+                {step.cta}
+                <ArrowRight className="size-4" aria-hidden="true" />
+              </Button>
+            </Link>
+          )}
         </Card>
       ))}
     </div>

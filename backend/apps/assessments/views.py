@@ -3,6 +3,7 @@ from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.billing import api_guards, features
 from apps.tenants.permissions import IsTenantMember, IsTenantMemberReadOnlyForReader
 
 from . import services
@@ -44,6 +45,11 @@ class StartAssessmentView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader]
 
     def post(self, request):
+        # Garde d'offre sur la PRODUCTION d'une évaluation. Les chemins de
+        # lecture (liste, détail, scores, référentiel) restent ouverts : un
+        # client qui perd le diagnostic garde ce qu'il a déjà rempli.
+        api_guards.ensure_feature(request.tenant, features.ANSSI_ASSESSMENT)
+
         try:
             assessment = services.start_or_resume_assessment(
                 tenant=request.tenant, user=request.user
@@ -87,6 +93,11 @@ class AnswerView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader]
 
     def put(self, request, assessment_id, measure_id):
+        # Gardé aussi, et pas seulement le démarrage : sans cela, une
+        # évaluation ouverte avant un changement d'offre resterait remplissable
+        # indéfiniment par appel direct à l'API.
+        api_guards.ensure_feature(request.tenant, features.ANSSI_ASSESSMENT)
+
         assessment = _get_assessment_or_404(request, assessment_id)
         measure = Measure.objects.filter(id=measure_id).first()
         if measure is None:
@@ -115,6 +126,10 @@ class CompleteAssessmentView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader]
 
     def post(self, request, assessment_id):
+        # La clôture génère le plan d'action : c'est une production, pas une
+        # lecture.
+        api_guards.ensure_feature(request.tenant, features.ANSSI_ASSESSMENT)
+
         assessment = _get_assessment_or_404(request, assessment_id)
 
         try:

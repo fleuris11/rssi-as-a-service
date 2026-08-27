@@ -4,6 +4,7 @@ from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.billing import api_guards, features
 from apps.tenants.permissions import IsTenantAdmin, IsTenantMember, IsTenantMemberReadOnlyForReader
 from apps.tenants.throttling import TenantAIRateThrottle
 
@@ -79,6 +80,20 @@ class GeneratedDocumentListCreateView(generics.ListAPIView):
         return services.list_documents(self.request.tenant)
 
     def post(self, request, *args, **kwargs):
+        # Garde d'offre AVANT le quota d'IA, comme la garde
+        # `realtime_monitoring` place `ensure_feature` avant
+        # `ensure_monitored_asset_quota` : « ce n'est pas dans votre offre » et
+        # « vous avez épuisé votre quota » sont deux refus différents, et
+        # annoncer le second à quelqu'un qui n'a pas la fonctionnalité serait
+        # trompeur.
+        #
+        # Le seul type de document est la charte informatique
+        # (`DocumentType.IT_CHARTER`) : garder la vue revient donc à garder la
+        # génération de charte. Le jour où un second type apparaîtra, la garde
+        # devra se déplacer sur le type demandé — d'où le test qui épingle ce
+        # lien plutôt que de le supposer.
+        api_guards.ensure_feature(request.tenant, features.CHARTER_GENERATION)
+
         serializer = GeneratedDocumentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -156,6 +171,12 @@ class GeneratedDocumentExportPdfView(APIView):
     throttle_classes = [TenantAIRateThrottle]
 
     def get(self, request, document_id):
+        # Gardé alors que c'est un GET, et c'est voulu : la fonctionnalité
+        # vendue est le rendu PDF lui-même, pas l'accès au document. Le contenu
+        # reste intégralement récupérable en Markdown par l'export voisin, qui
+        # n'est pas gardé — on retire un format, jamais les données.
+        api_guards.ensure_feature(request.tenant, features.PDF_EXPORT)
+
         document = _get_document_or_404(request, document_id)
         pdf_bytes = services.render_document_pdf(document)
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
@@ -174,6 +195,8 @@ class ConversationListCreateView(generics.ListAPIView):
         return services.list_conversations(self.request.tenant)
 
     def post(self, request, *args, **kwargs):
+        api_guards.ensure_feature(request.tenant, features.ASSISTANT)
+
         conversation = services.create_conversation(tenant=request.tenant, user=request.user)
         return Response(ConversationSerializer(conversation).data, status=status.HTTP_201_CREATED)
 
@@ -195,6 +218,11 @@ class MessageListCreateView(generics.ListAPIView):
         return services.list_messages(conversation)
 
     def post(self, request, *args, **kwargs):
+        # Gardé en plus de la création de conversation : une conversation
+        # ouverte avant un changement d'offre resterait sinon utilisable
+        # indéfiniment. La LECTURE des messages déjà échangés reste ouverte.
+        api_guards.ensure_feature(request.tenant, features.ASSISTANT)
+
         conversation = _get_conversation_or_404(request, kwargs["conversation_id"])
         serializer = MessageCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
