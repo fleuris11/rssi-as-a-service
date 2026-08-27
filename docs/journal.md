@@ -3098,3 +3098,136 @@ Captures avant/après prises sur le locataire de démonstration, en 1440 px et e
   est passée en chiffres tabulaires alignés : un test de fond — « on n'écrit
   jamais +0 » — rougissait pour un choix de mise en forme. L'assertion porte
   désormais sur le comportement.
+
+## 2026-08-27 (suite 2) — Seuil d'accessibilité, page Compromissions, et deux notes de méthode
+
+### Deux notes de méthode, à garder pour le mémoire
+
+**1. La documentation dérive, et doit être vérifiée comme du code.**
+
+Le commentaire de `index.css` annonçait un contraste de 4,79 là où la mesure
+donne 4,95. Écart sans conséquence — les deux passent le seuil — mais le motif,
+lui, revient :
+
+| Ce qui affirmait | Ce qui était vrai |
+|---|---|
+| Le README annonçait la vérification DKIM | elle n'était pas implémentée |
+| Le registre des fonctionnalités listait neuf clés | trois seulement étaient lues quelque part |
+| Un commentaire de contraste annonçait 4,79 | la mesure donne 4,95 |
+| Un `docstring` affirmait « Résultats affiche un état vide sans titre » | ce n'était plus vrai depuis la correction du même jour |
+
+À chaque fois, la même mécanique : **une affirmation écrite une fois, jamais
+revérifiée, qui survit au changement qu'elle décrivait.** Elle est plus
+dangereuse qu'une absence de documentation, parce qu'on s'y fie.
+
+La formulation à retenir : **un contraste qu'on ne recalcule pas devient une
+affirmation invérifiable.** Elle se généralise — un seuil qu'on ne remesure
+pas, une garde qu'on ne neutralise pas pour voir rougir un test, une alerte
+qu'on n'a pas vue partir.
+
+Conséquence pratique pour ce projet : toute affirmation chiffrée dans un
+commentaire ou un document doit pouvoir être **recalculée par une commande**,
+et l'être avant d'être citée. Les contrastes ont été recalculés ici ; les
+gardes de fonctionnalité ont été vérifiées par neutralisation ; l'alerte de
+supervision a été déclenchée pour de vrai. C'est la même exigence, appliquée à
+trois objets différents.
+
+**2. Deuxième fois que des tests consomment la ressource rare sans la rendre.**
+
+Après les parcours e2e de la phase 11, c'est la sonde d'accessibilité qui
+créait un locataire réel — donc un emplacement engagé sur le pool partagé de la
+licence — sans le restituer. Deux exécutions ont suffi : **15/15**, et la garde
+a refusé les inscriptions suivantes. À juste titre : elle faisait exactement
+son travail, et le symptôme ressemblait pourtant à une panne du produit.
+
+Ce mode de défaillance mérite d'être nommé parce qu'il est contre-intuitif :
+**un test qui échoue parce qu'une garde fonctionne**. On cherche la régression
+là où il n'y en a pas.
+
+Audit mené sur l'ensemble de la suite, deux fois :
+
+- *Statiquement* — les noms de locataires créés par chaque parcours
+  (`E2E A11y`, `E2E Charte`, `E2E Diagnostic`, `E2E Seuil`, `E2E Surveillance`,
+  `E2E Gardes`, `Client Limite`, `Client Suspendu`, `Prospect E2E`,
+  `Console E2E`, `Bouchon <marqueur>`) ont tous un préfixe de nettoyage
+  correspondant. Un préfixe qui ne correspondrait pas fuirait en silence.
+- *Empiriquement* — pool mesuré **avant et après** une exécution complète des
+  20 parcours : **13/15 dans les deux cas, zéro locataire résiduel**.
+
+Aucun autre test n'est dans ce cas. Reste une faiblesse assumée : le nettoyage
+avale ses propres erreurs (`catch {}`) pour ne pas faire échouer un parcours
+vert par ailleurs. Un nettoyage cassé serait donc invisible — la mesure
+avant/après ci-dessus est le seul contrôle qui le verrait.
+
+### Seuil d'accessibilité abaissé à « moderate »
+
+Décidé sur mesure, exécuté en deux temps.
+
+**D'abord la correction** : l'état vide de `/resultats` ne rendait aucun `h1`.
+La page se présentait donc sans nom à un lecteur d'écran, et l'état vide — qui
+décrit une situation, pas la page — devenait le seul repère. Le titre de page
+est désormais rendu avec ou sans données.
+
+**Puis le seuil** : `BLOCKING_IMPACTS` passe à `critical`/`serious`/`moderate`.
+Inventaire après correction, sur les dix pages : **0 violation à toutes les
+gravités**.
+
+`minor` reste hors du seuil, et c'est délibéré : ces signalements relèvent de
+préférences d'outil plus que de l'usage réel. Faire échouer la CI sur du bruit
+apprendrait à ignorer l'audit — ce qui coûterait plus cher que ce qu'on
+gagnerait.
+
+Deux défauts trouvés en chemin, tous deux du même genre que ce que le seuil
+laissait passer :
+
+- **Deux boutons d'action étaient restés en ambre** (`/resultats`,
+  `/assistant`) alors que la refonte des fondations a fait passer les actions
+  au bleu. Ils avaient échappé au balayage parce qu'ils n'utilisaient pas le
+  composant `Button` mais des classes en dur. C'est exactement la confusion que
+  le bleu devait supprimer : un bouton ambre à côté d'un bandeau de gravité
+  ambre.
+- **Deux blocs de documentation empilés** sur `waitForContentLoaded`, dont un
+  décrivait une version antérieure.
+
+### Page Compromissions
+
+Quatre changements, tous dictés par ce que la page doit permettre : savoir par
+quoi commencer.
+
+- **Regroupement par gravité, le compte dans le séparateur** (« Critique —
+  4 fuites »). La liste arrivait à plat et le serveur ne garantit pas l'ordre :
+  sur le jeu de démonstration, **une fuite critique se lisait après quatre
+  fuites élevées**. Le compte appartient au séparateur, c'est là qu'on décide
+  si on lit la suite. Une gravité inconnue du front n'est jamais écartée : elle
+  est rassemblée sous un groupe nommé, placé en dernier — faire disparaître une
+  fuite parce que sa gravité est inédite serait le pire défaut possible sur
+  cette page.
+- **Une seule action forte par carte.** Il y en avait trois de poids voisin,
+  répétées sur dix fuites : le regard ne savait plus laquelle était le chemin
+  normal. « Marquer traité » est la résolution, donc la seule remplie ;
+  révéler un mot de passe est une action d'enquête, ignorer est un abandon,
+  tous deux en texte seul.
+- **Panneaux administratifs en poids inférieur.** « Surveillance en temps
+  réel » et « Journal des révélations » portaient la même carte blanche ombrée
+  que les fuites. Deux blocs de réglage ne doivent pas peser autant que dix
+  compromissions.
+- **États vides traités comme une bonne nouvelle.** « Aucune compromission
+  ouverte », en gris sous un pictogramme d'alerte, se lisait comme une panne —
+  alors que c'est le résultat que le client paie pour obtenir. Devient
+  « Aucune fuite en cours », en vert calme, avec le rappel que la surveillance
+  continue.
+
+Défaut corrigé au passage : **la pastille de gravité portait la teinte
+critique sur toutes les cartes**, y compris les fuites « Élevée ». Elle suit
+désormais la gravité réelle, depuis la même échelle que les scores
+d'exposition — et c'est là que l'olive du premier palier apparaît enfin dans le
+produit.
+
+Cet écran est le premier couvert par des tests de rendu (`CompromisesPage.test.jsx`),
+dont un porte sur **un état que la vérification manuelle ne peut pas
+atteindre** : une entreprise de démonstration a toujours des fuites ouvertes,
+donc l'écran « aucune fuite » — celui que le client verra le jour où le produit
+a fait son travail — n'était jamais regardé.
+
+Vérifications : 121 tests Vitest, 20 parcours Playwright, construction verte,
+inventaire d'accessibilité à zéro sur dix pages.
