@@ -2742,3 +2742,177 @@ serveur **QUIC** d'OpenSSL, que la plateforme n'expose pas. Le risque pratique
 était nul. Le correctif a quand même été appliqué : un HIGH corrigible laissé
 rouge habitue au rouge, et c'est exactement ce qui a coûté deux semaines en
 août.
+
+---
+
+## 2026-08-27 — Phase 12 : les gardes de fonctionnalité, posées et éprouvées
+
+Séance de clôture du défaut découvert le 25 août : **six des neuf clés du
+registre étaient vendues et appliquées nulle part.** Un client « Veille » à
+89 € obtenait l'essentiel de ce qui est vendu 249 € au titre de « Pilotage ».
+
+À l'arrivée : cinq gardes posées, une clé retirée, et un test qui rend la
+récidive impossible.
+
+### Le préalable, enfin levé
+
+Le déploiement d'ADR-024 (offre d'essai dédiée) et de la bascule des essais
+est passé en production. Vérifié : commit déployé identique au head de `main`,
+offre `essai` présente en base, `Demo — Agence Novaé` basculée de « Veille »
+vers « Essai » avec sa trace, référentiel ANSSI intact (10 domaines,
+42 mesures), `/healthz` à 200.
+
+### `extended_history` : retirée, pas gardée (ADR-025)
+
+Il fallait trancher sa définition avant de poser sa garde. **Il n'y avait rien
+à définir** : aucune rétention par client, aucune purge de l'historique
+métier, aucune fenêtre paramétrable, aucun rollup. Tout le monde a déjà
+l'historique complet, pour toujours — « étendu » ne se distingue de rien.
+
+Ce n'était donc pas le risque redouté (une notion inséparable d'un quota) :
+`monthly_scans` compte des analyses consommées dans le mois, il ne tronque
+aucun historique. C'était pire — **une promesse affichée sur la grille
+tarifaire publique, sans rien derrière**, et un client « Souverain » payait
+pour elle.
+
+Et la définir se heurtait à une règle qu'on ne voulait pas plier : une garde
+d'historique consisterait à masquer à un client des données que son propre
+compte détient déjà, alors que la règle des autres gardes est que la lecture
+reste ouverte.
+
+Retirée du registre, des fonctionnalités de « Souverain » et de sa description
+publique (migration `0005`). Aucun client ne perd quoi que ce soit : la clé
+n'était lue nulle part.
+
+### Les cinq gardes, et leurs deux formes
+
+Un point unique traduit le refus métier en HTTP (`billing/api_guards.py`) :
+**402 Payment Required, jamais 403**. L'appelant a le droit de demander ;
+c'est son offre qui ne comprend pas la fonctionnalité. Le refus nomme l'offre
+qui débloque — c'est un argument de vente, pas une porte close.
+
+| Clé | Points d'usage gardés | Forme |
+|---|---|---|
+| `anssi_assessment` | démarrer, répondre à une mesure, terminer | refus |
+| `assistant` | ouvrir une conversation, envoyer un message | refus |
+| `charter_generation` | générer un document | refus |
+| `pdf_export` | export PDF (l'export Markdown reste ouvert) | refus |
+| `reuse_correlation` | calcul de corrélation dans le flux d'exposition | **omission** |
+
+La corrélation ne pouvait pas être un refus : le flux d'exposition contient
+les **fuites du client**. Le lui refuser en entier pour lui vendre un calcul
+reviendrait à prendre ses données en otage. Le calcul est donc **sauté** —
+pas filtré après coup : le filtrer coûterait le temps de calcul pour rien
+(Green IT) et laisserait la donnée atteignable au premier oubli dans un
+sérialiseur.
+
+**Lecture toujours ouverte.** Les chemins gardés sont ceux qui *produisent*.
+Un client qui perd le diagnostic garde ses évaluations, ses scores et son plan
+d'action ; qui perd l'assistant garde ses conversations ; qui perd l'export
+PDF garde son document, récupérable en Markdown.
+
+**Garde puis quota, dans cet ordre.** Sur la génération de charte et l'envoi
+de message, la garde d'offre précède le quota d'IA — comme
+`realtime_monitoring` place `ensure_feature` avant
+`ensure_monitored_asset_quota`. Annoncer « quota épuisé » à quelqu'un qui n'a
+pas la fonctionnalité serait trompeur. Vérifié qu'aucune garde ne tombe sur un
+chemin dont le **quota** est le contrôle voulu — l'erreur de la phase 11.
+
+### Ce que la neutralisation a trouvé, et que 26 tests verts ne disaient pas
+
+Premier jet : 26 tests, tous verts du premier coup. Consigne appliquée —
+douter. Neutralisation des gardes une par une : **trois n'ont rien fait
+rougir.**
+
+Ce n'était pas un défaut de sonde cette fois, mais un défaut de **grain** : la
+table associait une clé à **une** sonde. Retirer la garde de « répondre à une
+mesure », de « terminer l'évaluation » ou d'« envoyer un message » laissait la
+clé appliquée *ailleurs* — au démarrage, à l'ouverture de la conversation — et
+le test s'en contentait.
+
+Le trou était réel : **une évaluation ouverte avant un changement d'offre
+serait restée remplissable indéfiniment par appel direct à l'API.**
+
+Correction : une clé porte désormais la **liste** de ses points d'usage, et
+chacun est exercé séparément — c'est le grain auquel une garde peut
+disparaître. Après quoi les neuf neutralisations rougissent, dont celle du
+point unique (12 tests en échec).
+
+Enseignement, à ranger à côté de celui du 26 août : « la clé est gardée
+quelque part » ne vaut pas « la clé est gardée partout où elle doit l'être ».
+Un test structurel mal grainé rassure sans protéger.
+
+### Le test qui empêche la récidive
+
+`apps/billing/tests/test_feature_guards.py` associe chaque clé à des **appels
+réels**, pas à une recherche textuelle. Une recherche de chaîne passerait au
+vert sur un commentaire, un import mort ou une garde derrière `if False` :
+elle mesurerait la présence d'un mot, pas celle d'un contrôle.
+
+Le test échoue dans les deux sens — clé ajoutée sans point d'usage, sonde
+laissée derrière une clé retirée. C'est le seul test du dépôt capable
+d'échouer sur une garde **absente** ; tous les autres ne peuvent constater que
+le comportement d'un code présent.
+
+### Interface : désactivé, jamais masqué
+
+`FeatureGate` réutilisé sur le diagnostic (tableau de bord), la génération de
+charte, l'export PDF et la zone de saisie de l'assistant ;
+`FeatureLockedNotice` sur la corrélation de réutilisation et sur la page du
+diagnostic.
+
+Un défaut corrigé au passage : la page du diagnostic aurait affiché
+« Impossible de charger le diagnostic » sur un 402 — un message de **panne**
+pour une limite **commerciale**. Le 402 y est désormais traité comme ce qu'il
+est, avec l'encart qui décrit la fonctionnalité et nomme l'offre.
+
+### Playwright : deux faux négatifs avant le vrai résultat
+
+Le parcours a échoué deux fois avant de passer, et **aucun des deux échecs
+n'était un défaut de code** :
+
+1. **Deux exécutions Playwright en concurrence** sur le port 5173 : la seconde
+   a tué le serveur de la première. Symptôme trompeur — un dépassement de
+   délai dans l'attente de stabilisation de la page, qui ressemblait à une
+   boucle de rendu.
+2. **Le conteneur servait du code périmé.** `runserver` recharge à chaud, mais
+   les événements de fichier ne traversent pas le partage Windows → Linux de
+   Docker Desktop. Le fichier `api_guards.py` était bien *visible* dans le
+   conteneur (`ls` le montrait, `grep` trouvait la garde dans la vue) —
+   **le processus, lui, avait importé l'ancienne version au démarrage.**
+   L'API répondait donc 200 là où l'interface, elle, affichait correctement le
+   verrou : ce sont deux chemins de code différents, et seul l'un des deux
+   était périmé.
+
+Le second cas mérite d'être retenu : il produit exactement le signal « ta
+garde ne marche pas » alors qu'elle marche. Un `docker compose restart web` a
+suffi, et les deux parcours passent. **Vérifier que le processus exécute le
+code, pas seulement que le fichier est monté.**
+
+### Dette de méthode consignée
+
+Le Dockerfile sans `apt-get upgrade` a été trouvé par **Trivy**, pas par la
+suite de tests. C'est la **deuxième fois** pour cette classe de défaut — la
+première étant la course aux migrations, vue par la CI et non par les tests.
+Aucun test unitaire ne peut voir un paquet système périmé ni une procédure de
+déploiement fausse. Ce n'est pas un test à écrire, c'est une limite de méthode
+à assumer : les outils externes (Trivy, la CI, un déploiement réel) sont le
+seul filet sur cette classe-là. Consigné au §10 de
+`docs/deploiement_production.md`.
+
+### État
+
+- Backend : 974 tests, 971 au vert. Les 3 échecs restants sont WeasyPrint
+  (`libgobject-2.0-0` absent de ce poste Windows), environnementaux et
+  antérieurs.
+- Frontend : 102 tests, ruff et eslint propres.
+- Bout en bout : les deux parcours de gardes passent, plus le parcours témoin
+  (inscription → diagnostic → plan d'action).
+
+### Reste à faire
+
+- Déployer cette phase, puis vérifier en production qu'un client « Veille »
+  voit bien les tuiles grisées.
+- Points antérieurs : paiement réel, informations légales de l'éditeur, palier
+  de licence CTI, appels d'API redondants au tableau de bord, sauvegarde
+  externalisée, surveillance externe (UptimeRobot), protection de `main`.
