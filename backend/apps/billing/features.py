@@ -33,7 +33,11 @@ REUSE_CORRELATION = "reuse_correlation"
 SECRET_REVEAL = "secret_reveal"
 ANSSI_ASSESSMENT = "anssi_assessment"
 CHARTER_GENERATION = "charter_generation"
-EXTENDED_HISTORY = "extended_history"
+# « extended_history » a été retirée ici : clé sans référent — aucune
+# rétention par client, aucune purge de l'historique métier, aucune fenêtre
+# paramétrable. Elle reviendra le jour où une rétention différenciée par
+# offre existera, c'est-à-dire quand il y aura quelque chose à étendre.
+# Raisonnement complet : docs/adr/025-retrait-de-la-cle-historique-etendu.md
 REALTIME_MONITORING = "realtime_monitoring"
 
 REGISTRY: dict[str, Feature] = {
@@ -77,55 +81,6 @@ REGISTRY: dict[str, Feature] = {
             CHARTER_GENERATION,
             "Génération de charte informatique",
             "Produisez une charte informatique adaptée à votre entreprise, à relire et valider.",
-        ),
-        # ---------------------------------------------------------------
-        # ATTENTION — clé sans référent, décision en attente (phase 12).
-        #
-        # Une garde se pose sur une notion vérifiable : « au-delà de la
-        # période standard » suppose qu'une période standard existe. Elle
-        # n'existe pas. Recherche faite dans tout le dépôt, il n'y a :
-        #
-        #   - aucune rétention par client. Les trois réglages de rétention
-        #     (secrets, audit de révélation, corbeille) sont des réglages
-        #     PLATEFORME, identiques pour tous, réglés en console par
-        #     l'exploitant — jamais un argument commercial ;
-        #   - aucune purge de l'historique métier. La purge de phase 8C
-        #     efface le SECRET d'une fuite, jamais la fuite : les
-        #     constats, leur statut et leurs dates restent indéfiniment ;
-        #   - aucune fenêtre d'historique paramétrable. La seule fenêtre du
-        #     produit est le taux de disponibilité sur 24 h, en dur dans
-        #     ``monitoring.services.compute_uptime_percentage``, la même
-        #     pour toutes les offres ;
-        #   - aucun rollup de série temporelle. C'est une cible Green IT,
-        #     pas une fonctionnalité livrée.
-        #
-        # Autrement dit, tout le monde a déjà l'historique complet, pour
-        # toujours. « Étendu » ne se distingue de rien.
-        #
-        # Ce n'est donc PAS le cas de figure redouté (une notion qui croise
-        # un quota et qu'on n'arrive pas à en séparer) : ``monthly_scans``
-        # compte des analyses consommées dans le mois, il ne coupe aucun
-        # historique. C'est un cas plus embarrassant — une promesse vendue
-        # publiquement sur la grille tarifaire, sans rien derrière.
-        #
-        # Et la définir maintenant se heurte à une règle qu'on ne veut pas
-        # plier : une garde d'historique consisterait à MASQUER à un client
-        # des données que son propre compte détient déjà. La règle posée
-        # pour les six gardes — « on ne prend jamais en otage les données
-        # existantes, la lecture reste ouverte » — l'interdit. Les deux ne
-        # peuvent pas tenir ensemble.
-        #
-        # Recommandation : RETIRER cette clé du registre (elle disparaîtra
-        # alors d'elle-même de « Souverain », ``sanitize`` ignorant les
-        # clés inconnues) et la reprendre le jour où une rétention de base
-        # existe — c'est-à-dire quand il y aura quelque chose à étendre.
-        # Décision commerciale : laissée à l'exploitant, non appliquée ici.
-        # ---------------------------------------------------------------
-        Feature(
-            EXTENDED_HISTORY,
-            "Historique étendu",
-            "Conservez et consultez l'historique complet de vos analyses au-delà de la période "
-            "standard.",
         ),
         Feature(
             REALTIME_MONITORING,
