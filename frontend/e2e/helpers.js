@@ -11,12 +11,30 @@ export function uniqueSuffix() {
   return `${Date.now()}-${Math.floor(Math.random() * 100000)}`
 }
 
-// RGAA baseline (Phase 5, mission item 8): fail only on the violation
-// severities that mean an interactive element is genuinely unusable
-// ("critical"/"serious") — minor/moderate axe findings are tracked as
-// backlog, not a CI-blocking bar, matching the mission's "sans violation
-// critique" wording rather than a zero-violations bar the app isn't at yet.
-const BLOCKING_IMPACTS = new Set(['critical', 'serious'])
+// Seuil de blocage : « critical », « serious » ET « moderate ».
+//
+// Le seuil s'arrêtait à « serious ». Ce n'était pas une erreur au moment où
+// il a été posé — l'application n'était pas au niveau — mais il a fini par
+// masquer un vrai défaut : les pages de connexion et d'inscription n'avaient
+// AUCUN repère `main`, un lecteur d'écran ne pouvait pas sauter au contenu.
+// axe le rapportait à chaque exécution, en « moderate », et notre propre
+// seuil l'écartait.
+//
+// La leçon vaut d'être écrite ici plutôt qu'ailleurs : un audit vert AU SEUIL
+// CHOISI n'est pas la même chose qu'« accessible », et écrire « aucune
+// violation » sans nommer le seuil est une affirmation plus forte que ce
+// qu'on a mesuré.
+//
+// Abaissement décidé sur mesure, pas au jugé : l'inventaire complet des dix
+// pages ne comptait plus qu'UNE violation « moderate » (un état vide sans
+// `h1` sur /resultats), corrigée dans le même mouvement. Le coût était donc
+// d'une correction, et le bénéfice qu'un défaut de repère ne puisse plus
+// repasser sous le seuil.
+//
+// « minor » reste hors du seuil : ces signalements relèvent de préférences
+// d'outil davantage que de l'usage réel, et les inclure ferait échouer la CI
+// sur du bruit — ce qui apprendrait à ignorer l'audit.
+const BLOCKING_IMPACTS = new Set(['critical', 'serious', 'moderate'])
 
 export function assertNoCriticalViolations(axeResults) {
   const blocking = axeResults.violations.filter((violation) =>
@@ -52,22 +70,6 @@ function indenter(texte = '') {
 }
 
 /**
- * Attend la fin du chargement d'une page — c'est-à-dire la disparition des
- * squelettes (`data-loading`, voir `components/ui/Skeleton.jsx`).
- *
- * Ce n'est PAS un délai de confort déguisé : la condition attendue est un
- * état de l'interface, et si le chargement n'aboutit jamais, l'attente
- * échoue au lieu de laisser passer.
- *
- * Nécessaire parce que le premier rendu du tableau de bord demande environ
- * 6 s sur le poste de développement (contre ~1 s en intégration continue),
- * au-delà du délai par défaut d'une assertion. La cause de fond est
- * mesurée et connue : le tableau de bord appelle `/auth/me/` TROIS fois,
- * `/assessments/` et `/monitoring/dashboard/` deux fois chacun. Attendre ici
- * ne corrige pas ce gaspillage — c'est une dette ouverte au journal, pas un
- * problème réglé.
- */
-/**
  * Attend qu'une page ait fini de charger — et pas seulement qu'elle n'ait pas
  * encore commencé.
  *
@@ -79,17 +81,26 @@ function indenter(texte = '') {
  *
  * On attend donc trois conditions ensemble : la région principale existe,
  * plus aucun squelette, et elle contient du texte. C'est la troisième
- * condition qui ferme la course — « montée mais vide » est précisément
- * l'état que l'ancienne version prenait pour « chargée ».
+ * condition qui ferme la course — « montée mais vide » est précisément l'état
+ * que l'ancienne version prenait pour « chargée ».
  *
- * Première tentative de correction : attendre un titre de niveau 1. Fausse —
- * certaines pages balayées n'en ont pas (Résultats sur une entreprise neuve
- * affiche un état vide sans titre). Le balayage d'accessibilité l'a signalé
- * immédiatement.
+ * Première tentative de correction : attendre un titre de niveau 1. Fausse à
+ * l'époque, parce que certaines pages balayées n'en avaient pas — l'état vide
+ * de Résultats, notamment. (Ce n'est plus vrai depuis que cet état porte son
+ * `h1` : le motif de rejet, lui, reste bon. Une condition d'attente ne doit
+ * pas dépendre d'un détail de rendu qu'une page peut légitimement ne pas
+ * avoir.)
  *
  * C'est la troisième sonde de ce projet qui concluait au vert sans rien
  * mesurer — après le `awk` des fins de ligne et la neutralisation
  * `"" or (...)`.
+ *
+ * L'attente reste par ailleurs nécessaire parce que le premier rendu du
+ * tableau de bord demande environ 6 s sur le poste de développement contre
+ * ~1 s en intégration continue. La cause de fond est mesurée : `/auth/me/`
+ * est appelé TROIS fois, `/assessments/` et `/monitoring/dashboard/` deux
+ * fois chacun. Attendre ici ne corrige pas ce gaspillage — c'est une dette
+ * ouverte au journal, pas un problème réglé.
  */
 export async function waitForContentLoaded(page) {
   await page.waitForFunction(

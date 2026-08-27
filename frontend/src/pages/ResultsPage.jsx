@@ -11,6 +11,7 @@ import {
   Tooltip,
 } from 'recharts'
 import { assessmentsApi } from '../api/endpoints'
+import Button from '../components/ui/Button'
 import ScoreGauge from '../components/ui/ScoreGauge'
 import Card, { CardHeader } from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
@@ -93,20 +94,32 @@ export default function ResultsPage() {
   }
   if (!assessment || !scores) {
     return (
-      <EmptyState
-        title="Aucune évaluation terminée"
-        description="Complétez le diagnostic pour voir vos résultats et votre score de maturité."
-        action={
-          <Link to="/diagnostic">
-            <button
-              type="button"
-              className="transition-smooth rounded-md bg-accent-700 px-4 py-2 text-sm font-medium text-white hover:bg-accent-800"
-            >
-              Démarrer le diagnostic
-            </button>
-          </Link>
-        }
-      />
+      // Le titre de page reste, même sans données. C'est ce qu'un lecteur
+      // d'écran annonce en arrivant : sans lui, la page se présente sans nom,
+      // et l'état vide devient le seul repère — alors qu'il décrit une
+      // situation, pas la page. Le défaut était rapporté par axe
+      // (`page-has-heading-one`) mais classé « moderate », donc écarté par
+      // notre propre seuil de balayage jusqu'à ce qu'il soit abaissé.
+      <div className="space-y-6">
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-ink-900">Résultats</h1>
+          <p className="mt-1 text-sm text-ink-500">
+            Votre score de maturité et son détail par domaine.
+          </p>
+        </div>
+        <EmptyState
+          title="Aucune évaluation terminée"
+          description="Complétez le diagnostic pour voir vos résultats et votre score de maturité."
+          action={
+            <Link to="/diagnostic">
+              {/* Bleu de marque, plus ambre : l'ambre ne porte plus d'action
+                  depuis la refonte des fondations. Ce bouton avait échappé au
+                  balayage parce qu'il n'utilisait pas le composant `Button`. */}
+              <Button variant="primary">Démarrer le diagnostic</Button>
+            </Link>
+          }
+        />
+      </div>
     )
   }
 

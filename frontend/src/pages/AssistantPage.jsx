@@ -273,7 +273,7 @@ export default function AssistantPage() {
             type="submit"
             disabled={sending || !input.trim()}
             aria-label="Envoyer"
-            className="transition-smooth flex items-center justify-center rounded-md bg-accent-700 px-4 py-2 text-sm font-medium text-white hover:bg-accent-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="transition-smooth flex items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-brand-600/45"
           >
             <Send className="size-4" aria-hidden="true" />
           </button>
