@@ -2916,3 +2916,59 @@ seul filet sur cette classe-là. Consigné au §10 de
 - Points antérieurs : paiement réel, informations légales de l'éditeur, palier
   de licence CTI, appels d'API redondants au tableau de bord, sauvegarde
   externalisée, surveillance externe (UptimeRobot), protection de `main`.
+
+### 2026-08-27 (suite) — Phase 12 en production
+
+Déploiement du commit `614f9bd` sur `rssiasservice.online`. CI verte au
+préalable sur les **cinq** travaux, `container-scan` et `e2e` compris — le
+parcours de gardes tourne donc aussi en intégration continue, pas seulement
+sur le poste.
+
+**Vérifications faites après coup, chacune par observation réelle :**
+
+| Point | Constat |
+|---|---|
+| Commit déployé | `614f9bd4a86…`, identique au head de `main` |
+| `/healthz` | `{"status": "ok"}`, HTTP 200 |
+| Référentiel ANSSI | 1 référentiel, 10 domaines, 42 mesures |
+| Registre en production | 8 clés ; `features.is_known("extended_history")` renvoie `False` |
+| « Souverain » en base | plus de `extended_history` dans ses fonctionnalités |
+| Description publique | « Quotas paramétrables, utilisateurs illimités et accompagnement à la mise en conformité » — la mention « historique étendu » a disparu |
+| Grille tarifaire publique (`/api/v1/billing/plans/`) | aucune offre n'expose plus la clé |
+
+**La vérification qui comptait** : les gardes tiennent-elles en production, et
+pas seulement en test ? Appels directs à l'API publique, avec un jeton du
+client de démonstration `Demo — Menuiserie Lambert` (offre « Veille ») :
+
+```
+POST /api/v1/assessments/start/                 402  « Diagnostic de maturité » … | offre requise : Pilotage
+POST /api/v1/ai/conversations/                  402  « Assistant conversationnel » … | offre requise : Pilotage
+POST /api/v1/ai/documents/                      402  « Génération de charte informatique » … | offre requise : Pilotage
+GET  /api/v1/ai/documents/999999/export/pdf/    402  « Export PDF des documents » … | offre requise : Pilotage
+```
+
+Chaque refus nomme l'offre. Et le **témoin**, sans lequel le résultat ne
+prouverait rien — une garde qui bloque tout le monde produirait les mêmes
+402 — avec `Demo — Transports Vidal` (offre « Pilotage ») :
+
+```
+POST /api/v1/assessments/start/                 200
+POST /api/v1/ai/conversations/                  201
+GET  /api/v1/ai/documents/999999/export/pdf/    404   (document absent, pas un refus d'offre)
+```
+
+Les jetons ont été émis côté serveur (`RefreshToken.for_user`) plutôt qu'en
+changeant le mot de passe d'un compte de démonstration : une vérification ne
+doit pas modifier ce qu'elle observe, et les jetons expirent en quinze
+minutes.
+
+**Ce qui reste à constater de visu** : les tuiles grisées dans l'interface,
+sur un compte « Veille ». Les comptes des clients de démonstration créés par
+`seed_demo_clients` n'ont pas de mot de passe documenté — contrairement au
+tenant vitrine (`docs/demo_runbook.md`). Marche à suivre notée pour
+l'exploitant ; à documenter dans le runbook si l'usage se répète.
+
+**La fuite commerciale est fermée.** Un client « Veille » à 89 € n'obtient
+plus ce qui est vendu 249 €, et le contrôle est désormais vérifié à trois
+niveaux : tests unitaires (avec neutralisation de chaque garde), parcours de
+bout en bout en intégration continue, et appels réels contre la production.
