@@ -1,12 +1,20 @@
-import { AlertTriangle, Fingerprint, KeyRound, RefreshCw, ShieldAlert, ShieldOff } from 'lucide-react'
+import {
+  Fingerprint,
+  KeyRound,
+  RefreshCw,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldOff,
+} from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { monitoringApi, threatIntelligenceApi } from '../api/endpoints'
 import FeatureGate from '../components/FeatureGate'
 import RevealSecretModal from '../components/RevealSecretModal'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
-import Card, { CardHeader } from '../components/ui/Card'
+import Card from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
+import { grouperParGravite, teinteGravite } from './compromises/groupesGravite'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import Tabs from '../components/ui/Tabs'
 import { useToast } from '../components/ui/Toast'
@@ -70,7 +78,14 @@ function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal })
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-critical-subtle text-critical-strong">
+          {/* La pastille portait `bg-critical-subtle` sur TOUTES les cartes :
+              une fuite « Élevée » s'annonçait en rouge critique. La teinte
+              suit désormais la gravité réelle, depuis la même échelle que les
+              scores d'exposition. */}
+          <div
+            className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md"
+            style={{ color: teinteGravite(finding.severity), backgroundColor: `color-mix(in srgb, ${teinteGravite(finding.severity)} 12%, white)` }}
+          >
             <ShieldAlert className="size-5" aria-hidden="true" />
           </div>
           <div>
@@ -94,16 +109,24 @@ function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal })
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
+        {/* UNE seule action forte par carte. Il y en avait trois de poids
+            voisin — deux boutons bordés et un bouton plein — répétées sur
+            chaque fuite : le regard ne savait plus laquelle était le chemin
+            normal. « Marquer traité » est la résolution, donc la seule
+            remplie ; révéler un mot de passe est une action d'enquête et
+            ignorer est un abandon, tous deux en texte seul.
+            L'ordre de lecture suit l'importance : enquêter, abandonner, puis
+            résoudre en bout de ligne. */}
+        <div className="flex shrink-0 items-center gap-1">
           {finding.has_secret && canReveal && (
-            <Button variant="secondary" size="sm" icon={KeyRound} onClick={() => onReveal(finding.id)}>
+            <Button variant="ghost" size="sm" icon={KeyRound} onClick={() => onReveal(finding.id)}>
               Révéler le mot de passe
             </Button>
           )}
           {finding.status === 'open' && (
             <>
               <Button
-                variant="secondary"
+                variant="ghost"
                 size="sm"
                 disabled={updating}
                 onClick={() => onUpdateStatus(finding.id, 'ignored')}
@@ -157,22 +180,42 @@ function ScanStatusBar({ status, onScan, scanning }) {
   )
 }
 
+/**
+ * Panneau d'administration : même page, poids visuel inférieur.
+ *
+ * « Surveillance en temps réel » et « Journal des révélations » portaient la
+ * même carte blanche ombrée que les fuites elles-mêmes. Sur une page dont la
+ * matière est la gravité, deux blocs de réglage ne doivent pas peser autant
+ * que dix compromissions : fond transparent, pas d'ombre, un filet en haut, et
+ * un titre en surtitre plutôt qu'en titre de section.
+ */
+function PanneauSecondaire({ titre, action, children }) {
+  return (
+    <section className="border-t border-ink-200 pt-5">
+      <div className="mb-3 flex items-start justify-between gap-4">
+        <h2 className="t-eyebrow">{titre}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  )
+}
+
 function MonitoredAssetsPanel({ assets, monitored, onRegister, onUnregister, poolStatus, busyId }) {
   const monitoredAssetIds = new Set(monitored.map((m) => m.asset_id))
   const registrable = assets.filter((a) => !monitoredAssetIds.has(a.id))
 
   return (
-    <Card>
-      <CardHeader
-        title="Surveillance en temps réel"
-        action={
-          poolStatus && (
-            <span className="text-xs text-ink-500">
-              {poolStatus.pool_used} / {poolStatus.pool_capacity} slots utilisés
-            </span>
-          )
-        }
-      />
+    <PanneauSecondaire
+      titre="Surveillance en temps réel"
+      action={
+        poolStatus && (
+          <span className="t-meta">
+            {poolStatus.pool_used} / {poolStatus.pool_capacity} emplacements utilisés
+          </span>
+        )
+      }
+    >
       <p className="mb-4 text-sm text-ink-500">
         Les actifs surveillés en temps réel reçoivent une alerte immédiate en cas de nouvelle
         compromission détectée (hors quota de scan mensuel), dans la limite de{' '}
@@ -224,21 +267,20 @@ function MonitoredAssetsPanel({ assets, monitored, onRegister, onUnregister, poo
           </ul>
         </div>
       )}
-    </Card>
+    </PanneauSecondaire>
   )
 }
 
 function RevealAuditPanel({ audits, onLoad, loading }) {
   return (
-    <Card>
-      <CardHeader
-        title="Journal des révélations"
-        action={
-          <Button variant="secondary" size="sm" onClick={onLoad} loading={loading}>
-            {audits === null ? 'Afficher' : 'Actualiser'}
-          </Button>
-        }
-      />
+    <PanneauSecondaire
+      titre="Journal des révélations"
+      action={
+        <Button variant="ghost" size="sm" onClick={onLoad} loading={loading}>
+          {audits === null ? 'Afficher' : 'Actualiser'}
+        </Button>
+      }
+    >
       <p className="mb-3 text-xs text-ink-500">
         Chaque tentative de révélation d’un mot de passe (accordée ou refusée) est tracée ici —
         jamais le secret lui-même.
@@ -283,7 +325,7 @@ function RevealAuditPanel({ audits, onLoad, loading }) {
           </table>
         </div>
       )}
-    </Card>
+    </PanneauSecondaire>
   )
 }
 
@@ -462,26 +504,60 @@ export default function CompromisesPage() {
       <Tabs tabs={TABS} activeId={activeTab} onChange={setActiveTab} />
 
       {findings.length === 0 ? (
-        <EmptyState
-          icon={activeTab === 'open' ? AlertTriangle : ShieldAlert}
-          title={activeTab === 'open' ? 'Aucune compromission ouverte' : 'Aucun élément ici'}
-          description={
-            activeTab === 'open'
-              ? 'Aucune fuite de données détectée pour vos actifs surveillés pour le moment.'
-              : 'Les compromissions traitées ou ignorées apparaîtront ici.'
-          }
-        />
+        activeTab === 'open' ? (
+          // Une absence de fuite n'est pas une absence de données : c'est le
+          // résultat que le client paie pour obtenir. Il était écrit en gris,
+          // sous un pictogramme d'alerte, et se lisait comme une panne.
+          <EmptyState
+            tone="positive"
+            icon={ShieldCheck}
+            title="Aucune fuite en cours"
+            description="Rien à traiter sur vos actifs surveillés. La surveillance continue en arrière-plan : vous serez prévenu dès qu’un élément apparaît."
+          />
+        ) : (
+          <EmptyState
+            icon={ShieldAlert}
+            title={activeTab === 'treated' ? 'Rien de traité pour l’instant' : 'Rien d’ignoré'}
+            description={
+              activeTab === 'treated'
+                ? 'Les compromissions que vous marquerez comme traitées se retrouveront ici.'
+                : 'Les compromissions que vous choisirez d’ignorer se retrouveront ici.'
+            }
+          />
+        )
       ) : (
-        <div className="space-y-4">
-          {findings.map((finding) => (
-            <FindingCard
-              key={finding.id}
-              finding={finding}
-              onUpdateStatus={handleUpdateStatus}
-              updating={updatingId === finding.id}
-              canReveal={canReveal}
-              onReveal={setRevealFindingId}
-            />
+        // Regroupement par gravité, avec le compte dans le séparateur. La
+        // liste arrivait à plat et le serveur ne garantit pas l'ordre : sur le
+        // jeu de démonstration, une fuite critique se lisait après quatre
+        // fuites élevées. Le compte appartient au séparateur — c'est là qu'on
+        // décide si on lit la suite.
+        <div className="space-y-8">
+          {grouperParGravite(findings).map((groupe) => (
+            <section key={groupe.severite} aria-labelledby={`gravite-${groupe.severite}`}>
+              <div className="mb-3 flex items-center gap-3">
+                <span
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: groupe.teinte }}
+                  aria-hidden="true"
+                />
+                <h2 id={`gravite-${groupe.severite}`} className="t-eyebrow">
+                  {groupe.libelle}
+                </h2>
+                <span className="h-px flex-1 bg-ink-200" aria-hidden="true" />
+              </div>
+              <div className="space-y-4">
+                {groupe.findings.map((finding) => (
+                  <FindingCard
+                    key={finding.id}
+                    finding={finding}
+                    onUpdateStatus={handleUpdateStatus}
+                    updating={updatingId === finding.id}
+                    canReveal={canReveal}
+                    onReveal={setRevealFindingId}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}
