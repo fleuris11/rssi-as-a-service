@@ -3231,3 +3231,154 @@ a fait son travail — n'était jamais regardé.
 
 Vérifications : 121 tests Vitest, 20 parcours Playwright, construction verte,
 inventaire d'accessibilité à zéro sur dix pages.
+
+## 2026-08-27 (suite 3) — Refonte de la vitrine publique
+
+La vitrine reçoit les jetons posés pour l'espace client — bleu d'action, olive
+pour le premier palier, six rôles typographiques, trois rythmes d'espacement.
+Trois défauts réels sont sortis du travail, dont un grave.
+
+### La grille tarifaire était absente de la page
+
+Constaté par la **capture pleine hauteur sans défilement**, qui est exactement
+le contrôle demandé depuis la phase 9 : la section « Offres » montrait un
+titre, un grand blanc, puis la note de bas de section. **Les trois cartes
+étaient dans le DOM, à `opacity-0`.**
+
+La cause n'est pas celle qu'on croit. `Reveal` démarrait à opacité nulle avec
+un minuteur de 2 s en filet de sécurité, censé tout afficher si l'observateur
+ne se déclenchait pas. Mais les cartes tarifaires sont rendues **après** la
+réponse de l'API : montées tardivement, leur minuteur repartait de zéro à
+chaque remontage. **Un filet dont le compte à rebours redémarre n'est pas un
+filet.**
+
+Qui voyait cette page vide : un robot d'indexation, une impression, une capture
+pleine hauteur, un visiteur arrivant par une ancre en bas de page — et
+n'importe qui pendant les trois premières secondes.
+
+**La correction ne raccourcit pas le délai**, ce qui n'aurait fait que déplacer
+le problème. Elle **renverse l'état par défaut** : l'élément est visible, et
+l'entrée dans le champ de vision ne fait qu'y *ajouter* une animation. Une
+`animation` CSS, plus un état. Si rien ne se déclenche, il ne se passe rien de
+plus — le contenu est là.
+
+La différence tient en une phrase : **on ne peut plus rendre du contenu
+invisible en cassant une animation.** C'est une garantie structurelle, pas une
+précaution.
+
+Deuxième occurrence trouvée dans la foulée : `FlowDiagram` avait le même
+défaut — nœuds à opacité nulle, traits non tracés, même minuteur de 2 s. Même
+inversion appliquée. La cascade de `setTimeout` disparaît au passage, le
+décalage étant porté par `animation-delay`.
+
+**Garde permanente ajoutée** (`e-public-site.spec.js`) : le test ne défile pas,
+à dessein, et échoue si un seul élément porteur de texte est à opacité < 1.
+
+**Effet de bord attrapé au vol** : `auditAccessibility` attendait la fin des
+*transitions* CSS. En passant les apparitions de `transition` à `animation`,
+cette attente ne couvrait plus rien sur la vitrine — axe se serait remis à
+mesurer des couleurs fondues, exactement le défaut corrigé la veille, revenu
+par une porte que personne ne surveillait. L'attente couvre désormais les deux,
+en nommant nos animations pour ne pas attendre indéfiniment une animation en
+boucle.
+
+### Le rouge sur la vitrine : une frontière, pas une interdiction
+
+Une page marketing qui teinte ses encadrés en rouge parce que c'est joli
+**détruit le sens de cette couleur dans l'application** : le client finit par
+voir du rouge partout, donc nulle part.
+
+Mais la vitrine doit montrer ce que le produit affiche, et une reproduction
+d'alerte en gris ne montre rien. D'où une règle de frontière :
+
+- **hors du cadre produit** : bleu de marque et gris d'encre, exclusivement ;
+- **dans le cadre produit** : les couleurs du produit, à l'identique.
+
+Le cadre (`ApercuProduit`) est ce qui rend la règle tenable. Il dit au visiteur
+« vous regardez l'écran » et au développeur où s'arrête la licence.
+
+Ce qui a été retiré de la surface marketing :
+
+| Emploi | Devenu |
+|---|---|
+| Schéma « domaine ressemblant » : ambre et rouge pour opposer deux domaines | gris et bleu, la différence portée par **le caractère qui change** — plus juste, et la couleur n'est plus seule porteuse de sens |
+| Coches vertes des listes de fonctionnalités et de tarifs | bleu de marque |
+| Astérisque des champs obligatoires en **rouge critique**, sur sept champs | gris ; le rouge est rendu aux erreurs réelles, juste en dessous |
+| Encadré « Réutilisation possible », bloc « À faire » | inchangés, mais **déplacés dans le cadre produit** |
+
+### Hiérarchie
+
+L'accroche doit se lire en une seconde. Trois leviers, aucun décoratif : une
+seule chose est grande sur cet écran (le titre, porté à 3 rem et borné à 19
+caractères par ligne) ; la phrase de tête est bornée à 46 caractères pour ne
+pas rivaliser ; une seule action est remplie — « Se connecter » s'adresse à un
+client existant, pas au prospect, et passe en texte seul.
+
+**Quatre sections sur six n'avaient aucun point d'entrée** : le regard tombait
+sur un titre sans savoir de quoi la section parlait. Toutes portent désormais
+la même amorce — un filet court, un surtitre, le titre, la phrase de tête —
+à hauteur constante, si bien qu'en faisant défiler on retrouve toujours le
+début d'une section au même endroit. Le surtitre passe du bleu au gris : en
+bleu, il rivalisait avec les actions, seule chose bleue que le visiteur doive
+repérer d'un coup d'œil.
+
+### Emplacements de captures produit — quatrième dérive documentaire
+
+`public/screenshots/README.md` décrivait trois emplacements et la marche à
+suivre pour les produire. **Aucun code ne lisait ces fichiers.** Déposer
+`exposition.png` n'avait aucun effet sur la page.
+
+Après le README annonçant DKIM, le registre de fonctionnalités sans gardes et
+le commentaire de contraste faux, c'est le quatrième cas du même motif. La
+correction rend le **document vrai** plutôt que de le réécrire : le cadre
+demande l'image et retombe sur la reconstitution CSS si elle est absente.
+Déposer le fichier suffit réellement, sans toucher au code.
+
+Repli par `onError` plutôt qu'un inventaire codé en dur : un inventaire serait
+une seconde chose à tenir à jour, donc une seconde chose à laisser dériver.
+
+**Dimensions, mesurées et non estimées** — largeur d'affichage du cadre à
+chaque point de rupture :
+
+| Fenêtre | Accroche | Aperçus |
+|---|---|---|
+| ≥ 1440 px | 511 px | 546 px |
+| 1024 px | 449 px | 462 px |
+| **768 px** | **728 px** | **726 px** |
+| 390 px | 350 px | 348 px |
+
+Le maximum est atteint à 768 px, la mise en page passant en colonne unique.
+**Les trois fichiers sont donc à produire en 1456 px de large** — le double du
+maximum d'affichage, net sur écran à densité double, et inutile d'aller
+au-delà. Hauteur libre ; viser un rapport proche de 1,3:1 pour l'accroche
+(environ 1456 × 1120), au-delà duquel l'image domine le titre.
+
+### Non touché, délibérément
+
+La console d'administration. Elle fonctionne, un seul utilisateur la voit, et
+ce n'est pas là que se joue la crédibilité du produit.
+
+### Le nettoyage du pool ne survit pas à une interruption
+
+Troisième rencontre avec la ressource rare, sous un angle nouveau. Une
+exécution de la suite a été **interrompue** (dépassement de délai côté outil,
+pas côté test) : `test.afterAll` n'a donc jamais tourné, et un locataire est
+resté, portant le pool à **14/15**.
+
+L'exécution suivante a produit **13 échecs** — et aucun n'avait de rapport
+avec le code. Une seule place libre pour une suite qui en consomme plusieurs :
+la première inscription passe, les suivantes sont refusées, et l'échec en
+cascade ressemble à une régression massive. Après restitution des places,
+**23 tests verts** sur le même code.
+
+Ce qu'il faut en retenir : **le nettoyage en `afterAll` ne protège que des
+exécutions qui se terminent.** Un test tué, un `Ctrl+C`, un délai dépassé, et
+la ressource reste engagée. La parade employée ici est une vérification du pool
+*avant* de conclure quoi que ce soit d'un échec de la suite — réflexe à avoir
+avant de chercher une régression qui n'existe pas.
+
+### Vérifications
+
+124 tests Vitest, suite Playwright complète (**23 verts**), audit axe au **nouveau seuil**
+(`critical`/`serious`/`moderate`) sur la vitrine en 1440 px et en 390 px,
+captures pleine hauteur avant/après dans les deux largeurs, construction verte.
