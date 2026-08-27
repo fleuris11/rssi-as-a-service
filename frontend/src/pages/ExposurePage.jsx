@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { aiApi, threatIntelligenceApi } from '../api/endpoints'
-import ExposureScoreDial from '../components/ExposureScoreDial'
+import ScoreGauge from '../components/ui/ScoreGauge'
 import FeatureGate, { FeatureLockedNotice } from '../components/FeatureGate'
 import PreIncidentRadar from '../components/PreIncidentRadar'
 import RevealSecretModal from '../components/RevealSecretModal'
@@ -235,10 +235,12 @@ function AssetCard({ group, canReveal, onReveal, expanded, onToggle, retentionDa
         aria-expanded={expanded}
       >
         <div className="flex items-center gap-3">
-          <ExposureScoreDial
+          <ScoreGauge
             score={group.score}
+            scale="exposure"
             level={group.level}
             levelLabel={group.level_label}
+            size="sm"
           />
           <div>
             <p className="text-sm font-medium text-ink-900">{group.asset_value}</p>

@@ -11,7 +11,7 @@ import {
   Tooltip,
 } from 'recharts'
 import { assessmentsApi } from '../api/endpoints'
-import ScoreRing from '../components/ScoreRing'
+import ScoreGauge from '../components/ui/ScoreGauge'
 import Card, { CardHeader } from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
 import { SkeletonCard } from '../components/ui/Skeleton'
@@ -131,7 +131,7 @@ export default function ResultsPage() {
       </div>
 
       <Card className="flex items-center gap-6">
-        <ScoreRing score={scores.global_score} label="/ 100" size={140} />
+        <ScoreGauge score={scores.global_score} scale="maturity" size="lg" showLegend />
         <div>
           <p className="text-sm font-medium text-ink-500">Score global de maturité</p>
           <p className="mt-1 font-display text-lg text-ink-700">

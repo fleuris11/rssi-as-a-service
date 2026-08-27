@@ -100,6 +100,54 @@
   --color-critical-strong: #bc242c;
   --color-critical-subtle: #fceeef;
 
+  /* ---------------------------------------------------------------
+   * ECHELLE DE GRAVITE — quatre niveaux, alignés sur les seuils
+   * d'ADR-016 : calme < 20 <= à surveiller < 50 <= préoccupant < 75 <=
+   * critique. Le serveur renvoie déjà ces quatre paliers ; l'interface
+   * n'en connaissait que trois couleurs et empruntait `accent` pour le
+   * quatrième — c'est-à-dire la couleur des boutons. Une teinte qui
+   * sert à la fois d'action et de gravité ne signifie plus rien.
+   *
+   * Ces teintes sont RESERVEES au risque. Aucun élément d'interface
+   * neutre (bouton, onglet, lien, bordure de carte) ne doit y toucher.
+   *
+   * Distinct de `ok`/`warning`/`critical`, qui restent l'état
+   * OPERATIONNEL d'une chose (un actif répond ou non, un abonnement est
+   * actif ou expiré) : un état binaire n'est pas une gravité graduée.
+   *
+   * Contrastes calculés, pas estimés (texte `-strong` sur blanc, puis
+   * sur son propre `-surface`) :
+   *   calm      5.44 / 4.79      concern   6.03 / 5.33
+   *   watch     5.92 / 5.42      critical  6.13 / 5.44
+   * ------------------------------------------------------------- */
+  --color-risk-calm: #22775b;
+  --color-risk-calm-surface: #eaf7f2;
+  --color-risk-calm-border: #b8e2d4;
+
+  --color-risk-watch: #8a5a08;
+  --color-risk-watch-surface: #fdf4e4;
+  --color-risk-watch-border: #f0dcb4;
+
+  --color-risk-concern: #a8431c;
+  --color-risk-concern-surface: #fdeee7;
+  --color-risk-concern-border: #f3cdba;
+
+  --color-risk-critical: #bc242c;
+  --color-risk-critical-surface: #fceef0;
+  --color-risk-critical-border: #f3c6ca;
+
+  /* ---------------------------------------------------------------
+   * RYTHME D'ESPACEMENT — trois valeurs, pas un continuum.
+   *
+   * L'application utilisait tout l'intervalle de 8 à 24 px : rien ne
+   * séparait « dans un bloc » de « entre deux sections », donc aucun
+   * rythme, donc un mur continu. Trois crans suffisent à hiérarchiser,
+   * et l'écart entre eux doit être franc pour se voir.
+   * ------------------------------------------------------------- */
+  --space-tight: 0.5rem;
+  --space-block: 1.25rem;
+  --space-section: 2.5rem;
+
   --radius-sm: 0.375rem;
   --radius-md: 0.625rem;
   --radius-lg: 1rem;
@@ -117,6 +165,96 @@ body {
   background-color: var(--color-canvas);
   color: var(--color-ink-800);
   font-family: var(--font-sans);
+}
+
+/* ---------------------------------------------------------------------
+ * ROLES TYPOGRAPHIQUES — six, pas davantage.
+ *
+ * Le défaut n'était pas l'absence de tailles (Tailwind les fournit
+ * toutes) mais leur non-emploi : sur Exposition et Compromissions,
+ * 35 usages sur 38 étaient `text-sm` ou `text-xs`, soit 14 ou 12 px. Entre
+ * le titre de page et le corps, il n'y avait rien — donc, à l'intérieur
+ * d'une carte, le titre d'une fuite, son explication et l'action à mener
+ * pesaient pareil.
+ *
+ * Des RÔLES plutôt que des tailles : une page déclare ce qu'un texte est
+ * (`t-lead`, `t-meta`), pas sa dimension. Une taille se choisit au cas par
+ * cas et dérive ; un rôle se relit.
+ * ------------------------------------------------------------------- */
+.t-display {
+  font-family: var(--font-display);
+  font-size: 1.875rem;
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--color-ink-900);
+}
+
+.t-title {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-ink-900);
+}
+
+/* La phrase qui compte : celle qu'on lit si on ne lit qu'une ligne. */
+.t-lead {
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--color-ink-800);
+}
+
+.t-body {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--color-ink-700);
+}
+
+.t-meta {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--color-ink-500);
+}
+
+/* Étiquette de section. Les majuscules ne sont lisibles qu'avec de
+   l'interlettrage et en petite dose — jamais sur une phrase. */
+.t-eyebrow {
+  font-size: 0.6875rem;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-500);
+}
+
+/* ---------------------------------------------------------------------
+ * RYTHME — trois piles, correspondant aux trois jetons d'espacement.
+ * `> * + *` plutôt qu'une marge sur chaque enfant : rien ne dépasse en
+ * haut ni en bas du conteneur, donc les piles s'imbriquent sans corriger
+ * les marges à la main.
+ * ------------------------------------------------------------------- */
+.stack-tight > * + * {
+  margin-top: var(--space-tight);
+}
+.stack-block > * + * {
+  margin-top: var(--space-block);
+}
+.stack-section > * + * {
+  margin-top: var(--space-section);
+}
+
+/* ---------------------------------------------------------------------
+ * FOCUS — un seul anneau, partout, visible sur fond clair comme sur la
+ * barre latérale sombre. Posé sur `:focus-visible` uniquement : un
+ * anneau au clic à la souris est du bruit, son absence au clavier est un
+ * défaut d'accessibilité.
+ * ------------------------------------------------------------------- */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-brand-600);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 /* Consistent, calm 180ms transition for interactive state changes

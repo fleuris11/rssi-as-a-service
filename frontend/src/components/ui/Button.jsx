@@ -1,16 +1,26 @@
 import { Loader2 } from 'lucide-react'
 
+// L'action primaire est le BLEU DE MARQUE, plus l'ambre.
+//
+// L'ambre (`accent`) portait l'action primaire, et sa version foncée est
+// à quelques degrés de `warning`. Sur la page Compromissions, cela donnait
+// onze boutons ambre pleins — dix « Marquer traité » et « Lancer un scan » —
+// au milieu d'encadrés « À faire » et de bandeaux d'alerte eux aussi ambre.
+// La teinte censée dire « c'est ici qu'on agit » disait aussi « attention »,
+// et à cette fréquence elle ne disait plus rien du tout.
+//
+// Passer l'action en bleu de marque libère tout le spectre chaud pour la
+// seule échelle de gravité. L'ambre reste la couleur de la marque (logo,
+// signature), jamais un signal.
+//
+// `disabled` : la couleur seule ne suffit pas à signaler l'indisponibilité —
+// le curseur et l'attribut natif la portent aussi.
 const VARIANTS = {
-  // Accent (amber) is reserved for the one true primary action on a
-  // screen — "used sparingly" per the design brief, not a default.
-  primary:
-    'bg-accent-700 text-white hover:bg-accent-800 focus-visible:outline-accent-700 disabled:bg-accent-700/50',
+  primary: 'bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-600/45',
   secondary:
-    'bg-surface text-ink-700 border border-ink-200 hover:bg-ink-50 focus-visible:outline-brand-600 disabled:text-ink-400',
-  ghost:
-    'bg-transparent text-ink-600 hover:bg-ink-100 focus-visible:outline-brand-600 disabled:text-ink-300',
-  danger:
-    'bg-critical-strong text-white hover:bg-critical-strong/90 focus-visible:outline-critical-strong disabled:bg-critical-strong/50',
+    'bg-surface text-ink-700 border border-ink-200 hover:bg-ink-50 hover:border-ink-300 disabled:text-ink-400 disabled:hover:bg-surface',
+  ghost: 'bg-transparent text-ink-600 hover:bg-ink-100 disabled:text-ink-300',
+  danger: 'bg-critical-strong text-white hover:bg-critical-strong/90 disabled:bg-critical-strong/50',
 }
 
 const SIZES = {
@@ -33,7 +43,7 @@ export default function Button({
     <button
       type={type}
       disabled={disabled || loading}
-      className={`transition-smooth inline-flex items-center justify-center rounded-md font-medium outline-offset-2 focus-visible:outline-2 disabled:cursor-not-allowed ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
+      className={`transition-smooth inline-flex items-center justify-center rounded-md font-medium disabled:cursor-not-allowed ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
       {...props}
     >
       {loading ? (

@@ -17,7 +17,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { actionsApi, assessmentsApi, monitoringApi, threatIntelligenceApi } from '../api/endpoints'
 import FeatureGate from '../components/FeatureGate'
-import ScoreRing from '../components/ScoreRing'
+import ScoreGauge from '../components/ui/ScoreGauge'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import Card, { CardHeader } from '../components/ui/Card'
@@ -233,7 +233,7 @@ export default function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Hero: compliance score */}
         <Card className="flex items-center gap-6 lg:col-span-2">
-          <ScoreRing score={latest.score_global} label="/ 100" />
+          <ScoreGauge score={latest.score_global} scale="maturity" size="md" showLegend />
           <div>
             <p className="text-sm font-medium text-ink-500">Score de conformité</p>
             <p className="mt-1 font-display text-lg font-semibold text-ink-900">
