@@ -2972,3 +2972,129 @@ l'exploitant ; à documenter dans le runbook si l'usage se répète.
 plus ce qui est vendu 249 €, et le contrôle est désormais vérifié à trois
 niveaux : tests unitaires (avec neutralisation de chaque garde), parcours de
 bout en bout en intégration continue, et appels réels contre la production.
+
+## 2026-08-27 (suite) — Refonte visuelle : couleur du risque, page Exposition, seuil d'accessibilité
+
+### Ce que la sonde d'accessibilité a révélé — et la nuance qu'elle impose
+
+En réparant la sonde de capture, un défaut est apparu sur deux pages : **ni
+`/connexion` ni `/inscription` n'avaient de repère `main`**. Un lecteur d'écran
+ne pouvait pas sauter au contenu, et rien ne distinguait le panneau de marque
+(42 % de la largeur, purement décoratif) du formulaire réel. Le panneau lui-même
+n'était rattaché à aucun repère : `<div>` devenu `<aside aria-label>`.
+
+**Pourquoi c'était invisible.** La règle axe concernée (`region`, puis
+`landmark-one-main`) est classée **`moderate`**. Le balayage d'accessibilité
+n'échoue que sur `critical` et `serious` (`e2e/helpers.js`,
+`BLOCKING_IMPACTS`). Le défaut était donc rapporté par l'outil à chaque
+exécution, et écarté par notre propre seuil.
+
+C'est la nuance à retenir, et elle vaut pour le dossier de certification :
+**l'audit est vert AU SEUIL CHOISI, ce qui n'est pas la même chose
+qu'« accessible ».** Écrire « aucune violation d'accessibilité » sans nommer le
+seuil serait une affirmation plus forte que ce qu'on a mesuré.
+
+### Faut-il abaisser le seuil à « moderate » ? — mesuré, pas supposé
+
+Inventaire complet des violations sur **dix pages** (les deux pages publiques
+d'authentification et les huit pages authentifiées), toutes gravités
+confondues, une fois le correctif `main`/`aside` en place :
+
+| Gravité | Éléments |
+|---|---|
+| critical | 0 |
+| serious | 0 |
+| **moderate** | **1** |
+| minor | 0 |
+
+La seule violation restante : `page-has-heading-one` sur `/resultats` — l'état
+vide (aucune évaluation terminée) rend son message sans `h1`.
+
+**Réponse : oui, abaisser le seuil est raisonnable, et le coût est d'une seule
+correction.** Une page sans `h1` est un vrai défaut de structure, pas une
+subtilité d'outil : c'est le titre qu'annonce un lecteur d'écran en arrivant.
+Le corriger, puis passer `BLOCKING_IMPACTS` à
+`critical`/`serious`/`moderate`, permettrait d'écrire « aucune violation »
+sans réserve — et empêcherait qu'un défaut de repère repasse sous le seuil.
+
+Ce qui n'a pas été fait ici, faute de mandat : le changement de seuil est une
+décision d'exigence, pas une correction.
+
+### Décisions visuelles
+
+**Le bleu de marque est validé.** Le critère n'était pas l'agrément mais « je
+repère l'action d'un coup d'œil et je ne la confonds jamais avec une alerte ».
+Il porte la fiabilité sans être terne, et surtout il **libère tout le spectre
+chaud pour le risque** — c'est la contrainte structurante d'un produit dont la
+matière est la gravité.
+
+**Le premier palier de risque passe de l'ambre à l'olive.** L'ambre retenu
+était à **2° de teinte** de l'ambre du logo (H38 contre H36). Aucun conflit
+fonctionnel — l'ambre ne porte plus d'action depuis que les actions sont
+passées au bleu — mais une confusion de sens diffuse : la marque apparaît dans
+l'en-tête, sur la vitrine et sur les exports PDF, à quelques degrés du premier
+palier de risque. Ce genre de gêne est plus coûteux qu'un conflit franc, parce
+qu'on ne sait pas la nommer.
+
+L'olive porte l'écart à **36°**, et éloigne du même coup « à surveiller » de
+« préoccupant » : **55° au lieu de 21°**, ce qui rend l'échelle à quatre paliers
+lisible palier par palier plutôt que comme un dégradé.
+
+Contrastes **recalculés après décalage**, texte sur blanc puis sur sa propre
+surface :
+
+| Palier | Teinte | / blanc | / surface |
+|---|---|---|---|
+| calm | H160 | 5,44 | 4,95 |
+| **watch (olive)** | **H72** | **5,38** | **4,94** |
+| concern | H17 | 6,03 | 5,33 |
+| critical | H357 | 6,13 | 5,44 |
+
+Les quatre passent AA pour du texte normal (4,5). Le décalage coûte 0,54 sur
+blanc (5,92 → 5,38) et reste largement au-dessus du seuil. Vérifié aussi en
+conditions réelles : l'inventaire axe ci-dessus, exécuté après le décalage, ne
+remonte **aucune** violation de contraste.
+
+Au passage, une valeur du commentaire de `index.css` était fausse : `calm` sur
+sa surface annonçait 4,79 pour 4,95 mesurés. Corrigée — un commentaire de
+contraste qu'on ne recalcule pas devient une affirmation invérifiable.
+
+### Page Exposition
+
+Trois changements, tous justifiés par ce que la page promet — classer des
+actifs par gravité :
+
+- **Le score devient dominant** (56 → 88 px). C'est l'élément signature du
+  produit, et il était le plus petit de sa propre carte.
+- **L'analyse passe de dix lignes de prose à un bandeau court.** Le découpage
+  s'appuie sur la **position** des phrases, jamais sur des mots-clés : le
+  prompt serveur garantit l'ordre (lecture d'ensemble → corrélations →
+  priorité), pas le vocabulaire. Chercher « priorité » dans le texte casserait
+  à la première reformulation du modèle. La priorité est détachée et remontée ;
+  les corrélations sont repliées, jamais retirées.
+- **Les cartes se différencient par la gravité** : un filet coloré à gauche, à
+  la teinte du niveau renvoyé par le serveur, via **une seule table de
+  correspondance** (`teinteRisque`) — une carte et sa jauge ne peuvent pas
+  diverger. La couleur n'est jamais seule porteuse : le score, son libellé et
+  l'ordre de la liste disent la même chose.
+
+Le bloc « d'où vient ce score » n'affiche plus que les trois composantes de
+plus fort poids, en chiffres tabulaires alignés à droite ; les six lignes d'un
+bloc se lisaient comme un journal technique.
+
+Captures avant/après prises sur le locataire de démonstration, en 1440 px et en
+390 px (`frontend/captures/`, non versionné).
+
+### Deux défauts trouvés en faisant ce travail
+
+- **La sonde d'accessibilité ne rendait pas ses emplacements.** Elle crée un
+  locataire réel, donc engage un emplacement du pool partagé (13 des 15 déjà
+  pris par le jeu de démonstration). Deux exécutions ont suffi à saturer :
+  15/15, et la garde refusait les inscriptions suivantes — à juste titre. Le
+  symptôme ressemble à une panne. Restitution ajoutée, comme pour les autres
+  parcours.
+- **Deux tests unitaires assertaient sur la formulation plutôt que sur le
+  comportement.** « moins de 1 » est devenu « < 1 » quand la colonne des poids
+  est passée en chiffres tabulaires alignés : un test de fond — « on n'écrit
+  jamais +0 » — rougissait pour un choix de mise en forme. L'assertion porte
+  désormais sur le comportement.
