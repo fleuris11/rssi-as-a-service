@@ -31,7 +31,13 @@ DEMO_CLIENTS = [
     ("Demo — Menuiserie Lambert", "Artisanat", 12, "veille", Subscription.Status.ACTIVE),
     ("Demo — Transports Vidal", "Transport", 48, "pilotage", Subscription.Status.ACTIVE),
     ("Demo — Clinique des Tilleuls", "Santé", 130, "souverain", Subscription.Status.ACTIVE),
-    ("Demo — Agence Novaé", "Communication", 8, "veille", Subscription.Status.TRIAL),
+    # Essai en cours : il porte l'offre d'essai, pas une offre du catalogue
+    # (ADR-024). Le laisser sur « Veille » ferait diverger le seed de la
+    # migration 0004, qui bascule justement les essais vers « Essai » — les
+    # deux se contrediraient à chaque rechargement du jeu de démonstration.
+    # La différenciation « Veille » reste illustrée par Lambert (actif) et
+    # Peret (suspendu), qui suffisent aux tuiles grisées.
+    ("Demo — Agence Novaé", "Communication", 8, "essai", Subscription.Status.TRIAL),
     ("Demo — Garage Peret", "Automobile", 15, "veille", Subscription.Status.SUSPENDED),
 ]
 
