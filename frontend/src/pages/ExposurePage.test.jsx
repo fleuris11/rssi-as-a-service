@@ -131,19 +131,26 @@ describe('ExposurePage', () => {
       threatIntelligenceApi.exposureFeed.mockResolvedValue(feed([CORRELATED_FINDING]))
       render(<ExposurePage />)
 
-      expect(await screen.findByText('Comment ce score est calculé')).toBeInTheDocument()
+      expect(await screen.findByText('D’où vient ce score')).toBeInTheDocument()
       expect(screen.getByText('+29')).toBeInTheDocument()
       expect(
         screen.getByText(/gravité élevée, fuite moins de trois mois, mot de passe récupérable/)
       ).toBeInTheDocument()
     })
 
-    it('écrit « moins de 1 » plutôt que « +0 » pour une contribution négligeable', async () => {
-      // « +0 » est honnête mais se lit comme un bug côté client.
+    it('n’écrit jamais « +0 » pour une contribution négligeable', async () => {
+      // « +0 » est arithmétiquement honnête — cette n-ième fuite ne pèse
+      // presque plus — mais se lit comme un bug côté client.
+      //
+      // L'assertion porte sur le COMPORTEMENT (« +0 » n'apparaît jamais) et
+      // non sur la formulation retenue : le libellé est passé de « moins
+      // de 1 » à « < 1 » quand la colonne des poids est devenue alignée à
+      // droite en chiffres tabulaires. Une assertion sur le texte exact
+      // faisait rougir un test de fond pour un choix de mise en forme.
       threatIntelligenceApi.exposureFeed.mockResolvedValue(feed([CORRELATED_FINDING]))
       render(<ExposurePage />)
 
-      expect(await screen.findByText('moins de 1')).toBeInTheDocument()
+      expect(await screen.findByText('< 1')).toBeInTheDocument()
       expect(screen.queryByText('+0')).not.toBeInTheDocument()
     })
   })

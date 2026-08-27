@@ -83,6 +83,14 @@ export const SENS = {
   },
 }
 
+/** Teinte d'un niveau serveur, pour les éléments qui entourent la jauge
+ *  (filet de carte, pastille). Une seule table de correspondance dans tout
+ *  le produit : une carte et sa jauge ne peuvent pas diverger. */
+export function teinteRisque(level) {
+  const cle = CLE_SERVEUR_VERS_RISQUE[level]
+  return cle ? TEINTES[cle] : 'var(--color-ink-300)'
+}
+
 export function niveauPour(score, scale = 'exposure') {
   const { niveaux } = SENS[scale] || SENS.exposure
   return niveaux.find((n) => score < n.max) || niveaux[niveaux.length - 1]

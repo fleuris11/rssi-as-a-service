@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { aiApi, threatIntelligenceApi } from '../api/endpoints'
-import ScoreGauge from '../components/ui/ScoreGauge'
+import ScoreGauge, { teinteRisque } from '../components/ui/ScoreGauge'
 import FeatureGate, { FeatureLockedNotice } from '../components/FeatureGate'
 import PreIncidentRadar from '../components/PreIncidentRadar'
 import RevealSecretModal from '../components/RevealSecretModal'
@@ -22,30 +22,24 @@ import EmptyState from '../components/ui/EmptyState'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
 import { useAuth } from '../context/AuthContext'
+import { decouperSynthese } from './exposure/syntheseUtils'
 
 const SEVERITY_VARIANT = { critical: 'critical', high: 'critical', attention: 'warning' }
 
 function SynthesisBanner({ synthesis, onRefresh, refreshing, canRefresh }) {
+  const [deplie, setDeplie] = useState(false)
+
   // Absent = la page reste complète : la synthèse est une couche au-dessus,
   // jamais un prérequis (pas de spinner bloquant, pas d'état d'erreur).
   if (!synthesis) {
     return canRefresh ? (
-      <Card className="flex flex-wrap items-center justify-between gap-3 border-brand-200" padding="p-4">
-        <div className="flex items-start gap-2">
-          <Sparkles className="mt-0.5 size-4 shrink-0 text-brand-700" aria-hidden="true" />
-          <p className="text-sm text-ink-600">
-            Obtenez une lecture d’ensemble de votre exposition, rédigée à partir des éléments
-            ci-dessous.
-          </p>
-        </div>
+      <Card className="flex flex-wrap items-center justify-between gap-3" padding="p-4">
+        <p className="t-body">
+          Obtenez une lecture d’ensemble de votre exposition, rédigée à partir des éléments
+          ci-dessous.
+        </p>
         <FeatureGate feature="exposure_synthesis">
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={Sparkles}
-            loading={refreshing}
-            onClick={onRefresh}
-          >
+          <Button variant="secondary" size="sm" icon={Sparkles} loading={refreshing} onClick={onRefresh}>
             Générer l’analyse
           </Button>
         </FeatureGate>
@@ -53,64 +47,115 @@ function SynthesisBanner({ synthesis, onRefresh, refreshing, canRefresh }) {
     ) : null
   }
 
+  const { lead, correlations, priorite } = decouperSynthese(synthesis.content)
+
   return (
-    <Card className="border-brand-200 bg-brand-50/50">
+    // Bandeau, et non carte : un filet de marque à gauche et un fond très
+    // léger. Dix lignes de prose interceptaient le regard avant le classement
+    // des actifs ; trois lignes l'orientent.
+    <section
+      aria-label="Analyse de votre exposition"
+      className="rounded-lg border border-ink-200/70 border-l-[3px] border-l-brand-600 bg-brand-50/40 px-5 py-4"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-brand-100 text-brand-800">
-            <Sparkles className="size-5" aria-hidden="true" />
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="font-display text-lg font-semibold text-ink-900">Analyse</h2>
-              {synthesis.is_stale && (
-                <Badge variant="warning">Antérieure à vos dernières actions</Badge>
-              )}
-            </div>
-            <p className="mt-0.5 text-xs text-ink-500">
-              Générée le {new Date(synthesis.generated_at).toLocaleString('fr-FR')}
-            </p>
-          </div>
+        <div className="flex items-center gap-2">
+          <Sparkles className="size-4 shrink-0 text-brand-700" aria-hidden="true" />
+          <h2 className="t-eyebrow">Analyse</h2>
+          {synthesis.is_stale && <Badge variant="warning">Antérieure à vos dernières actions</Badge>}
         </div>
         {canRefresh && (
           <FeatureGate feature="exposure_synthesis">
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={RefreshCw}
-              loading={refreshing}
-              onClick={onRefresh}
-            >
-              Actualiser l’analyse
+            <Button variant="ghost" size="sm" icon={RefreshCw} loading={refreshing} onClick={onRefresh}>
+              Actualiser
             </Button>
           </FeatureGate>
         )}
       </div>
-      <p className="mt-3 text-sm leading-relaxed text-ink-800">{synthesis.content}</p>
-    </Card>
+
+      {/* La lecture d'ensemble : la phrase qu'on lit si on n'en lit qu'une. */}
+      <p className="t-lead mt-2">{lead}</p>
+
+      {/* La priorité de la semaine, détachée. Le prompt serveur la place en
+          dernière position ; on la remonte pour qu'elle se voie. */}
+      {priorite && (
+        <p className="mt-3 flex gap-2 border-l-2 border-brand-300 pl-3">
+          <span className="t-eyebrow shrink-0 pt-1 text-brand-700">Priorité</span>
+          <span className="t-body font-medium text-ink-900">{priorite}</span>
+        </p>
+      )}
+
+      {correlations.length > 0 && (
+        <>
+          {/* Le détail est REPLIÉ, jamais retiré : il reste dans le DOM et
+              lisible dès l'ouverture, sans dépendre d'une animation. */}
+          {deplie && (
+            <div className="stack-tight mt-3">
+              {correlations.map((phrase) => (
+                <p key={phrase} className="t-body">
+                  {phrase}
+                </p>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setDeplie(!deplie)}
+            aria-expanded={deplie}
+            className="transition-smooth t-meta mt-2 inline-flex items-center gap-1 font-medium text-brand-700 hover:text-brand-800"
+          >
+            {deplie ? 'Masquer les corrélations' : `Voir les corrélations (${correlations.length})`}
+            <ChevronDown
+              className={`size-3.5 ${deplie ? 'rotate-180' : ''} transition-smooth`}
+              aria-hidden="true"
+            />
+          </button>
+        </>
+      )}
+
+      <p className="t-meta mt-3">
+        Générée le {new Date(synthesis.generated_at).toLocaleString('fr-FR')}
+      </p>
+    </section>
   )
 }
 
 function ScoreExplanation({ components }) {
+  const [tout, setTout] = useState(false)
+  // Les composantes arrivent triées par poids décroissant (ADR-016). Trois
+  // suffisent à comprendre d'où vient le score ; les six lignes affichées
+  // d'un bloc se lisaient comme un journal technique.
+  const visibles = tout ? components : components.slice(0, 3)
+  const restants = components.length - visibles.length
+
   return (
-    <div className="mt-3 rounded-md bg-ink-50 px-3 py-2">
-      <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink-500">
+    <div className="mt-4 rounded-md border border-ink-200/70 bg-ink-50/60 px-4 py-3">
+      <p className="t-eyebrow flex items-center gap-1.5">
         <Info className="size-3.5" aria-hidden="true" />
-        Comment ce score est calculé
+        D’où vient ce score
       </p>
-      <ul className="space-y-1">
-        {components.map((component) => (
-          <li key={component.finding_id} className="text-xs text-ink-600">
-            {/* Une contribution arrondie à 0 est honnête (cette n-ième fuite
-                ne pèse quasiment plus) mais « +0 » se lit comme un bug :
-                on l'écrit en toutes lettres. */}
-            <span className="font-medium text-ink-800">
-              {component.points > 0 ? `+${component.points}` : 'moins de 1'}
-            </span>{' '}
-            — {component.label} ({component.detail})
+      <ul className="stack-tight mt-2">
+        {visibles.map((component) => (
+          <li key={component.finding_id} className="t-meta flex gap-2">
+            {/* Le poids en tête, en chiffres tabulaires : les valeurs
+                s'alignent en colonne et se comparent d'un coup d'œil. */}
+            <span className="w-12 shrink-0 text-right font-medium tabular-nums text-ink-800">
+              {component.points > 0 ? `+${component.points}` : '< 1'}
+            </span>
+            <span>
+              {component.label} <span className="text-ink-400">({component.detail})</span>
+            </span>
           </li>
         ))}
       </ul>
+      {restants > 0 && (
+        <button
+          type="button"
+          onClick={() => setTout(true)}
+          className="transition-smooth t-meta mt-2 font-medium text-brand-700 hover:text-brand-800"
+        >
+          Voir les {restants} contributions restantes
+        </button>
+      )}
     </div>
   )
 }
@@ -227,30 +272,41 @@ function ReuseSection({ signals }) {
 
 function AssetCard({ group, canReveal, onReveal, expanded, onToggle, retentionDays }) {
   return (
-    <Card>
+    // La gravité se lit AVANT le contenu : un filet coloré sur le bord
+    // gauche, à la teinte du niveau renvoyé par le serveur. Toutes les cartes
+    // avaient auparavant le même poids — bordure identique, ombre identique —
+    // sur une page dont la promesse est justement de classer les actifs.
+    // Le filet n'est pas le seul porteur : le score, son libellé et l'ordre
+    // de la liste disent la même chose.
+    <Card
+      className="border-l-[3px]"
+      style={{ borderLeftColor: teinteRisque(group.level) }}
+    >
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full flex-wrap items-center justify-between gap-3 text-left"
+        className="flex w-full flex-wrap items-start justify-between gap-4 text-left"
         aria-expanded={expanded}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-4">
+          {/* Le score passe de 56 à 88 px : c'est l'élément signature du
+              produit et il était le plus petit de sa propre carte. */}
           <ScoreGauge
             score={group.score}
             scale="exposure"
             level={group.level}
             levelLabel={group.level_label}
-            size="sm"
+            size="md"
           />
-          <div>
-            <p className="text-sm font-medium text-ink-900">{group.asset_value}</p>
-            <p className="text-xs text-ink-500">
+          <div className="min-w-0">
+            <p className="t-title truncate">{group.asset_value}</p>
+            <p className="t-meta mt-0.5">
               {group.asset_type_label} — {group.findings_count} élément
               {group.findings_count > 1 ? 's' : ''} à traiter
             </p>
           </div>
         </div>
-        <span className="flex items-center gap-1 text-sm text-ink-500">
+        <span className="t-meta flex shrink-0 items-center gap-1 pt-1 font-medium text-brand-700">
           {expanded ? 'Replier' : 'Voir le détail'}
           {expanded ? (
             <ChevronDown className="size-4" aria-hidden="true" />
