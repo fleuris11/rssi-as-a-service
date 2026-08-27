@@ -36,7 +36,12 @@ export default function AuthLayout({ children }) {
         <p className="text-xs text-brand-300">© {new Date().getFullYear()} RSSI as a Service</p>
       </div>
 
-      <div className="flex flex-1 flex-col items-center justify-center bg-canvas px-6 py-12">
+      {/* Repère `main` : ces deux pages n'en avaient aucun. Un lecteur d'écran
+          ne pouvait pas sauter directement au contenu, et rien ne distinguait
+          le formulaire du panneau de marque. La règle axe correspondante est
+          classée « moderate », donc sous le seuil du balayage — trouvé en
+          rendant l'attente des parcours robuste, pas par l'audit. */}
+      <main className="flex flex-1 flex-col items-center justify-center bg-canvas px-6 py-12">
         <div className="mb-6 flex items-center gap-2.5 lg:hidden">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent-600 font-display text-sm font-bold text-white">
             R
@@ -46,7 +51,7 @@ export default function AuthLayout({ children }) {
           </span>
         </div>
         <div className="w-full max-w-sm">{children}</div>
-      </div>
+      </main>
     </div>
   )
 }

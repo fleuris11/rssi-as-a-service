@@ -53,7 +53,7 @@ test('pages principales authentifiées sans violation critique', async ({ page }
   for (const { path, heading, text } of pages) {
     await page.goto(path)
     await waitForContentLoaded(page)
-        if (heading) {
+    if (heading) {
       await expect(page.getByRole('heading', { name: heading })).toBeVisible()
     }
     if (text) {

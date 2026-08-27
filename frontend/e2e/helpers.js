@@ -67,9 +67,42 @@ function indenter(texte = '') {
  * ne corrige pas ce gaspillage — c'est une dette ouverte au journal, pas un
  * problème réglé.
  */
+/**
+ * Attend qu'une page ait fini de charger — et pas seulement qu'elle n'ait pas
+ * encore commencé.
+ *
+ * Ce helper n'attendait que la disparition des squelettes
+ * (`[data-loading="true"]`). Or, au premier tour de boucle, React n'a encore
+ * rien monté : le compte vaut déjà zéro et l'attente rendait la main
+ * **instantanément**. Les parcours passaient par chance de timing, et une
+ * capture d'écran prise juste après ne montrait que des squelettes.
+ *
+ * On attend donc trois conditions ensemble : la région principale existe,
+ * plus aucun squelette, et elle contient du texte. C'est la troisième
+ * condition qui ferme la course — « montée mais vide » est précisément
+ * l'état que l'ancienne version prenait pour « chargée ».
+ *
+ * Première tentative de correction : attendre un titre de niveau 1. Fausse —
+ * certaines pages balayées n'en ont pas (Résultats sur une entreprise neuve
+ * affiche un état vide sans titre). Le balayage d'accessibilité l'a signalé
+ * immédiatement.
+ *
+ * C'est la troisième sonde de ce projet qui concluait au vert sans rien
+ * mesurer — après le `awk` des fins de ligne et la neutralisation
+ * `"" or (...)`.
+ */
 export async function waitForContentLoaded(page) {
   await page.waitForFunction(
-    () => document.querySelectorAll('[data-loading="true"]').length === 0,
+    () => {
+      const main = document.querySelector('main')
+      // Pas encore de région principale : React n'a rien monté.
+      if (!main) return false
+      // Squelettes présents : le chargement est en cours.
+      if (document.querySelectorAll('[data-loading="true"]').length > 0) return false
+      // Région principale vide : montée mais pas encore peuplée. C'est ce
+      // cas-là que l'ancienne version laissait passer.
+      return main.innerText.trim().length > 0
+    },
     undefined,
     { timeout: 30_000 }
   )
