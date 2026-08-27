@@ -117,16 +117,24 @@
    *
    * Contrastes calculés, pas estimés (texte `-strong` sur blanc, puis
    * sur son propre `-surface`) :
-   *   calm      5.44 / 4.79      concern   6.03 / 5.33
-   *   watch     5.92 / 5.42      critical  6.13 / 5.44
+   *   calm      5.44 / 4.95      concern   6.03 / 5.33
+   *   watch     5.38 / 4.94      critical  6.13 / 5.44
    * ------------------------------------------------------------- */
   --color-risk-calm: #22775b;
   --color-risk-calm-surface: #eaf7f2;
   --color-risk-calm-border: #b8e2d4;
 
-  --color-risk-watch: #8a5a08;
-  --color-risk-watch-surface: #fdf4e4;
-  --color-risk-watch-border: #f0dcb4;
+  /* Olive, et non ambre. L'ambre du premier palier était à 2° de teinte de
+     l'ambre du LOGO (H38 contre H36) : la marque et « à surveiller » se
+     confondaient à l'œil, sur l'en-tête comme sur les exports PDF. Aucun
+     conflit fonctionnel — l'ambre ne porte plus d'action — mais une confusion
+     de sens diffuse, ce qui est pire parce qu'on ne sait pas la nommer.
+     L'olive porte l'écart à 36°, et elle éloigne du même coup « à
+     surveiller » de « préoccupant » : 55° au lieu de 21°, ce qui rend
+     l'échelle à quatre paliers lisible palier par palier. */
+  --color-risk-watch: #5f7213;
+  --color-risk-watch-surface: #f4f7e4;
+  --color-risk-watch-border: #dde7b4;
 
   --color-risk-concern: #a8431c;
   --color-risk-concern-surface: #fdeee7;

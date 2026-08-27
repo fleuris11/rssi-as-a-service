@@ -9,7 +9,14 @@ const BENEFITS = [
 export default function AuthLayout({ children }) {
   return (
     <div className="flex min-h-screen">
-      <div className="hidden w-[42%] flex-col justify-between bg-brand-950 p-10 text-white lg:flex">
+      {/* `aside` et non `div` : ce panneau de marque restait hors de tout
+          repère de page, ce que la règle axe « region » signale — en
+          « moderate », donc sous le seuil du balayage. Un repère complémentaire
+          le nomme pour ce qu'il est : du contexte, pas le contenu. */}
+      <aside
+        aria-label="Présentation du produit"
+        className="hidden w-[42%] flex-col justify-between bg-brand-950 p-10 text-white lg:flex"
+      >
         <div className="flex items-center gap-2.5">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent-600 font-display text-sm font-bold text-white">
             R
@@ -34,7 +41,7 @@ export default function AuthLayout({ children }) {
         </div>
 
         <p className="text-xs text-brand-300">© {new Date().getFullYear()} RSSI as a Service</p>
-      </div>
+      </aside>
 
       {/* Repère `main` : ces deux pages n'en avaient aucun. Un lecteur d'écran
           ne pouvait pas sauter directement au contenu, et rien ne distinguait
