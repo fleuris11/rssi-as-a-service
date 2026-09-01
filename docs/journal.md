@@ -3382,3 +3382,122 @@ avant de chercher une régression qui n'existe pas.
 124 tests Vitest, suite Playwright complète (**23 verts**), audit axe au **nouveau seuil**
 (`critical`/`serious`/`moderate`) sur la vitrine en 1440 px et en 390 px,
 captures pleine hauteur avant/après dans les deux largeurs, construction verte.
+
+---
+
+## 2026-09-01 — La vitrine vendait le quart du produit, et pas au bon prix
+
+Deux problèmes distincts sur `frontend/src/marketing/`, traités ensemble parce
+qu'ils ont la même racine : **du contenu recopié à la main, que rien ne
+confrontait à la réalité.**
+
+### 1. La grille tarifaire contredisait la base
+
+La vitrine annonçait Essentiel 49 € / Standard 149 € / Étendu 349 €. La base
+porte Veille 89 € / Pilotage 249 € / Souverain sur devis. Ni les noms, ni les
+prix, ni les quotas ne correspondaient.
+
+**Ce que la consigne supposait, et qui était déjà fait.** Il était demandé de
+faire lire les offres depuis une API publique, et de créer l'endpoint s'il
+n'existait pas. Les deux existaient : `PublicPlanListView`
+(`/api/v1/billing/plans/`, `AllowAny`, offres publiées uniquement) et le
+`useEffect` de `Pricing()` qui la consomme avec repli. **La grille affichée
+était donc juste.**
+
+C'est le **repli statique** qui mentait — celui qui ne s'affiche que si l'API
+ne répond pas. D'où l'écart, et d'où son invisibilité : un repli ne se voit
+jamais en conditions normales, et il aurait menti exactement le jour où l'API
+serait tombée. Leçon à garder : **un chemin de repli est du code de
+production qui n'est jamais exercé** ; s'il n'est pas testé, il n'existe qu'en
+tant que promesse.
+
+**Correctifs.**
+
+- Le repli a désormais **la forme exacte de l'API** (`PublicPlanSerializer`).
+  Il avait la sienne (`id`, `price`, `pitch`, puces en texte libre), le
+  composant devait la traduire, et c'est dans cette traduction que la
+  divergence s'était logée. Plus de traduction : `plans ?? PRICING.plans`.
+- Les **quotas sont dérivés** des champs de l'offre (`quotaLines()`), jamais
+  recopiés dans une puce. C'est la recopie manuelle qui avait produit
+  « 30 actifs surveillés » — alors que le pool de surveillance continue de
+  **toute la plateforme** est de 15 emplacements (ADR-013). Les cartes
+  affichent maintenant les quotas au-dessus des fonctionnalités : c'est ce qui
+  distingue réellement les offres, Pilotage et Souverain portant exactement
+  les mêmes fonctionnalités.
+- Formulations corrigées à cette occasion : « actif **en surveillance
+  continue** » (nomme la ressource rare, au lieu de laisser croire à un
+  plafond du nombre d'actifs déclarables) et « **jusqu'à** N analyses par
+  mois » (c'est un plafond, pas une périodicité).
+
+### 2. Quatre pans du produit n'étaient nulle part
+
+Absents de la vitrine : la météo quotidienne (zéro mention), l'assistant, la
+génération de charte, l'export PDF. Le diagnostic ANSSI — l'entrée du produit
+— n'apparaissait que dans une puce d'offre et une réponse de FAQ.
+
+Deux sections ajoutées (`#diagnostic`, `#alertes`) et l'assistant ajouté à la
+section produit, qui passe de trois à quatre entrées. Placement voulu :
+diagnostic **avant** « Fonctionnement », parce que c'est la première chose
+qu'une PME peut faire le jour de son inscription et la seule qui ne dépende
+d'aucune détection.
+
+### Les écarts trouvés en écrivant — et non écrits
+
+C'est l'exercice qui a le plus rapporté, comme la fois précédente. Trois
+promesses ont été écartées avant d'être écrites :
+
+1. **« Alerte en temps réel dès qu'une fuite est détectée »** — faux.
+   `ingest_raw_findings` ouvre bien une alerte `BREACH_COMPROMISE`, mais
+   **ne déclenche aucun envoi d'email**. Seuls partent immédiatement : les
+   échecs de contrôle de surveillance (`monitoring/tasks.py`) et les signaux
+   avant-coureurs reçus par webhook (`_notify_pre_incident_signals`). Une
+   fuite avérée est visible dans l'interface et repart dans la météo du
+   lendemain matin. La section décrit donc les deux canaux immédiats qui
+   existent réellement, et ne promet rien pour le troisième.
+2. **« Analyse de fuites hebdomadaire / mensuelle »** — aucune tâche
+   périodique de scan n'existe dans `beat_schedule`. Une analyse part à la
+   déclaration d'un actif, puis à la demande (avec un délai de garde de 24 h).
+3. **Destinataires** — les emails partent aux **administrateurs** de l'espace
+   (`list_recipient_emails` filtre sur `Membership.Role.ADMIN`), pas à toute
+   l'équipe. C'est écrit tel quel sur la page plutôt que laissé dans le flou.
+
+**À arbitrer** (produit, pas rédaction) : faut-il un email immédiat pour une
+fuite avérée ? Aujourd'hui le signal le plus grave est le seul à ne pas être
+poussé, ce qui est contre-intuitif. Ce n'est pas un bug — le comportement est
+cohérent et testé — mais l'ordre de priorité mérite d'être décidé, pas subi.
+
+### Le test qui empêche la récidive
+
+`billing/tests/test_vitrine_plan_consistency.py` — six cas. Il lit
+`content.js` depuis une suite Django, ce qui est inhabituel et assumé :
+l'alternative (un JSON partagé) ajouterait une étape de build au frontend pour
+une donnée qui change deux fois par an.
+
+Il ne teste pas l'API, qui lit la base et ne peut pas diverger : il teste le
+**repli**, seul endroit où deux vérités coexistent. Couvert : toute offre
+publiée figure sur la vitrine ; aucune offre non publiée n'y figure (cas réel :
+l'offre « Essai », `internal` depuis l'ADR-024, ne doit pas apparaître dans une
+grille tarifaire) ; noms, prix et quotas identiques ; et aucune offre
+n'annonce plus d'emplacements que le pool plateforme n'en contient.
+
+**Vérifié en injectant les régressions** plutôt qu'en faisant confiance au
+test : prix ramené à 49 € et quota porté à 30 actifs → 3 échecs, avec le
+message qui nomme l'écart. Un test de cohérence qu'on n'a pas vu échouer ne
+prouve rien.
+
+### Vérifications
+
+- **133 tests Vitest** (dont 9 nouveaux sur la vitrine), 15 fichiers, verts.
+- **977 tests pytest** verts. 3 échecs `WeasyPrint` sur ce poste,
+  **antérieurs à cette session** — vérifié par `git stash` : ils échouent
+  à l'identique sur la base. Bibliothèques natives GTK absentes sous Windows ;
+  la CI les installe (`ci.yml`, étape *Install WeasyPrint system
+  dependencies*).
+- **Playwright** : les 5 cas de `e-public-site.spec.js` verts, parcours
+  visiteur complet en 1280 px et en 390 px, nouvelles sections incluses, et
+  re-mesure du débordement horizontal **après** parcours des sections (une
+  carte trop large ne se révèle qu'une fois la section montée).
+- **axe-core** : 0 violation, toutes gravités confondues, sur les 10 pages du
+  relevé.
+- `npm run lint` : 0 erreur (8 avertissements `react-refresh` préexistants,
+  aucun dans les fichiers touchés). `ruff` : propre. Construction verte.
