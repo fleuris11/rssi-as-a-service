@@ -5,6 +5,20 @@ import { auditAccessibility, resetDemoRequestThrottle, uniqueSuffix, waitForCont
 // découvre le produit et demande une démonstration, et le client existant qui
 // passe de la vitrine à son espace.
 
+// Ordre d'apparition dans la page, et source unique pour les deux largeurs.
+// « diagnostic » et « alertes » ont été ajoutées le 01/09/2026 : la vitrine
+// vendait la surveillance des fuites et taisait la moitié du produit.
+const SECTIONS = [
+  'probleme',
+  'produit',
+  'diagnostic',
+  'alertes',
+  'fonctionnement',
+  'securite',
+  'tarifs',
+  'questions',
+]
+
 test('parcours visiteur : accueil, sections, demande de démonstration', async ({ page }) => {
   resetDemoRequestThrottle()
   const suffix = uniqueSuffix()
@@ -18,10 +32,32 @@ test('parcours visiteur : accueil, sections, demande de démonstration', async (
 
   // Défilement de toutes les sections : les apparitions au défilement doivent
   // révéler le contenu, pas le laisser invisible.
-  for (const id of ['probleme', 'produit', 'fonctionnement', 'securite', 'tarifs', 'questions']) {
+  for (const id of SECTIONS) {
     await page.locator(`#${id}`).scrollIntoViewIfNeeded()
     await expect(page.locator(`#${id}`)).toBeVisible()
   }
+
+  // Les deux sections ajoutées le 01/09/2026 : on vérifie leur CONTENU, pas
+  // seulement la présence du conteneur. Une section dont le titre est là mais
+  // dont les cartes restent à `opacity: 0` passerait le test ci-dessus.
+  await expect(
+    page.getByRole('heading', { name: 'Savoir par où commencer' })
+  ).toBeVisible()
+  await expect(page.getByText(/42 mesures/)).toBeVisible()
+  await expect(page.getByText(/plan d’action priorisé/i).first()).toBeVisible()
+
+  await expect(
+    page.getByRole('heading', { name: 'Ce que vous recevez sans vous connecter' })
+  ).toBeVisible()
+  await expect(page.getByText('La météo cyber, chaque matin')).toBeVisible()
+
+  // Les quotas viennent des champs de l'offre : on vérifie qu'ils sont rendus
+  // et qu'aucun ne dépasse le pool partagé de la plateforme (ADR-013).
+  const tarifs = page.locator('#tarifs')
+  await expect(tarifs.getByText(/actifs? en surveillance continue/).first()).toBeVisible()
+  await expect(tarifs.getByText(/\b(1[6-9]|[2-9]\d+) actifs? en surveillance continue/)).toHaveCount(
+    0
+  )
 
   await expect(page.getByText('Le plus demandé')).toBeVisible()
   await expect(page.getByRole('button', { name: /Faut-il installer quelque chose/ })).toBeVisible()
@@ -75,6 +111,23 @@ test('la vitrine est lisible sur un écran de téléphone', async ({ page }) => 
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
   )
   expect(overflow).toBe(false)
+
+  // Toutes les sections se parcourent au doigt, contenu compris. Les deux
+  // nouvelles passent en une colonne sur téléphone : c'est exactement là
+  // qu'une grille mal bornée déborde ou se replie sur elle-même.
+  for (const id of SECTIONS) {
+    await page.locator(`#${id}`).scrollIntoViewIfNeeded()
+    await expect(page.locator(`#${id}`)).toBeVisible()
+  }
+  await expect(page.getByText('La météo cyber, chaque matin')).toBeVisible()
+  await expect(page.getByText(/42 mesures/)).toBeVisible()
+
+  // Le débordement se re-mesure APRÈS le parcours : une carte trop large ne
+  // se révèle qu'une fois la section montée et son contenu rendu.
+  const overflowApresParcours = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
+  )
+  expect(overflowApresParcours).toBe(false)
 
   // Le menu replié doit s'ouvrir et donner accès à la conversion.
   await page.getByRole('button', { name: /Ouvrir le menu/ }).click()

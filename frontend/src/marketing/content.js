@@ -18,7 +18,19 @@
  *     double authentification » : la 2FA est proposée, pas imposée ;
  *   - la vérification DNS porte sur SPF et DMARC ; DKIM est hors périmètre
  *     (son sélecteur n'est pas découvrable) ;
- *   - le produit détecte et alerte, il ne bloque rien.
+ *   - le produit détecte et alerte, il ne bloque rien ;
+ *   - l'envoi immédiat couvre les échecs de surveillance et les signaux
+ *     avant-coureurs ; une fuite AVÉRÉE ouvre une alerte dans l'interface et
+ *     part dans la météo du lendemain, pas dans un email immédiat
+ *     (`ingest_raw_findings` n'en déclenche aucun) — d'où la formulation de
+ *     NOTIFICATIONS, qui ne promet pas « l'email dans la minute » ;
+ *   - les emails partent aux ADMINISTRATEURS de l'espace, pas à toute
+ *     l'équipe (`notifications.services.list_recipient_emails`) ;
+ *   - « jusqu'à N analyses par mois » est un plafond, pas une périodicité :
+ *     aucune tâche périodique de scan n'existe (`config/celery.py`).
+ *
+ * La grille tarifaire, elle, n'est plus écrite ici : elle vient de l'API
+ * (`/api/v1/billing/plans/`), et le bloc PRICING n'en est que le repli.
  */
 
 export const SITE = {
@@ -29,6 +41,8 @@ export const SITE = {
 
 export const NAV = [
   { label: 'Le produit', href: '#produit' },
+  { label: 'Diagnostic', href: '#diagnostic' },
+  { label: 'Alertes', href: '#alertes' },
   { label: 'Fonctionnement', href: '#fonctionnement' },
   { label: 'Sécurité', href: '#securite' },
   { label: 'Tarifs', href: '#tarifs' },
@@ -63,7 +77,7 @@ export const PROBLEM = {
 }
 
 export const DIFFERENTIATORS = {
-  title: 'Trois choses que nous faisons différemment',
+  title: 'Quatre choses que nous faisons différemment',
   items: [
     {
       id: 'signaux',
@@ -93,7 +107,105 @@ export const DIFFERENTIATORS = {
       detail:
         "Nous ne testons aucun identifiant nulle part : nous écrivons donc « réutilisation possible », jamais « confirmée ». Pour lever le doute, un administrateur peut consulter la valeur exacte du mot de passe fuité, après une nouvelle vérification de son identité. Chaque consultation est tracée.",
     },
+    {
+      // Vérifié contre ai_assistant/prompts.py et services.py : l'assistant
+      // répond À PARTIR du contexte du client (scores, écarts, alertes,
+      // compromissions ouvertes), et non d'une culture générale ; le prompt
+      // lui impose de renvoyer vers un professionnel qualifié sur le droit et
+      // la réponse à incident. La pseudonymisation est un pipeline obligatoire
+      // (ADR-005), pas une option : c'est pour cela qu'elle est ici.
+      id: 'assistant',
+      eyebrow: 'Assistant',
+      title: 'Poser une question sur VOTRE situation, pas sur la sécurité en général',
+      body: "« Que dois-je faire en premier ? », « Ce compte est-il vraiment un risque ? » : l'assistant répond à partir de vos propres données — votre score, vos écarts, vos alertes ouvertes, les fuites qui vous concernent. Les réponses sont courtes, en français courant, et se terminent par ce qu'il y a à faire.",
+      detail:
+        "Il vous renvoie vers un professionnel qualifié dès qu'une question sort de son périmètre : le droit, un contentieux, un incident en cours. Et avant chaque envoi, les noms, adresses et domaines sont remplacés par des identifiants neutres, puis rétablis à la réception — le service d'intelligence artificielle ne voit jamais le nom de votre entreprise.",
+    },
   ],
+}
+
+/**
+ * Ce qui arrive dans la boîte email, sans ouvrir le produit.
+ *
+ * Vérifié ligne à ligne contre `apps/notifications` avant rédaction, et deux
+ * formulations ont dû être corrigées à cette occasion :
+ *
+ *  1. Le canal est l'EMAIL, uniquement. Pas de SMS, pas de messagerie
+ *     d'équipe, pas d'astreinte : `EmailLog.Kind` ne connaît que trois envois
+ *     (météo, alerte temps réel, signal avant-coureur) et tous passent par
+ *     `EmailMultiAlternatives`.
+ *  2. L'envoi immédiat couvre les ÉCHECS DE SURVEILLANCE
+ *     (`monitoring/tasks.py` → `send_realtime_alert_email`) et les SIGNAUX
+ *     avant-coureurs reçus par webhook (`_notify_pre_incident_signals`).
+ *     Une fuite avérée, elle, ouvre une alerte dans l'interface et part dans
+ *     la météo du lendemain matin : `ingest_raw_findings` ne déclenche aucun
+ *     email immédiat. On écrit donc « le lendemain matin », pas « en temps
+ *     réel » — voir docs/journal.md, écart relevé le 01/09/2026.
+ *
+ * Les destinataires sont les ADMINISTRATEURS de l'espace
+ * (`list_recipient_emails` filtre sur `Membership.Role.ADMIN`), pas tous les
+ * utilisateurs : c'est écrit tel quel plus bas.
+ */
+export const NOTIFICATIONS = {
+  title: 'Ce que vous recevez sans vous connecter',
+  subtitle:
+    "Un dirigeant n'ouvre pas un outil de sécurité tous les matins. Il ouvre ses emails. Le produit est fait pour venir à vous, pas pour attendre votre visite.",
+  items: [
+    {
+      title: 'La météo cyber, chaque matin',
+      body: "Un email quotidien, à l'heure que vous choisissez : l'état de vos actifs, les alertes encore ouvertes et ce qui a bougé depuis la veille. Il part tous les jours, y compris quand tout va bien — savoir que rien n'a changé fait partie de l'information.",
+      detail: "Une seule météo par jour et par espace, même si l'envoi est relancé.",
+    },
+    {
+      title: "Une alerte dès qu'un contrôle échoue",
+      body: "Site injoignable, certificat qui approche de l'expiration, configuration email affaiblie : l'email part sans attendre la météo du lendemain. Une panne passagère ne déclenche rien — un site n'est déclaré indisponible qu'après trois échecs consécutifs.",
+    },
+    {
+      title: 'Un signal quand votre exposition publique change',
+      body: "Le dépôt d'un nom de domaine ressemblant au vôtre, ou une mention de votre entreprise sur un espace fréquenté par des attaquants, vous est signalé au moment où il apparaît. Le message est volontairement plus calme que celui d'une alerte : rien n'a fuité, quelque chose se prépare peut-être.",
+    },
+    {
+      title: 'Vous réglez ce que vous recevez',
+      body: "L'heure de la météo, sa désactivation, celle des alertes immédiates : tout se change depuis vos préférences. Ces emails partent aux administrateurs de l'espace, pas à toute votre équipe.",
+    },
+  ],
+}
+
+/**
+ * Le diagnostic, présenté comme le produit d'entrée qu'il est.
+ *
+ * Chiffres vérifiés : `load_anssi_referential` charge 10 domaines et
+ * 42 mesures (« Guide d'hygiène informatique », ANSSI). Le plan d'action est
+ * généré depuis le diagnostic (`actions.services.generate_action_plan`), et la
+ * charte comme l'export PDF existent bien (`ai_assistant/urls.py` :
+ * `documents/`, `documents/<id>/export/pdf/`).
+ *
+ * NE PAS ÉCRIRE que le diagnostic « met en conformité » : la FAQ répond déjà
+ * l'inverse, et c'est la bonne réponse.
+ */
+export const DIAGNOSTIC = {
+  title: 'Savoir par où commencer',
+  subtitle:
+    "La question d'une PME n'est presque jamais « que se passe-t-il ? », c'est « par quoi je commence ? ». Le diagnostic répond à celle-là.",
+  steps: [
+    {
+      title: 'Un questionnaire sur un référentiel public',
+      body: "Les 42 mesures du guide d'hygiène informatique de l'ANSSI, réparties en 10 domaines. Un référentiel public et reconnu, que vous pouvez consulter par vous-même — nous n'inventons pas notre propre grille de notation.",
+    },
+    {
+      title: 'Un score, et le détail de son calcul',
+      body: "Une note globale et une note par domaine, avec les mesures qui les composent. Vous voyez où vous êtes solide et où vous ne l'êtes pas, sans avoir à interpréter un graphique.",
+    },
+    {
+      title: 'Un plan d’action priorisé',
+      body: "Le diagnostic produit directement les actions à mener, classées par priorité, que vous suivez dans un tableau : à faire, en cours, fait. Le but est qu'une PME sans équipe sécurité sache quoi faire lundi matin.",
+    },
+    {
+      title: 'Les documents qui vont avec',
+      body: "Une charte informatique adaptée à votre entreprise, rédigée à partir de ce que vous avez déclaré, à relire et à valider avant diffusion. Vos documents validés s'exportent en PDF, prêts à circuler.",
+    },
+  ],
+  note: "Le diagnostic vous aide à progresser ; il ne vous certifie pas. Ce que vous mettez réellement en œuvre reste votre décision.",
 }
 
 export const HOW_IT_WORKS = {
@@ -158,61 +270,131 @@ export const TRUST = {
 // Montants INDICATIFS, centralisés pour être modifiables en un seul endroit.
 // La tarification n'est pas arrêtée : ces valeurs servent à situer un ordre de
 // grandeur en démonstration, pas à engager.
+//
+// CE BLOC EST UN REPLI, PAS LA SOURCE. La grille affichée vient de
+// `GET /api/v1/billing/plans/` (catalogue publié, ADR-019) : modifier une
+// offre depuis l'administration doit se voir sans redéploiement. Ces objets ne
+// servent que si l'API ne répond pas — une grille vide serait pire qu'une
+// grille légèrement datée, et c'est la première chose qu'un prospect regarde.
+//
+// DEUX RÈGLES, tenues par un test :
+//  1. la forme est CELLE DE L'API (`billing.serializers.PublicPlanSerializer`),
+//     pas une forme maison. Le repli avait sa propre forme (`id`, `price`,
+//     `pitch`, puces en texte libre), le composant devait la traduire, et
+//     c'est dans cette traduction que la divergence est passée inaperçue :
+//     il annonçait Essentiel/Standard/Étendu à 49/149/349 quand la base porte
+//     Veille/Pilotage/Souverain à 89/249/sur devis ;
+//  2. codes, noms, prix et quotas recopient la base
+//     (`billing/migrations/0002_initial_plans.py`).
+//     `billing/tests/test_vitrine_plan_consistency.py` échoue si l'un des
+//     deux bouge sans l'autre.
+//
+// Les quotas ne sont PAS écrits à la main dans les puces : `quotaLines()` les
+// dérive des champs de l'offre. Un nombre recopié à la main est exactement ce
+// qui avait produit « 30 actifs surveillés » — alors que le pool de
+// surveillance continue de TOUTE la plateforme est de 15 (ADR-013).
 export const PRICING = {
   title: 'Offres',
-  subtitle: "Montants indicatifs, hors taxes, par mois. La tarification définitive est établie au moment du devis.",
+  subtitle:
+    "Montants indicatifs, hors taxes, par mois. La tarification définitive est établie au moment du devis.",
   disclaimer:
     "Ces montants sont donnés à titre indicatif pour situer un ordre de grandeur. Ils ne constituent pas une offre commerciale.",
   currency: '€',
+  quoteLabel: 'Sur devis',
   plans: [
     {
-      id: 'essentiel',
-      name: 'Essentiel',
-      price: 49,
-      pitch: 'Pour une petite structure avec un domaine et une messagerie.',
+      code: 'veille',
+      name: 'Veille',
+      tagline: 'Savoir ce qui circule sur votre entreprise.',
+      price_monthly: 89,
+      is_quote_only: false,
+      is_highlighted: false,
+      monitored_assets: 1,
+      monthly_scans: 20,
+      max_users: 3,
+      features: [{ key: 'realtime_monitoring', label: 'Surveillance en temps réel' }],
+    },
+    {
+      code: 'pilotage',
+      name: 'Pilotage',
+      tagline: 'Comprendre, prioriser et agir.',
+      price_monthly: 249,
+      is_quote_only: false,
+      is_highlighted: true,
+      monitored_assets: 3,
+      monthly_scans: 60,
+      max_users: 10,
       features: [
-        '3 actifs surveillés',
-        'Diagnostic de maturité et plan d’action',
-        'Surveillance disponibilité, certificat, en-têtes, SPF/DMARC',
-        'Analyse de fuites mensuelle',
-        '2 utilisateurs',
+        { key: 'assistant', label: 'Assistant conversationnel' },
+        { key: 'exposure_synthesis', label: "Synthèse d'exposition" },
+        { key: 'pdf_export', label: 'Export PDF des documents' },
+        { key: 'reuse_correlation', label: 'Corrélation de réutilisation' },
+        { key: 'secret_reveal', label: 'Révélation de mot de passe' },
+        { key: 'anssi_assessment', label: 'Diagnostic de maturité' },
+        { key: 'charter_generation', label: 'Génération de charte informatique' },
+        { key: 'realtime_monitoring', label: 'Surveillance en temps réel' },
       ],
     },
     {
-      id: 'standard',
-      name: 'Standard',
-      price: 149,
-      highlighted: true,
-      pitch: 'Pour une PME avec plusieurs sites et une équipe.',
+      code: 'souverain',
+      name: 'Souverain',
+      tagline: 'Sur mesure, pour les structures aux contraintes particulières.',
+      price_monthly: 0,
+      is_quote_only: true,
+      is_highlighted: false,
+      monitored_assets: 5,
+      monthly_scans: 120,
+      max_users: 0, // 0 = illimité (Plan.UNLIMITED)
       features: [
-        '10 actifs surveillés',
-        'Tout ce que comprend Essentiel',
-        'Signaux avant-coureurs et corrélation de réutilisation',
-        'Analyse de fuites hebdomadaire',
-        'Synthèse rédigée et génération documentaire',
-        '10 utilisateurs',
-      ],
-    },
-    {
-      id: 'etendu',
-      name: 'Étendu',
-      price: 349,
-      pitch: 'Pour une structure multi-sites ou avec des obligations sectorielles.',
-      features: [
-        '30 actifs surveillés',
-        'Tout ce que comprend Standard',
-        // Formulation prudente à dessein : la surveillance temps réel repose
-        // sur un pool de 15 emplacements PARTAGÉ par toute la plateforme
-        // (palier de licence, ADR-013). Promettre « tous vos actifs en temps
-        // réel » serait invendable dès le sixième client. Le nombre se
-        // convient donc au cas par cas.
-        "Surveillance en temps réel (nombre d'actifs convenu ensemble)",
-        'Analyse de fuites à la demande',
-        'Utilisateurs illimités',
-        'Accompagnement à la mise en conformité',
+        { key: 'assistant', label: 'Assistant conversationnel' },
+        { key: 'exposure_synthesis', label: "Synthèse d'exposition" },
+        { key: 'pdf_export', label: 'Export PDF des documents' },
+        { key: 'reuse_correlation', label: 'Corrélation de réutilisation' },
+        { key: 'secret_reveal', label: 'Révélation de mot de passe' },
+        { key: 'anssi_assessment', label: 'Diagnostic de maturité' },
+        { key: 'charter_generation', label: 'Génération de charte informatique' },
+        { key: 'realtime_monitoring', label: 'Surveillance en temps réel' },
       ],
     },
   ],
+}
+
+/**
+ * Les trois quotas d'une offre, rendus en puces à partir de ses champs —
+ * jamais recopiés à la main, que l'offre vienne de l'API ou du repli.
+ *
+ * Chaque formulation est tenue au cordeau, et pour une raison :
+ *
+ * — « actif en surveillance continue », pas « actifs surveillés ». Le nombre
+ *   compte les emplacements de la licence, pris sur un pool de 15 PARTAGÉ par
+ *   toute la plateforme (ADR-013). La garde de capacité
+ *   (`billing/capacity.py`) refuse toute activation qui ferait dépasser ce
+ *   pool : le chiffre affiché est donc un engagement que la plateforme sait
+ *   honorer. Un actif peut par ailleurs être déclaré et vérifié
+ *   (disponibilité, certificat, en-têtes, SPF/DMARC) sans occuper
+ *   d'emplacement — d'où une formule qui nomme la ressource rare au lieu de
+ *   laisser croire à un plafond du nombre d'actifs.
+ *
+ * — « Jusqu'à N analyses par mois », pas « analyse hebdomadaire ». Le champ
+ *   est un PLAFOND mensuel, pas une périodicité : aucune tâche périodique de
+ *   scan n'existe (`config/celery.py`). Une analyse part à la déclaration
+ *   d'un actif, puis à la demande.
+ */
+export function quotaLines(plan) {
+  const assets = Number(plan.monitored_assets) || 0
+  const scans = Number(plan.monthly_scans) || 0
+  const users = Number(plan.max_users) || 0
+
+  const lines = []
+  if (assets) {
+    lines.push(`${assets} actif${assets > 1 ? 's' : ''} en surveillance continue`)
+  }
+  if (scans) {
+    lines.push(`Jusqu'à ${scans} analyses de fuites par mois`)
+  }
+  // 0 = illimité (Plan.UNLIMITED) : le zéro ne s'affiche jamais tel quel.
+  lines.push(users ? `${users} utilisateur${users > 1 ? 's' : ''}` : 'Utilisateurs illimités')
+  return lines
 }
 
 export const FAQ = {
@@ -310,6 +492,8 @@ export const FOOTER = {
     {
       title: 'Produit',
       links: [
+        { label: 'Diagnostic et plan d’action', href: '/#diagnostic' },
+        { label: 'Alertes et météo cyber', href: '/#alertes' },
         { label: 'Fonctionnement', href: '/#fonctionnement' },
         { label: 'Sécurité et données', href: '/#securite' },
         { label: 'Tarifs', href: '/#tarifs' },

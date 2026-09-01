@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, Mail } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { publicApi } from '../../api/endpoints'
@@ -9,13 +9,16 @@ import FlowDiagram from '../components/FlowDiagram'
 import MarketingLayout from '../components/MarketingLayout'
 import Reveal from '../components/Reveal'
 import {
+  DIAGNOSTIC,
   DIFFERENTIATORS,
   FAQ,
   FINAL_CTA,
   HERO,
   HOW_IT_WORKS,
+  NOTIFICATIONS,
   PRICING,
   PROBLEM,
+  quotaLines,
   TRUST,
 } from '../content'
 import { ORGANISATION_JSON_LD, useSeo } from '../useSeo'
@@ -302,6 +305,87 @@ function HowItWorks() {
   )
 }
 
+/**
+ * Le diagnostic, en amont de la surveillance dans la page comme dans l'usage.
+ *
+ * Placé juste après « Le produit » et AVANT « Fonctionnement » : c'est la
+ * première chose qu'une PME peut faire le jour de son inscription, et la
+ * seule qui ne dépende d'aucune détection. La reléguer en bas de page
+ * revenait à la présenter comme un supplément.
+ */
+function Diagnostic() {
+  return (
+    <Section id="diagnostic" className="bg-ink-50/50">
+      <Reveal>
+        <SectionTitle
+          eyebrow="Diagnostic"
+          title={DIAGNOSTIC.title}
+          subtitle={DIAGNOSTIC.subtitle}
+        />
+      </Reveal>
+      <ol className="mt-10 grid gap-6 md:grid-cols-2">
+        {DIAGNOSTIC.steps.map((step, index) => (
+          <Reveal key={step.title} as="li" delay={index * 70} className="h-full">
+            <div className="h-full rounded-lg border border-ink-200 bg-surface p-6">
+              {/* Le numéro encode une progression réelle : on répond, on
+                  obtient un score, on en tire un plan, puis des documents.
+                  Il n'est pas décoratif — d'où la liste ordonnée. */}
+              <span className="flex size-8 items-center justify-center rounded-full bg-brand-100 font-display text-sm font-semibold text-brand-800">
+                {index + 1}
+              </span>
+              <h3 className="mt-4 font-display text-base font-semibold text-ink-900">
+                {step.title}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-ink-600">{step.body}</p>
+            </div>
+          </Reveal>
+        ))}
+      </ol>
+      <Reveal>
+        <p className="mt-8 max-w-2xl text-sm text-ink-500">{DIAGNOSTIC.note}</p>
+      </Reveal>
+    </Section>
+  )
+}
+
+/**
+ * Ce qui arrive par email. Section volontairement placée après le diagnostic :
+ * l'argument n'est pas « nous envoyons des emails », c'est « vous n'avez pas
+ * à venir » — il se comprend une fois qu'on sait ce que le produit observe.
+ */
+function Notifications() {
+  return (
+    <Section id="alertes">
+      <Reveal>
+        <SectionTitle
+          eyebrow="Sans vous connecter"
+          title={NOTIFICATIONS.title}
+          subtitle={NOTIFICATIONS.subtitle}
+        />
+      </Reveal>
+      <div className="mt-10 grid gap-x-10 gap-y-8 md:grid-cols-2">
+        {NOTIFICATIONS.items.map((item, index) => (
+          <Reveal key={item.title} delay={index * 60}>
+            <div className="flex gap-4">
+              <span
+                aria-hidden="true"
+                className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-brand-100 text-brand-700"
+              >
+                <Mail className="size-4" />
+              </span>
+              <div>
+                <h3 className="font-display text-base font-semibold text-ink-900">{item.title}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-ink-600">{item.body}</p>
+                {item.detail && <p className="mt-2 text-sm text-ink-500">{item.detail}</p>}
+              </div>
+            </div>
+          </Reveal>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
 function Trust() {
   return (
     <Section id="securite">
@@ -355,18 +439,11 @@ function Pricing() {
     }
   }, [])
 
-  const displayed =
-    plans ??
-    PRICING.plans.map((plan) => ({
-      code: plan.id,
-      name: plan.name,
-      tagline: plan.pitch,
-      price_monthly: plan.price,
-      currency: '€',
-      is_quote_only: false,
-      is_highlighted: Boolean(plan.highlighted),
-      features: plan.features.map((label) => ({ key: label, label })),
-    }))
+  // Aucune traduction entre les deux sources : le repli a désormais la forme
+  // exacte de l'API (content.js). C'est dans cette traduction que la
+  // divergence s'était installée — le repli annonçait d'autres noms et
+  // d'autres prix que la base, et rien ne le signalait.
+  const displayed = plans ?? PRICING.plans
 
   return (
     <Section id="tarifs" className="bg-ink-50/50">
@@ -393,7 +470,7 @@ function Pricing() {
               <p className="mt-5">
                 {plan.is_quote_only ? (
                   <span className="font-display text-2xl font-semibold text-ink-900">
-                    Sur devis
+                    {PRICING.quoteLabel}
                   </span>
                 ) : (
                   <>
@@ -404,7 +481,22 @@ function Pricing() {
                   </>
                 )}
               </p>
-              <ul className="mt-6 flex-1 space-y-2.5">
+              {/* Quotas d'abord, fonctionnalités ensuite. Un dirigeant compare
+                  « combien » avant « quoi », et les quotas sont ce qui change
+                  vraiment d'une offre à l'autre — les fonctionnalités de
+                  Pilotage et de Souverain sont identiques.
+                  Les libellés sont DÉRIVÉS des champs de l'offre
+                  (quotaLines) : aucun nombre n'est recopié à la main, ni ici
+                  ni dans le repli. Voir ADR-013 sur le pool partagé. */}
+              <ul className="mt-6 space-y-2.5 border-b border-ink-200 pb-5">
+                {quotaLines(plan).map((line) => (
+                  <li key={line} className="flex gap-2.5 text-sm font-medium text-ink-800">
+                    <Check className="mt-0.5 size-4 shrink-0 text-brand-600" aria-hidden="true" />
+                    {line}
+                  </li>
+                ))}
+              </ul>
+              <ul className="mt-5 flex-1 space-y-2.5">
                 {(plan.features || []).map((feature) => (
                   <li key={feature.key} className="flex gap-2.5 text-sm text-ink-700">
                     <Check className="mt-0.5 size-4 shrink-0 text-brand-600" aria-hidden="true" />
@@ -519,6 +611,8 @@ export default function LandingPage() {
       <Hero />
       <Problem />
       <Differentiators />
+      <Diagnostic />
+      <Notifications />
       <HowItWorks />
       <Trust />
       <Pricing />
