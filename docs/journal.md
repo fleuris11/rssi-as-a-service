@@ -3501,3 +3501,98 @@ prouve rien.
   relevé.
 - `npm run lint` : 0 erreur (8 avertissements `react-refresh` préexistants,
   aucun dans les fichiers touchés). `ruff` : propre. Construction verte.
+
+---
+
+## 2026-09-03 — Le mode « live » n'avait jamais parlé à la vraie API
+
+Premier client réel (**CRRH**, offre Souverain) créé en production, bascule du
+mode CTI de « auto » à « live » depuis la console. Résultat : **aucune analyse
+ne fonctionne**, et les fonctions liées au renseignement paraissent mortes. En
+« auto », tout marchait.
+
+### Ce qui se passait
+
+Quatre jobs de scan en échec le 01/09, tous avec le même message :
+
+> `Breachsense a répondu 400 : Request missing the appropriate parameters`
+
+Le client HTTP interrogeait les neuf endpoints avec `?domain=…` (ou `?email=`).
+**Ces paramètres n'existent pas.** L'API attend `s` (ou `search`), sur tous les
+endpoints, et il accepte indifféremment un domaine ou une adresse.
+
+Vérifié contre l'API réelle depuis la production, en lecture seule :
+
+| Requête | Réponse |
+|---|---|
+| `/creds?domain=crrhuemoa.org` | **400** — reproduit la panne |
+| `/creds?s=crrhuemoa.org` | **200** — `{"cnt":2}` |
+
+Deux fuites d'identifiants attendaient donc depuis le début sur le domaine de
+ce client, sans que rien ne puisse les chercher.
+
+### Deux autres défauts du même tonneau, trouvés en vérifiant
+
+- **`/account?action=remaining` n'est pas une action valide** (les actions sont
+  add/del/list/test/rotate/audit). L'API répondait **200 avec un corps vide** —
+  donc pas une erreur, juste « pas de quota connu ». Or
+  `ensure_query_budget_available` passe silencieusement quand le quota est
+  inconnu : **la garde de budget n'a jamais rien gardé.** Le bon appel est
+  `?r=1`, et il répond `{"Remaining": 985}` — avec un R majuscule, que le code
+  ne lisait pas non plus.
+- **`/account?action=list` renvoie `[{"ast": "…"}]`**, pas `ref`/`id`/`asset`.
+  La liste des actifs surveillés revenait donc avec des références `"None"`,
+  ce qui rendait tout désenregistrement impossible.
+
+### La cause commune, et la vraie leçon
+
+Le module a été écrit sur un contrat **supposé**, et la suite de tests
+vérifiait ce même contrat supposé. `test_queries_by_domain_param` affirmait
+`client.stealer.assert_called_once_with(domain="example.com")` : elle passait,
+elle passera toujours, et elle certifiait une requête que le fournisseur
+refuse.
+
+**Une suite de tests ne peut pas valider un contrat externe.** Elle valide
+qu'on s'appelle soi-même comme on croit devoir le faire. C'était écrit noir sur
+blanc comme reste-à-faire depuis la Phase 7 — « smoke test avec la licence
+réelle », rappelé dans l'ADR-015 (« risque résiduel accepté ») — et c'est
+exactement ce reste-à-faire qui a explosé, au pire endroit : chez le premier
+client payant.
+
+Ajouté en conséquence : `python manage.py verifier_breachsense`, qui interroge
+la vraie licence. Sans argument, elle ne coûte **rien** (les appels `/account`
+ne sont pas des recherches) et valide déjà l'authentification, le budget et le
+pool. Avec `--domaine`, elle valide le contrat de recherche pour une requête.
+Elle ne peut pas vivre en CI — pas de licence, quota partagé — donc elle est
+une commande qu'on lance, et le moment de la lancer est **avant** de basculer
+en live, pas après.
+
+### Ce qui n'était PAS cassé, contrairement à l'impression
+
+**L'IA fonctionne.** Appel réel depuis la production : `HTTP 200`, 8 jetons en
+entrée, 5 en sortie. Quota du client intact (0 / 200 000). Aucun job IA en
+échec — il n'y a simplement **aucun job IA pour CRRH**, jamais. La synthèse
+d'exposition et l'assistant se nourrissent des fuites et des alertes : avec
+zéro finding, il n'y avait rien à résumer. L'IA n'était pas en panne, elle
+était sans matière. C'est une conséquence du bug CTI, pas un second bug.
+
+À retenir pour le diagnostic : *« l'IA ne marche pas »* et *« l'IA n'a rien à
+dire »* se ressemblent beaucoup vu de l'écran, et pas du tout vu du code.
+
+### Restent ouverts
+
+1. **Le webhook n'est pas configurable en l'état** :
+   `BREACHSENSE_WEBHOOK_USERNAME` et `…_PASSWORD` sont **vides** en production.
+   La surveillance continue peut enregistrer un actif, mais les notifications
+   entrantes seraient rejetées en 401. À configurer avant de vendre la
+   surveillance temps réel.
+2. **`account_add` / `account_del` corrigés mais non vérifiés en réel** : les
+   tester consomme un emplacement du pool partagé (15). À faire avec
+   `verifier_breachsense` étendu, ou en enregistrant un vrai actif client et
+   en contrôlant `action=list`.
+3. **Le pool contient déjà `afinhab.org` et `crrhuemoa.org`** côté Breachsense.
+   À rapprocher de la table `MonitoredAsset` : si l'application ne les connaît
+   pas, deux emplacements sur quinze sont consommés sans propriétaire.
+4. **CRRH a déclaré `ratp.fr`** parmi ses actifs. L'ADR-010 pose qu'un actif
+   n'est vérifié que s'il est déclaré — mais déclarer n'est pas posséder.
+   Surveiller le domaine d'un tiers n'est pas anodin : à trancher.
