@@ -37,7 +37,16 @@ class BreachsenseProvider(BreachIntelligenceProvider):
     def _scan(self, *, domain: str | None = None, email: str | None = None) -> ScanResult:
         findings: list[RawFinding] = []
         requests_consumed = 0
-        params = {"domain": domain} if domain else {"email": email}
+        # Le paramètre de recherche s'appelle `s` sur TOUS les endpoints de
+        # requête, et il accepte indifféremment un domaine ou une adresse
+        # email — il n'existe pas de paramètre `domain` ni `email` côté
+        # Breachsense. La distinction domaine/email reste utile ici (elle
+        # nomme l'intention de l'appelant), mais elle ne passe pas sur le fil.
+        #
+        # C'est le défaut qui a rendu tout scan réel impossible : l'API
+        # répondait « 400 Request missing the appropriate parameters » sur
+        # chaque endpoint. Vérifié contre l'API réelle le 03/09/2026.
+        params = {"s": domain or email}
 
         for endpoint in _ENDPOINT_METHODS:
             method = getattr(self.client, endpoint)
@@ -77,13 +86,20 @@ class BreachsenseProvider(BreachIntelligenceProvider):
 
     def list_monitored_assets(self) -> list[MonitoredAssetRegistration]:
         items = self.client.account_list()
+        # Réponse réelle de `/account?action=list` :
+        # ``[{"ast": "exemple.fr"}, ...]`` — un seul champ, `ast`, qui porte
+        # à la fois l'identifiant et la valeur. Les clés `ref`/`id`/`asset`
+        # supposées jusqu'ici n'existent pas : la liste revenait donc pleine
+        # de `provider_ref="None"`, ce qui rendait tout désenregistrement
+        # impossible. Vérifié contre l'API réelle le 03/09/2026.
         return [
             MonitoredAssetRegistration(
-                provider_ref=str(item.get("ref") or item.get("id") or item.get("asset")),
+                provider_ref=str(item.get("ast") or ""),
                 asset_type=item.get("type", ""),
-                value=item.get("asset", ""),
+                value=item.get("ast", ""),
             )
             for item in items
+            if item.get("ast")
         ]
 
     def get_remaining_quota(self) -> int | None:
@@ -92,7 +108,14 @@ class BreachsenseProvider(BreachIntelligenceProvider):
         except Exception:  # noqa: BLE001 - le quota devient simplement "inconnu"
             logger.warning("Impossible de récupérer le quota Breachsense restant.", exc_info=True)
             return None
-        remaining = response.get("remaining")
+        # L'API répond ``{"Remaining": 985}`` — R majuscule. La clé
+        # minuscule était lue jusqu'ici, donc le quota restait éternellement
+        # « inconnu » et la garde de budget (`ensure_query_budget_available`)
+        # laissait tout passer sans jamais rien protéger : une panne
+        # silencieuse, qui ne se serait manifestée qu'en épuisant la licence.
+        # Les deux graphies sont acceptées, la casse d'une clé JSON étant une
+        # chose qu'un fournisseur peut normaliser sans prévenir.
+        remaining = response.get("Remaining", response.get("remaining"))
         return int(remaining) if remaining is not None else None
 
     def send_test_alert(self) -> bool:

@@ -178,18 +178,26 @@ class TestErrorHandling:
 
 
 class TestAccountEndpoints:
-    def test_account_remaining_parses_response(self):
+    """Paramètres relevés sur l'API réelle le 03/09/2026, pas déduits de la
+    forme de notre propre code — c'est la confusion qui avait rendu le
+    module inopérant en production tout en gardant la suite verte."""
+
+    def test_account_remaining_asks_with_r_not_an_action(self):
+        # `remaining` n'est pas une action valide (add/del/list/test/rotate/
+        # audit le sont). L'API répondait 200 avec un corps VIDE : aucune
+        # erreur, aucun quota, une garde inerte.
         session = Mock()
-        session.request.return_value = _response(200, {"remaining": 42})
+        session.request.return_value = _response(200, {"Remaining": 985})
         client = _client(session)
 
         result = client.account_remaining()
 
-        assert result["remaining"] == 42
+        assert result["Remaining"] == 985
         params = session.request.call_args.kwargs["params"]
-        assert params["action"] == "remaining"
+        assert params == {"r": 1}
+        assert "action" not in params
 
-    def test_account_add_sends_asset_and_type(self):
+    def test_account_add_sends_ast(self):
         session = Mock()
         session.request.return_value = _response(200, {"ref": "abc"})
         client = _client(session)
@@ -201,10 +209,22 @@ class TestAccountEndpoints:
         params = session.request.call_args.kwargs["params"]
         assert params == {
             "action": "add",
-            "asset": "example.com",
-            "type": "domain",
-            "webhook": "https://x/webhook",
+            "ast": "example.com",
+            "notify": "https://x/webhook",
         }
+        # `asset` et `type` n'existent pas côté Breachsense : les envoyer
+        # produisait un 400 « Request missing the appropriate parameters ».
+        assert "asset" not in params and "type" not in params
+
+    def test_account_del_sends_ast(self):
+        session = Mock()
+        session.request.return_value = _response(200, {})
+        client = _client(session)
+
+        client.account_del(provider_ref="example.com")
+
+        params = session.request.call_args.kwargs["params"]
+        assert params == {"action": "del", "ast": "example.com"}
 
     def test_account_creds_formats_username_password(self):
         session = Mock()

@@ -8,7 +8,10 @@ from unittest.mock import Mock
 import pytest
 
 from apps.threat_intelligence.providers.base import ProviderPoolFullError
-from apps.threat_intelligence.providers.breachsense.client import BreachsenseForbiddenError
+from apps.threat_intelligence.providers.breachsense.client import (
+    QUERY_ENDPOINTS,
+    BreachsenseForbiddenError,
+)
 from apps.threat_intelligence.providers.breachsense.provider import BreachsenseProvider
 from apps.threat_intelligence.providers.null_provider import NullProvider
 
@@ -45,15 +48,34 @@ class TestScanDomain:
         assert "creds" in endpoints_seen
         assert result.requests_consumed == 2 + 1 + 7  # les 7 autres endpoints, 1 requête chacun
 
-    def test_queries_by_domain_param(self):
+    # Ces deux tests affirmaient l'inverse jusqu'au 03/09/2026 : ils
+    # vérifiaient `domain=` et `email=`, c'est-à-dire NOTRE hypothèse, pas le
+    # contrat du fournisseur. Ils sont donc restés verts pendant que chaque
+    # scan réel échouait en production sur « 400 Request missing the
+    # appropriate parameters ». Un test qui ne fait que répéter la supposition
+    # du code ne teste rien.
+    def test_queries_use_the_s_parameter_for_a_domain(self):
         provider, client = _provider_with_client()
         provider.scan_domain("example.com")
-        client.stealer.assert_called_once_with(domain="example.com")
+        client.stealer.assert_called_once_with(s="example.com")
 
-    def test_scan_email_queries_by_email_param(self):
+    def test_queries_use_the_same_s_parameter_for_an_email(self):
+        # `s` accepte indifféremment un domaine ou une adresse : il n'existe
+        # pas de paramètre distinct pour l'email.
         provider, client = _provider_with_client()
         provider.scan_email("user@example.com")
-        client.stealer.assert_called_once_with(email="user@example.com")
+        client.stealer.assert_called_once_with(s="user@example.com")
+
+    def test_no_query_ever_sends_a_domain_parameter(self):
+        """Garde de non-régression, sur les neuf endpoints à la fois."""
+        provider, client = _provider_with_client()
+        provider.scan_domain("example.com")
+        for endpoint in QUERY_ENDPOINTS:
+            _args, kwargs = getattr(client, endpoint).call_args
+            assert "domain" not in kwargs and "email" not in kwargs, (
+                f"{endpoint} envoie un paramètre inexistant côté Breachsense : {sorted(kwargs)}"
+            )
+            assert kwargs == {"s": "example.com"}
 
 
 class TestRegisterMonitoredAsset:
@@ -66,6 +88,36 @@ class TestRegisterMonitoredAsset:
         assert registration.provider_ref == "bs-123"
         assert registration.value == "example.com"
 
+    def test_falls_back_to_the_value_when_the_response_carries_no_reference(self):
+        """Réponse réelle observée : `/account?action=list` ne renvoie que
+        `ast`. Un ajout qui ne renvoie ni `ref` ni `id` doit donc rester
+        désenregistrable — la valeur EST l'identifiant côté Breachsense."""
+        provider, client = _provider_with_client()
+        client.account_add.return_value = {}
+
+        registration = provider.register_monitored_asset(asset_type="domain", value="example.com")
+
+        assert registration.provider_ref == "example.com"
+
+
+class TestListMonitoredAssets:
+    def test_reads_the_ast_field(self):
+        """`/account?action=list` renvoie `[{"ast": "..."}]` — les clés
+        `ref`/`id`/`asset` lues jusqu'ici n'existent pas, et produisaient une
+        liste de références « None », donc indésenregistrables."""
+        provider, client = _provider_with_client()
+        client.account_list.return_value = [{"ast": "exemple.fr"}, {"ast": "autre.fr"}]
+
+        assets = provider.list_monitored_assets()
+
+        assert [a.provider_ref for a in assets] == ["exemple.fr", "autre.fr"]
+        assert [a.value for a in assets] == ["exemple.fr", "autre.fr"]
+
+    def test_ignores_entries_without_an_asset(self):
+        provider, client = _provider_with_client()
+        client.account_list.return_value = [{"ast": "exemple.fr"}, {}]
+        assert len(provider.list_monitored_assets()) == 1
+
     def test_forbidden_response_translates_to_pool_full_error(self):
         provider, client = _provider_with_client()
         client.account_add.side_effect = BreachsenseForbiddenError("403")
@@ -75,10 +127,26 @@ class TestRegisterMonitoredAsset:
 
 
 class TestGetRemainingQuota:
+    def test_parses_the_capitalised_remaining_field(self):
+        """L'API répond `{"Remaining": 985}`. La clé minuscule était seule
+        lue : le quota restait donc toujours « inconnu », et la garde de
+        budget laissait passer sans jamais protéger la licence."""
+        provider, client = _provider_with_client()
+        client.account_remaining.return_value = {"Remaining": 985}
+        assert provider.get_remaining_quota() == 985
+
     def test_parses_remaining_field(self):
         provider, client = _provider_with_client()
         client.account_remaining.return_value = {"remaining": 123}
         assert provider.get_remaining_quota() == 123
+
+    def test_returns_none_on_empty_body(self):
+        """Ce que renvoyait `action=remaining` : 200 avec un corps vide. Le
+        quota devient inconnu — pas une erreur, mais plus jamais silencieux
+        maintenant que la requête est correcte."""
+        provider, client = _provider_with_client()
+        client.account_remaining.return_value = {}
+        assert provider.get_remaining_quota() is None
 
     def test_returns_none_on_client_error(self):
         provider, client = _provider_with_client()

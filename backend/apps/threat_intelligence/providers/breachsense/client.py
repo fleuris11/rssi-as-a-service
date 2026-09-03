@@ -246,15 +246,23 @@ class BreachsenseClient:
     # --- Gestion de compte / du pool de 15 actifs -----------------------------
 
     def account_add(self, *, asset: str, asset_type: str, webhook_url: str | None = None) -> dict:
-        params = {"action": "add", "asset": asset, "type": asset_type}
+        # `ast` est le nom réel du paramètre d'actif (confirmé par la réponse
+        # de `action=list`, qui renvoie `[{"ast": "..."}]`). `asset` et `type`
+        # n'existent pas côté API — un ajout partait donc en 400.
+        #
+        # `asset_type` reste dans la signature : c'est notre vocabulaire
+        # métier (domaine, email), utile à l'appelant et stocké dans
+        # MonitoredAsset. Breachsense, lui, déduit le type de la valeur — il
+        # n'a pas de paramètre pour le recevoir, on ne l'envoie donc pas.
+        params = {"action": "add", "ast": asset}
         if webhook_url:
-            params["webhook"] = webhook_url
+            params["notify"] = webhook_url
         response = self._request_with_retries("GET", "/account", params=params)
         return response.json() if response.content else {}
 
     def account_del(self, *, provider_ref: str) -> dict:
         response = self._request_with_retries(
-            "GET", "/account", params={"action": "del", "asset": provider_ref}
+            "GET", "/account", params={"action": "del", "ast": provider_ref}
         )
         return response.json() if response.content else {}
 
@@ -275,7 +283,12 @@ class BreachsenseClient:
         return items
 
     def account_remaining(self) -> dict:
-        response = self._request_with_retries("GET", "/account", params={"action": "remaining"})
+        # Le budget restant se demande par `r=1`, PAS par `action=remaining` —
+        # « remaining » n'est pas une action valide (add/del/list/test/rotate/
+        # audit le sont). L'API répondait donc 200 avec un corps VIDE, ce qui
+        # ne ressemble pas à une erreur : le quota était simplement toujours
+        # inconnu. Une garde qui ne garde rien, sans le dire.
+        response = self._request_with_retries("GET", "/account", params={"r": 1})
         return response.json() if response.content else {}
 
     def account_creds(self, *, username: str, password: str) -> dict:
