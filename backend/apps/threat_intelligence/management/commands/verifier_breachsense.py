@@ -20,6 +20,7 @@ consommée par endpoint testé.
     python manage.py verifier_breachsense --domaine exemple.fr
 """
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from apps.threat_intelligence.providers import MODE_LIVE, resolve_mode
@@ -113,7 +114,32 @@ class Command(BaseCommand):
             self.stdout.write(ko(f"Pool : échec — {exc}"))
             echecs += 1
 
-        # 3. Contrat de recherche — payant, donc explicitement demandé.
+        # 3. Webhook — gratuit, et c'est ce qui manquait sans que rien ne le
+        # dise : la surveillance continue refusait de s'activer, et seule une
+        # lecture des journaux permettait de comprendre pourquoi.
+        webhook = {
+            nom: bool(getattr(settings, nom, ""))
+            for nom in (
+                "BREACHSENSE_WEBHOOK_CALLBACK_URL",
+                "BREACHSENSE_WEBHOOK_USERNAME",
+                "BREACHSENSE_WEBHOOK_PASSWORD",
+            )
+        }
+        absents = [nom for nom, present in webhook.items() if not present]
+        if absents:
+            self.stdout.write(
+                ko(
+                    "Webhook : non configuré — "
+                    + ", ".join(nom.replace("BREACHSENSE_WEBHOOK_", "") for nom in absents)
+                    + " manquant(s). La surveillance continue ne peut pas être activée "
+                    "(voir « configurer_webhook_breachsense »)."
+                )
+            )
+            echecs += 1
+        else:
+            self.stdout.write(ok("Webhook : les trois valeurs sont renseignées."))
+
+        # 4. Contrat de recherche — payant, donc explicitement demandé.
         domaine = options.get("domaine")
         if not domaine:
             self.stdout.write(
