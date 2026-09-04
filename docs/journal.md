@@ -3891,3 +3891,76 @@ Rendu des deux emails inspecté en capture, en HTML et en texte.
 La délivrabilité elle-même. La réputation mettra quelques jours à remonter
 maintenant que les rebonds quotidiens ont cessé, et il reste à faire confirmer
 par LWS que les envois relayés sont bien signés en DKIM pour ce domaine.
+
+---
+
+## 2026-09-04 (suite) — Les parcours, suivis pour de vrai
+
+Audit des cinq parcours demandés — inscription, diagnostic, plan d'action,
+génération documentaire, assistant — **en les traversant dans un navigateur**,
+pas en relisant des fichiers. C'était le point : trois fois dans la journée,
+regarder le rendu réel a trouvé ce que ni le code ni les tests ne montraient.
+
+### Ce que l'audit a trouvé
+
+**Le plan d'action renvoyait au diagnostic un client qui venait de le
+terminer.** Après 42 mesures et un score de 100 :
+
+```
+Score projeté une fois le plan terminé : 100/100
+Aucune action pour l'instant
+« Terminez une évaluation pour générer votre plan d'action priorisé. »
+```
+
+Deux vides très différents — « pas encore évalué » et « évalué, rien à
+corriger » — partageaient un seul message, celui de la première situation. Le
+client le mieux noté était renvoyé au point de départ, juste sous un encart
+affichant son score projeté. `projected` distingue les deux : il n'existe
+qu'après une évaluation terminée.
+
+**Et le titre du bulletin pouvait contredire son contenu** : « ⛅ Quelques
+nuages — rien d'urgent » quelques lignes au-dessus de « Sessions / cookies
+compromis — Critique ». L'humeur ne se calculait que sur les contrôles et la
+sévérité des ALERTES, or l'alerte ouverte pour une compromission porte sa
+propre sévérité, distincte de celle de la fuite la plus grave qu'elle
+recouvre : deux fuites critiques vivaient sous une alerte « avertissement ».
+
+### Deux faux positifs, et ce qu'ils enseignent
+
+J'ai annoncé deux défauts qui n'existaient pas, et j'ai dû me corriger :
+
+1. **« L'inscription reste bloquée sur un spinner »** — non : la capture avait
+   été prise pendant que la requête était en vol. Le message d'erreur
+   s'affiche, le bouton se réarme.
+2. **« Le diagnostic n'a pas de sortie »** — non : « Terminer l'évaluation »
+   remplace « Suivant » au dernier domaine. Mon script rechargeait la page,
+   ce qui remet le parcours au domaine 1.
+
+**Un audit de parcours produit des faux positifs aussi facilement qu'il trouve
+des défauts**, et pour la même raison : on conclut d'une capture. La règle à
+tenir est la même que pour les tests — vérifier avant d'affirmer, et se
+corriger vite quand on s'est trompé.
+
+### Ce qui tient
+
+Inscription (refus de capacité correctement affiché, aucun compte orphelin,
+`create_tenant_with_owner` atomique), diagnostic (42 mesures, 10 domaines, 0
+erreur), documents (quota IA, « voir les données transmises »,
+pseudonymisation annoncée), assistant (questions suggérées, périmètre
+explicite). **Aucune erreur HTTP ni JavaScript sur l'ensemble du parcours.**
+
+### Deux constats d'exploitation
+
+- **Le pool local est saturé (15/15)** : le jeu de démonstration le remplit à
+  lui seul. C'est ce qui bloquait les inscriptions locales — et **l'explication
+  des 11 échecs e2e** relevés plus tôt, restés inexpliqués jusqu'ici.
+- **En production : 10/15 engagés**, dont 5 pour CRRH et 5 pour les
+  démonstrations. Une inscription passerait encore, mais il ne reste que cinq
+  emplacements vendables. Libérer les démonstrations est le levier immédiat
+  avant de démarcher.
+
+### Vérifications
+
+137 tests Vitest verts (16 fichiers), 61 tests notifications verts. `eslint` :
+0 erreur. Corrections vérifiées en les neutralisant : sans elles, les tests
+échouent en nommant ce qui manque.
