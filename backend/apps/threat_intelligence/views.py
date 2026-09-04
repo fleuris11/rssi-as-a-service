@@ -1,6 +1,5 @@
 import logging
 
-from django.conf import settings
 from django.core.cache import cache
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -427,26 +426,57 @@ class BreachScanJobDetailView(APIView):
 
 
 class ThreatIntelligenceStatusView(APIView):
-    """État visible côté tenant : quota restant (indicatif — le budget est
-    partagé par toute la plateforme, pas une allocation par tenant),
-    cooldown du scan manuel, occupation du pool de monitoring temps réel —
-    ce que le bouton "Lancer un scan" du frontend affiche avant de laisser
-    cliquer (prompt Phase 7 point 9)."""
+    """État de SON espace, vu par un client — et rien de plus.
+
+    Cette vue renvoyait auparavant des chiffres de PLATEFORME : le budget de
+    requêtes partagé (« 971 restantes ») et l'occupation du pool de licence
+    (« 0 / 15 emplacements »). Le frontend les affichait tels quels, avec le
+    mot « plateforme » et la mention « pour toute la plateforme ».
+
+    Deux problèmes, et le second est le vrai :
+
+    1. Ces nombres ne veulent rien dire pour un client. « 971 requêtes
+       restantes » n'est pas son quota : c'est celui de tout le monde. Il peut
+       le voir descendre sans avoir rien fait, et le voir bloquer alors qu'il
+       n'a lancé aucune analyse.
+    2. Ils décrivent la consommation des AUTRES clients. Dans un produit dont
+       l'argument est le cloisonnement, l'écran principal publiait l'état du
+       parc. C'est une fuite entre locataires, dans l'interface cette fois et
+       plus seulement dans les messages d'erreur.
+
+    Ce que renvoie cette vue est désormais entièrement dérivé de l'offre du
+    client : ses analyses, ses emplacements. Les plafonds de plateforme
+    continuent de s'appliquer côté serveur (``billing.capacity``) — ils
+    refusent quand il le faut, mais ne se racontent plus.
+    """
 
     permission_classes = [permissions.IsAuthenticated, IsTenantMember]
 
     def get(self, request):
-        manager = quota_module.QuotaManager()
-        cooldown_key = services.SCAN_COOLDOWN_CACHE_KEY.format(tenant_id=request.tenant.id)
-        pool = services.pool_summary()
+        tenant = request.tenant
+        cooldown_key = services.SCAN_COOLDOWN_CACHE_KEY.format(tenant_id=tenant.id)
+        subscription = entitlements.get_subscription(tenant)
+
+        scans_quota = subscription.monthly_scans_quota if subscription else 0
+        scans_used = entitlements.monthly_scans_used(tenant)
+        assets_quota = subscription.monitored_assets_quota if subscription else 0
+        assets_used = services.list_monitored_assets(tenant).count()
+
         return Response(
             {
-                "quota_remaining": manager.get_remaining(),
+                # 0 = illimité côté offre : on renvoie None plutôt que zéro,
+                # qu'un affichage lirait comme « aucune analyse disponible ».
+                "scans_quota": scans_quota or None,
+                "scans_used": scans_used,
+                "scans_remaining": (max(0, scans_quota - scans_used) if scans_quota else None),
+                "monitored_quota": assets_quota or None,
+                "monitored_used": assets_used,
+                "monitored_remaining": (
+                    max(0, assets_quota - assets_used) if assets_quota else None
+                ),
                 "cooldown_active": bool(cache.get(cooldown_key)),
-                "cooldown_hours": settings.BREACHSENSE_SCAN_COOLDOWN_HOURS,
-                "pool_used": pool["used"],
-                "pool_capacity": pool["capacity"],
-                "critical_open_findings": services.count_critical_open_findings(request.tenant),
+                "cooldown_hours": services.scan_cooldown_hours(tenant),
+                "critical_open_findings": services.count_critical_open_findings(tenant),
             }
         )
 

@@ -52,8 +52,19 @@ const fuite = (id, severity, asset) => ({
 
 function servir(findings) {
   threatIntelligenceApi.listFindings.mockResolvedValue({ data: { results: findings } })
+  // Statut CLOISONNÉ : ce que l'offre du client comprend, jamais les
+  // chiffres de la plateforme (voir le test « ne montre jamais… » plus bas).
   threatIntelligenceApi.status.mockResolvedValue({
-    data: { pool_used: 0, pool_capacity: 15, quota_remaining: 950 },
+    data: {
+      scans_quota: 20,
+      scans_used: 3,
+      scans_remaining: 17,
+      monitored_quota: 1,
+      monitored_used: 0,
+      monitored_remaining: 1,
+      cooldown_active: false,
+      cooldown_hours: 24,
+    },
   })
   monitoringApi.listAssets.mockResolvedValue({ data: { results: [] } })
   threatIntelligenceApi.listMonitoredAssets.mockResolvedValue({ data: { results: [] } })
@@ -102,5 +113,30 @@ describe('CompromisesPage', () => {
     const traiter = await screen.findByRole('button', { name: 'Marquer traité' })
     expect(traiter.className).toContain('bg-brand-600')
     expect(screen.getByRole('button', { name: 'Ignorer' }).className).not.toContain('bg-brand-600')
+  })
+  it('ne montre jamais les chiffres de la plateforme au client', async () => {
+    // Cet écran affichait « Quota de requêtes restant (plateforme) : 971 » et
+    // « 0 / 15 emplacements utilisés … pour toute la plateforme ». Deux
+    // nombres qui ne concernent pas celui qui les lit, et qui publient la
+    // consommation des autres clients — dans un produit dont l'argument est
+    // le cloisonnement.
+    servir([fuite(1, 'critical', 'a.example')])
+    render(<CompromisesPage />)
+    await screen.findByRole('heading', { name: 'Critique — 1 fuite' })
+
+    const texte = document.body.textContent
+    expect(texte).not.toMatch(/plateforme/i)
+    expect(texte).not.toMatch(/toute la plateforme/i)
+    expect(texte).not.toMatch(/15 actifs/)
+  })
+
+  it('affiche le quota d’analyses de l’offre du client', async () => {
+    servir([fuite(1, 'critical', 'a.example')])
+    render(<CompromisesPage />)
+    await screen.findByRole('heading', { name: 'Critique — 1 fuite' })
+
+    expect(screen.getByText(/Analyses restantes ce mois/)).toBeInTheDocument()
+    expect(screen.getByText('17')).toBeInTheDocument()
+    expect(screen.getByText(/sur 20 comprises dans votre offre/)).toBeInTheDocument()
   })
 })

@@ -159,17 +159,28 @@ function ScanStatusBar({ status, onScan, scanning }) {
   const disabled = scanning || status.cooldown_active
   return (
     <Card className="flex flex-wrap items-center justify-between gap-4" padding="p-4">
+      {/* Le quota affiché est CELUI DU CLIENT, tiré de son offre.
+          Cette barre montrait auparavant « Quota de requêtes restant
+          (plateforme) : 971 » — le budget partagé par tous les clients. Un
+          nombre qui ne veut rien dire pour celui qui le lit, qui bouge sans
+          qu'il ait rien fait, et qui publie surtout la consommation des
+          autres. Les plafonds de plateforme continuent de s'appliquer côté
+          serveur ; ils n'ont pas à se raconter ici. */}
       <div className="text-sm text-ink-600">
         <p>
-          Quota de requêtes restant (plateforme) :{' '}
+          Analyses restantes ce mois :{' '}
           <span className="font-medium text-ink-900">
-            {status.quota_remaining ?? 'inconnu'}
+            {status.scans_remaining ?? 'illimitées'}
           </span>
+          {status.scans_quota ? (
+            <span className="text-ink-500"> sur {status.scans_quota} comprises dans votre offre</span>
+          ) : null}
         </p>
         {status.cooldown_active && (
           <p className="mt-1 text-xs text-warning-strong">
-            Un scan a déjà été lancé récemment — réessayez dans quelques heures (délai anti-abus :{' '}
-            {status.cooldown_hours} h).
+            Une analyse a déjà été lancée récemment pour votre entreprise. Une nouvelle sera
+            possible d’ici {status.cooldown_hours} h — les fuites détectées entre-temps vous
+            parviennent sans attendre.
           </p>
         )}
       </div>
@@ -201,7 +212,7 @@ function PanneauSecondaire({ titre, action, children }) {
   )
 }
 
-function MonitoredAssetsPanel({ assets, monitored, onRegister, onUnregister, poolStatus, busyId }) {
+function MonitoredAssetsPanel({ assets, monitored, onRegister, onUnregister, statut, busyId }) {
   const monitoredAssetIds = new Set(monitored.map((m) => m.asset_id))
   const registrable = assets.filter((a) => !monitoredAssetIds.has(a.id))
 
@@ -209,17 +220,19 @@ function MonitoredAssetsPanel({ assets, monitored, onRegister, onUnregister, poo
     <PanneauSecondaire
       titre="Surveillance en temps réel"
       action={
-        poolStatus && (
+        statut?.monitored_quota ? (
           <span className="t-meta">
-            {poolStatus.pool_used} / {poolStatus.pool_capacity} emplacements utilisés
+            {statut.monitored_used} / {statut.monitored_quota} inclus dans votre offre
           </span>
-        )
+        ) : null
       }
     >
+      {/* « 0 / 15 emplacements utilisés » et « pour toute la plateforme »
+          disaient au client la taille de notre licence et ce que les autres
+          en consomment. Ce qui le concerne, c'est ce que SON offre comprend. */}
       <p className="mb-4 text-sm text-ink-500">
         Les actifs surveillés en temps réel reçoivent une alerte immédiate en cas de nouvelle
-        compromission détectée (hors quota de scan mensuel), dans la limite de{' '}
-        {poolStatus?.pool_capacity ?? 15} actifs pour toute la plateforme.
+        compromission détectée, sans consommer vos analyses mensuelles.
       </p>
 
       {monitored.length === 0 ? (
@@ -567,7 +580,7 @@ export default function CompromisesPage() {
         monitored={monitored}
         onRegister={handleRegister}
         onUnregister={handleUnregister}
-        poolStatus={status}
+        statut={status}
         busyId={busyAssetId}
       />
 

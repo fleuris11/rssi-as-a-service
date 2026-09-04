@@ -215,13 +215,53 @@ class TestBreachScanAPI:
 
 
 class TestThreatIntelligenceStatusAPI:
-    def test_status_reflects_cooldown_and_pool(self, api_client, tenant, tenant_owner):
+    def test_status_reflects_cooldown(self, api_client, tenant, tenant_owner):
         headers = _auth(api_client, tenant_owner, tenant)
         response = api_client.get(reverse("threat-intelligence-status"), **headers)
 
         assert response.status_code == status.HTTP_200_OK
         assert response.data["cooldown_active"] is False
-        assert response.data["pool_capacity"] == 15
+
+    def test_status_never_exposes_platform_wide_figures(self, api_client, tenant, tenant_owner):
+        """Cette vue renvoyait le budget de requêtes PARTAGÉ et l'occupation du
+        pool de licence, que l'écran affichait tels quels (« quota restant
+        (plateforme) : 971 », « 0 / 15 emplacements »). Un client y lisait la
+        consommation des autres — une fuite entre locataires par l'interface."""
+        headers = _auth(api_client, tenant_owner, tenant)
+        response = api_client.get(reverse("threat-intelligence-status"), **headers)
+
+        interdits = {"quota_remaining", "pool_used", "pool_capacity", "pool_remaining"}
+        fuites = interdits & set(response.data)
+        assert not fuites, f"Champs de plateforme exposés au client : {sorted(fuites)}"
+
+    def test_status_reports_the_tenant_own_allowance(self, api_client, tenant, tenant_owner):
+        from apps.billing.models import Plan, Subscription
+
+        plan = Plan.objects.create(
+            code="test-statut",
+            name="Test statut",
+            monitored_assets=3,
+            monthly_scans=7,
+            max_users=5,
+            status=Plan.Status.PUBLISHED,
+            price_monthly=10,
+        )
+        # Le tenant de test porte déjà un abonnement (un seul par entreprise) :
+        # on le rebranche sur cette offre plutôt que d'en créer un second.
+        Subscription.objects.update_or_create(
+            tenant=tenant,
+            defaults={"plan": plan, "status": Subscription.Status.ACTIVE},
+        )
+
+        headers = _auth(api_client, tenant_owner, tenant)
+        response = api_client.get(reverse("threat-intelligence-status"), **headers)
+
+        # Ce que le client peut lire : ce que SON offre comprend, rien d'autre.
+        assert response.data["scans_quota"] == 7
+        assert response.data["scans_used"] == 0
+        assert response.data["scans_remaining"] == 7
+        assert response.data["monitored_quota"] == 3
+        assert response.data["monitored_used"] == 0
 
 
 class TestAdminStatusAPI:
