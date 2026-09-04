@@ -66,7 +66,9 @@ class TestOrdreEtRegroupement:
         """
         _finding(tenant, website_asset, severity="critical", endpoint="sessions", identifier="crit")
         for i in range(12):
-            _finding(tenant, website_asset, severity="attention", endpoint="asm", identifier=f"a{i}")
+            _finding(
+                tenant, website_asset, severity="attention", endpoint="asm", identifier=f"a{i}"
+            )
 
         lignes = services.build_weather_context(tenant)["open_breach_findings"]
 
@@ -81,7 +83,9 @@ class TestOrdreEtRegroupement:
         # perdait.
         _finding(tenant, website_asset, severity="high", endpoint="creds", identifier="eleve")
         for i in range(40):
-            _finding(tenant, website_asset, severity="attention", endpoint="asm", identifier=f"a{i}")
+            _finding(
+                tenant, website_asset, severity="attention", endpoint="asm", identifier=f"a{i}"
+            )
 
         lignes = services.build_weather_context(tenant)["open_breach_findings"]
 

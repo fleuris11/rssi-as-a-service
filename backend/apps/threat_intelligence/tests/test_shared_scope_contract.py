@@ -91,23 +91,49 @@ class TestAssistantContextScope:
 
 
 class TestWeatherContextScope:
+    # Depuis le 04/09/2026, `open_breach_findings` est une liste d'AFFICHAGE :
+    # triée par gravité, les lignes identiques regroupées, et bornée à
+    # WEATHER_MAX_BREACH_ROWS. Ce n'est plus l'inventaire complet, et le
+    # contrat de périmètre ne peut donc plus s'y lire.
+    #
+    # Il se lit dans `breach_total`, qui compte TOUTES les fuites ouvertes
+    # considérées. C'est le bon point d'ancrage : si quelqu'un retirait le
+    # `include_pre_incident=True`, ce total baisserait aussitôt — ce que la
+    # liste tronquée, elle, aurait pu masquer.
+
     def test_weather_sees_the_full_picture_including_pre_incident(self, demo_tenant):
         demo_tenant.ai_enabled = False  # court-circuite l'enrichissement IA
         demo_tenant.save(update_fields=["ai_enabled"])
 
         context = notifications_services.build_weather_context(demo_tenant)
 
-        labels = {row["source_label"] for row in context["open_breach_findings"]}
-        expected_labels = {BreachFinding.SourceEndpoint(e).label for e in PRE_INCIDENT_ENDPOINTS}
-        assert expected_labels <= labels
+        assert context["breach_total"] == SEEDED_TOTAL, (
+            "La météo doit compter les signaux avant-coureurs : un total inférieur "
+            "signifie que `include_pre_incident=True` a disparu du chemin."
+        )
+        pre_incident_seedes = {
+            endpoint for endpoint, _p, _i in demo_findings_payloads()
+        } & PRE_INCIDENT_ENDPOINTS
+        assert pre_incident_seedes, (
+            "Le jeu de démonstration ne contient plus de signal avant-coureur : "
+            "ce test ne prouverait plus rien."
+        )
 
-    def test_weather_sees_every_open_finding(self, demo_tenant):
+    def test_weather_shows_the_worst_first_and_never_an_empty_list(self, demo_tenant):
         demo_tenant.ai_enabled = False
         demo_tenant.save(update_fields=["ai_enabled"])
 
         context = notifications_services.build_weather_context(demo_tenant)
+        lignes = context["open_breach_findings"]
 
-        assert len(context["open_breach_findings"]) == SEEDED_TOTAL
+        assert lignes, "Une météo avec des fuites ne doit jamais afficher une liste vide."
+        assert len(lignes) <= notifications_services.WEATHER_MAX_BREACH_ROWS
+        rangs = [
+            {"Critique": 0, "Élevée": 1, "Attention": 2}[ligne["severity_label"]]
+            for ligne in lignes
+        ]
+        assert rangs == sorted(rangs), "Les lignes doivent aller du plus grave au moins grave."
+        assert context["breach_hidden"] == SEEDED_TOTAL - sum(ligne["count"] for ligne in lignes)
 
 
 class TestExposureSynthesisContextScope:
