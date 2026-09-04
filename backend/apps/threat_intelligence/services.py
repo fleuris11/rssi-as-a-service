@@ -33,7 +33,7 @@ from .models import (
     SecretPurgeRun,
     SecretRevealAudit,
 )
-from .providers import ProviderPoolFullError, get_provider
+from .providers import ProviderNotConfiguredError, ProviderPoolFullError, get_provider
 from .providers.base import RawFinding
 from .providers.breachsense import normalizer
 
@@ -105,15 +105,24 @@ def _encryption_keys() -> list[str]:
 def _fernet() -> MultiFernet:
     keys = _encryption_keys()
     if not keys:
+        # Nom de variable d'environnement : pour les journaux, pas pour le
+        # client, qui voit ce message remonté en `detail` par les vues.
+        logger.error(
+            "BREACH_SECRET_ENCRYPTION_KEY absente : impossible de chiffrer un secret "
+            "de fuite sur cet environnement."
+        )
         raise ThreatIntelligenceError(
-            "BREACH_SECRET_ENCRYPTION_KEY n'est pas configurée : impossible de chiffrer un "
-            "secret de fuite."
+            "Cette fonction est momentanément indisponible. Nos équipes en sont informées."
         )
     try:
         return MultiFernet([Fernet(k.encode() if isinstance(k, str) else k) for k in keys])
     except (ValueError, TypeError) as exc:
+        logger.error(
+            "Clé de chiffrement des secrets de fuite invalide (format Fernet attendu) : %s",
+            exc,
+        )
         raise ThreatIntelligenceError(
-            "Clé de chiffrement des secrets de fuite invalide (format Fernet attendu)."
+            "Cette fonction est momentanément indisponible. Nos équipes en sont informées."
         ) from exc
 
 
@@ -467,7 +476,19 @@ def register_monitored_asset(*, tenant, asset: Asset) -> MonitoredAsset:
     try:
         registration = provider.register_monitored_asset(asset_type="domain", value=domain)
     except ProviderPoolFullError as exc:
-        raise PoolFullError(str(exc)) from exc
+        # `str(exc)` disait « Le pool Breachsense de 15 actifs monitorés est
+        # complet ». La garde locale (plus haut) avait été assainie ce matin,
+        # mais PAS ce chemin-ci — celui où c'est le FOURNISSEUR qui refuse par
+        # un 403. Même faute, deux endroits, un seul corrigé : c'est
+        # exactement ce que le balayage de config/tests a trouvé.
+        logger.warning("Pool fournisseur saturé (tenant %s) : %s", tenant.id, exc)
+        raise PoolFullError(client_messages.MONITORING_CAPACITY_REACHED) from exc
+    except ProviderNotConfiguredError as exc:
+        # Sans licence, l'enregistrement est impossible — mais c'est notre
+        # configuration, pas l'affaire du client, et un 500 serait pire qu'un
+        # refus explicite.
+        logger.error("Fournisseur CTI non configuré : enregistrement impossible.")
+        raise WebhookNotConfiguredError(client_messages.MONITORING_UNAVAILABLE) from exc
 
     return MonitoredAsset.all_objects.create(
         tenant=tenant,

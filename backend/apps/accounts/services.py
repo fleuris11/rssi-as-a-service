@@ -29,6 +29,7 @@ from .models import RecoveryCode, TwoFactorCredential
 # Same channel Django's own SuspiciousOperation handling uses (A09 — see
 # docs/security_review.md) — a real LOGGING config (config/settings.py) makes
 # this actionable rather than a console line nobody watches.
+logger = logging.getLogger(__name__)
 security_logger = logging.getLogger("django.security")
 
 
@@ -130,8 +131,18 @@ def clear_failed_attempts(*, email: str, ip: str) -> None:
 def _fernet() -> Fernet:
     key = settings.TOTP_ENCRYPTION_KEY
     if not key:
+        # `AccountsError` remonte au client en `detail` (TwoFactorConfirmView) :
+        # un nom de variable d'environnement n'a rien à y faire. Le garde-fou
+        # de démarrage (config/startup_checks.py) rend ce cas impossible en
+        # production ; le message reste malgré tout neutre, parce qu'un chemin
+        # « impossible » finit toujours par arriver quelque part.
+        logger.error(
+            "TOTP_ENCRYPTION_KEY absente : l'activation de la double "
+            "authentification est impossible sur cet environnement."
+        )
         raise AccountsError(
-            "TOTP_ENCRYPTION_KEY n'est pas configurée : impossible de chiffrer le secret 2FA."
+            "L'activation de la double authentification est momentanément "
+            "indisponible. Nos équipes en sont informées."
         )
     return Fernet(key.encode() if isinstance(key, str) else key)
 
