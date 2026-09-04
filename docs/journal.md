@@ -3810,3 +3810,84 @@ L'audit fonctionnel des parcours — inscription et invitation, diagnostic ANSSI
 plan d'action, génération documentaire, assistant — **au-delà** de leurs
 messages d'erreur, désormais couverts. Ce qui a été tenu aujourd'hui, c'est le
 vocabulaire ; pas encore le comportement de chaque écran.
+
+---
+
+## 2026-09-04 (fin) — « Les mails vont dans les spams et sont pas bien faits »
+
+Retour de l'exploitant après lecture d'un vrai bulletin. Deux sujets distincts
+dans la même phrase, et il fallait les séparer pour les traiter.
+
+### Le sujet délivrabilité : ils partent, mais ils rebondissent
+
+Conversation SMTP capturée : LWS **accepte et met en file**
+(`250 2.0.0 Ok: queued as B1902D5F532`). Le domaine porte SPF, DKIM (sélecteur
+`dkim`) et DMARC. Les emails partent donc authentifiés.
+
+Lecture de la boîte `alertes@` : **dix rebonds**, et pas un ne concerne Gmail.
+Tous sont ceci :
+
+```
+marie.durand@cabinet-durand-demo.fr  x10  521 Domain not found : NXDOMAIN
+```
+
+**Le tenant de démonstration envoyait une vraie météo chaque matin à 8 h, à un
+domaine qui n'existe pas.** Un rebond par jour depuis le 26 août. Le seed ne
+touchait pas aux préférences de notification, qui partaient donc sur le défaut
+du modèle (`weather_enabled=True`).
+
+Ce n'est pas qu'un désagrément : un domaine qui émet quotidiennement vers des
+adresses inexistantes **dégrade sa réputation d'expéditeur**, et ce sont les
+emails des vrais clients qui finissent en indésirables. Le produit vend des
+alertes par email — sa propre délivrabilité est une fonctionnalité.
+
+**Et un défaut trouvé en écrivant le test de non-régression** :
+`send_weather_email` **ne vérifiait pas** `weather_enabled`. Seul
+l'ordonnanceur le faisait. Un client qui coupe la météo pouvait donc la
+recevoir par tout autre chemin d'appel — alors que `send_realtime_alert_email`,
+lui, vérifiait bien. Un réglage honoré par un seul de ses appelants n'est pas
+un réglage, et celui-ci porte un refus explicite du client.
+
+### Le sujet contenu : quatre reproches, tous fondés
+
+1. **On ne distinguait pas l'alerte du bulletin.** Deux choses opposées — un
+   point de situation qu'on lit au calme, un événement qui appelle une action —
+   sous la même allure. Désormais : objet « Bulletin » contre « Alerte »,
+   bandeau bleu contre rouge, métaphore météo d'un côté et aucun symbole de
+   l'autre, tout l'état contre un seul actif et une seule action.
+2. **« Compromissions détectées (20) » suivi de vingt lignes.** Regroupées par
+   TYPE, les trois plus graves d'abord. Les alertes de surveillance aussi :
+   trois sites injoignables produisaient trois blocs identiques.
+3. **Aucune explication.** Chaque groupe répond aux trois questions dans
+   l'ordre : ce que c'est, le risque, ce qu'il faut faire. Les phrases
+   viennent de `threat_intelligence.plain_language`, déjà utilisé à l'écran —
+   une seule voix. Les alertes de surveillance n'avaient, elles, **aucune**
+   vulgarisation : `monitoring/plain_language.py` la leur donne.
+4. **La métaphore météo n'était pas tenue.** ⚠️ et 🔴 sont des pictogrammes
+   d'alerte, pas un temps qu'il fait. Désormais ☀️ / ⛅ / ⛈️, un verdict en une
+   phrase, un temps **par actif**, et la légende en bas.
+
+### Deux défauts que seul le rendu a montrés
+
+- Les compromissions étaient **redites** dans la section Surveillance, juste
+  sous la section qui venait de les expliquer.
+- **`{# … #}` ne commente qu'une seule ligne en Django.** Mon commentaire
+  d'implémentation, écrit sur douze lignes, partait tel quel dans l'email du
+  client. Introduit et rattrapé le jour même, en regardant la capture.
+
+C'est la troisième fois dans la journée que regarder le rendu réel trouve ce
+que ni le code ni les tests ne montraient. Les tests portent désormais sur le
+**contenu rendu**, pas sur le fait qu'un email parte : c'est précisément ce que
+les tests précédents ne vérifiaient pas, et c'est pour ça que ces défauts ont
+survécu.
+
+### Vérifications
+
+1024 tests backend verts (3 échecs WeasyPrint environnementaux, constants).
+Rendu des deux emails inspecté en capture, en HTML et en texte.
+
+### Reste ouvert
+
+La délivrabilité elle-même. La réputation mettra quelques jours à remonter
+maintenant que les rebonds quotidiens ont cessé, et il reste à faire confirmer
+par LWS que les envois relayés sont bien signés en DKIM pour ce domaine.
