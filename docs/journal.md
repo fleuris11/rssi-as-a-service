@@ -3718,3 +3718,41 @@ et se déclarent ensuite côté fournisseur.
 1007 tests backend verts (3 échecs WeasyPrint environnementaux, constants).
 Tests frontend de l'écran Compromissions verts, dont un nouveau qui échoue si
 le mot « plateforme » réapparaît dans le rendu. `ruff` et `eslint` propres.
+
+### Webhook configuré — et le piège qui a coûté deux redémarrages
+
+Les trois valeurs du webhook étaient vides depuis la mise en service. L'exploitant
+posait la bonne question : « je les trouve où ? ». **Nulle part.** Le webhook est
+un endpoint de *notre* plateforme ; Breachsense y pousse les fuites. N'ayant ni
+JWT ni session, il est protégé en HTTP Basic par un couple que **nous** fixons,
+puis que nous **déclarons** au fournisseur. Sur quatre valeurs, une seule vient
+de lui : la licence.
+
+Cette asymétrie n'était écrite nulle part, et la méthode
+`configure_webhook_credentials` renvoyait dans sa docstring à une commande de
+déploiement qui n'a jamais existé. D'où `configurer_webhook_breachsense`, et un
+contrôle du webhook ajouté à `verifier_breachsense` — le défaut ne se voyait
+qu'en lisant les journaux du conteneur.
+
+**Le piège d'exploitation, à retenir : `docker compose restart` ne relit pas
+`env_file`.** Après avoir écrit les trois valeurs et redémarré, le conteneur
+voyait toujours une URL vide. `restart` relance le processus avec la
+configuration figée à la création. Il faut `up -d`, qui recrée le conteneur.
+Une heure de fausse piste possible pour qui ne connaît pas la nuance.
+
+### Vérifié en production, dans cet ordre
+
+| Contrôle | Résultat |
+|---|---|
+| Déclaration du couple chez Breachsense | acceptée |
+| Activation de la surveillance pour CRRH | **réussie** — `crrhuemoa.org` |
+| Webhook sans identifiants | **401** + `WWW-Authenticate: Basic` |
+| Webhook avec de mauvais identifiants | **401** |
+| Webhook avec les bons identifiants | **200** — `{"findings_created":0,...}` |
+
+Bénéfice de bord : cette activation **valide le correctif `ast=` de
+`account_add`**, resté non vérifié faute de vouloir consommer un emplacement du
+pool à l'aveugle. Il fonctionne contre l'API réelle.
+
+Reste **un** orphelin : `afinhab.org` est enregistré chez le fournisseur sans
+`MonitoredAsset` correspondant. Un emplacement sur quinze, sans propriétaire.
