@@ -21,6 +21,10 @@ from .models import EmailLog, NotificationPreferences
 
 WEATHER_TIME_BUCKET_MINUTES = 15
 
+# Lignes de compromissions affichées dans la météo. Un email quotidien est un
+# résumé, pas un inventaire : au-delà, on renvoie vers le tableau de bord.
+WEATHER_MAX_BREACH_ROWS = 8
+
 _STATUS_RANK = {
     CheckResult.Status.OK: 0,
     CheckResult.Status.WARNING: 1,
@@ -163,17 +167,53 @@ def build_weather_context(tenant) -> dict:
     # identifiant) que l'Alert générique n'a pas, pour que la reformulation
     # IA (_maybe_enrich_weather_summary) puisse être concrète ("un compte a
     # été trouvé dans une fuite de type X") plutôt que générique.
-    breach_rows = [
-        {
+    # Tri par GRAVITÉ, puis troncature — et pas l'inverse.
+    #
+    # La version précédente coupait aux 20 premières fuites dans l'ordre de la
+    # base. Relevé sur un client réel : 137 fuites, dont 2 sessions
+    # compromises (critique) — et l'email n'affichait que 20 lignes de
+    # « surface d'attaque », la catégorie la MOINS grave. Le plus urgent
+    # tombait hors du courrier, ce qui est l'inverse de la promesse du produit
+    # (« ce qu'il doit regarder en premier est en haut »).
+    _RANG = {
+        BreachFinding.Severity.CRITICAL: 0,
+        BreachFinding.Severity.HIGH: 1,
+        BreachFinding.Severity.ATTENTION: 2,
+    }
+    findings_ouvertes = list(
+        threat_intelligence_services.list_findings(
+            tenant, status=BreachFinding.Status.OPEN, include_pre_incident=True
+        ).select_related("asset")
+    )
+    findings_ouvertes.sort(key=lambda f: (_RANG.get(f.severity, 9), f.asset.value))
+
+    # Regroupement des lignes identiques. Vingt lignes rigoureusement
+    # semblables (même actif, même catégorie, même gravité) n'apprennent rien
+    # de plus que « il y en a vingt » : elles noient les deux lignes qui
+    # comptent. On garde une ligne par combinaison, avec son nombre.
+    groupes: dict[tuple, dict] = {}
+    for finding in findings_ouvertes:
+        identifiant = finding.identifier_plain or finding.identifier_masked
+        cle = (
+            finding.asset.value,
+            finding.get_source_endpoint_display(),
+            finding.get_severity_display(),
+            identifiant,
+        )
+        if cle in groupes:
+            groupes[cle]["count"] += 1
+            continue
+        groupes[cle] = {
             "asset_value": finding.asset.value,
             "source_label": finding.get_source_endpoint_display(),
             "severity_label": finding.get_severity_display(),
-            "identifier": finding.identifier_plain or finding.identifier_masked,
+            "identifier": identifiant,
+            "count": 1,
         }
-        for finding in threat_intelligence_services.list_findings(
-            tenant, status=BreachFinding.Status.OPEN, include_pre_incident=True
-        ).select_related("asset")[:20]
-    ]
+
+    breach_rows = list(groupes.values())[:WEATHER_MAX_BREACH_ROWS]
+    breach_total = len(findings_ouvertes)
+    breach_hidden = max(0, breach_total - sum(row["count"] for row in breach_rows))
 
     context = {
         "tenant_name": tenant.name,
@@ -183,6 +223,8 @@ def build_weather_context(tenant) -> dict:
         "assets": asset_rows,
         "open_alerts": alert_rows,
         "open_breach_findings": breach_rows,
+        "breach_total": breach_total,
+        "breach_hidden": breach_hidden,
         "dashboard_url": f"{settings.FRONTEND_BASE_URL}/surveillance",
     }
     context["enriched_summary"] = _maybe_enrich_weather_summary(tenant, context)

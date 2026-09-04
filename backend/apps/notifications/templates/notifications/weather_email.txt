@@ -1,4 +1,4 @@
-Météo cyber — {{ tenant_name }} — {{ date|date:"d/m/Y" }}
+{% autoescape off %}Météo cyber — {{ tenant_name }} — {{ date|date:"d/m/Y" }}
 
 {{ mood_emoji }} {{ mood_label }}
 {% if enriched_summary %}
@@ -16,9 +16,12 @@ Alertes ouvertes ({{ open_alerts|length }}) :
 Aucune alerte ouverte.
 {% endif %}
 {% if open_breach_findings %}
-Compromissions détectées ({{ open_breach_findings|length }}) :
-{% for finding in open_breach_findings %}- {{ finding.asset_value }}{% if finding.identifier %} ({{ finding.identifier }}){% endif %} — {{ finding.source_label }} ({{ finding.severity_label }})
-{% endfor %}{% endif %}
+Compromissions détectées ({{ breach_total }}), les plus graves d'abord :
+{% for finding in open_breach_findings %}- {{ finding.asset_value }}{% if finding.identifier %} ({{ finding.identifier }}){% endif %} — {{ finding.source_label }} ({{ finding.severity_label }}){% if finding.count > 1 %} — {{ finding.count }} occurrences{% endif %}
+{% endfor %}{% if breach_hidden %}
+… et {{ breach_hidden }} autre(s), à consulter dans votre tableau de bord.
+{% endif %}{% endif %}
 Tableau de bord complet : {{ dashboard_url }}
 
 — RSSI as a Service
+{% endautoescape %}
