@@ -3756,3 +3756,57 @@ pool à l'aveugle. Il fonctionne contre l'API réelle.
 
 Reste **un** orphelin : `afinhab.org` est enregistré chez le fournisseur sans
 `MonitoredAsset` correspondant. Un emplacement sur quinze, sans propriétaire.
+
+### `afinhab.org` rattaché — le pool est entièrement rapproché
+
+L'emplacement orphelin est rattaché à CRRH. `account_add` n'a pas été rappelé :
+le domaine était déjà enregistré côté fournisseur, on rattache l'emplacement
+existant plutôt que de consommer une requête pour réenregistrer l'existant. Un
+actif `afinhab.org` a été déclaré au passage, le produit exigeant qu'un actif
+surveillé soit d'abord déclaré (ADR-010).
+
+```
+afinhab.org    -> CRRH
+crrhuemoa.org  -> CRRH
+orphelins restants : aucun
+```
+
+### Le balayage élargi, et la même faute retrouvée à deux mètres
+
+La garde des messages clients ne couvrait qu'`threat_intelligence`. Étendue aux
+dix apps clientes, elle a trouvé **quatre** fuites de plus — dont une qui vaut
+d'être racontée :
+
+`raise PoolFullError(str(exc))`, **dans le fichier corrigé le matin même**.
+La garde *locale* du pool avait été assainie ; le chemin où c'est le
+**fournisseur** qui refuse par un 403, non. Un client lisait donc encore
+« Le pool Breachsense de 15 actifs monitorés est complet. »
+
+Les trois autres : `TOTP_ENCRYPTION_KEY` (remontée en 400 par la vue de
+confirmation 2FA), `BREACH_SECRET_ENCRYPTION_KEY`, et le message de clé Fernet
+invalide. `ProviderNotConfiguredError` est également rattrapé et traduit :
+sans licence, l'enregistrement produisait une 500, ce qui est pire qu'un refus.
+
+**La leçon, apprise deux fois dans la même journée** : auditer une *catégorie*
+de code laisse passer la même faute ailleurs — y compris à deux mètres dans le
+même fichier. Ce qu'il faut tenir, c'est une **surface**.
+
+D'où `config/tests/test_client_facing_messages_sweep.py`, qui balaie les dix
+apps. Trois exclusions argumentées : `platform_admin` (le détail y sert), les
+commandes d'administration (outils d'exploitation), la couche `providers` (ses
+exceptions sont toujours traduites par `services`). Et une **garde de la
+garde** : le test exige de trouver au moins 20 messages, sinon il signale que
+ses expressions ne correspondent plus au code plutôt que de passer au vert en
+ne vérifiant rien.
+
+### Vérifications
+
+1009 tests backend verts (3 échecs WeasyPrint environnementaux, constants).
+`ruff` propre.
+
+### Reste ouvert
+
+L'audit fonctionnel des parcours — inscription et invitation, diagnostic ANSSI,
+plan d'action, génération documentaire, assistant — **au-delà** de leurs
+messages d'erreur, désormais couverts. Ce qui a été tenu aujourd'hui, c'est le
+vocabulaire ; pas encore le comportement de chaque écran.
