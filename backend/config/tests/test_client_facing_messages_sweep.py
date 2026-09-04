@@ -56,6 +56,17 @@ VOCABULAIRE_INTERNE = (
     "_encryption_key",
     "_license_key",
     "django_",
+    # Instructions d'exploitation. Ajoutées après une trouvaille que la
+    # première version du balayage laissait passer : le diagnostic répondait
+    # au client, en 503, « Aucun référentiel actif : lancez
+    # `manage.py load_anssi_referential` ». On demandait à un dirigeant de PME
+    # de lancer une commande Django sur un serveur auquel il n'a pas accès.
+    "manage.py",
+    "docker compose",
+    "sudo ",
+    "npm run",
+    "python manage",
+    "variable d'environnement",
 )
 
 # Deux formes atteignent un client : une exception métier (rendue par les vues

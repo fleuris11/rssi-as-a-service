@@ -10,9 +10,13 @@ module correct and unit-testable independently of whether it's called from
 a request that went through TenantScopingMiddleware.
 """
 
+import logging
+
 from django.utils import timezone
 
 from .models import Answer, Assessment, Domain, Measure, Referential
+
+logger = logging.getLogger(__name__)
 
 
 class AssessmentsError(Exception):
@@ -67,8 +71,19 @@ GAP_VALUES = {Answer.Value.NO, Answer.Value.PARTIAL}
 def get_active_referential() -> Referential:
     referential = Referential.objects.filter(is_active=True).order_by("-id").first()
     if referential is None:
+        # Ce message remonte au CLIENT en 503 (ReferentialView,
+        # StartAssessmentView). Il lui disait, à lui, dirigeant de PME, de
+        # lancer une commande Django sur un serveur auquel il n'a pas accès —
+        # et lui apprenait au passage le nom de notre outillage. L'instruction
+        # est utile, mais à l'exploitant : elle part dans les journaux.
+        logger.error(
+            "Aucun référentiel actif en base : le diagnostic est indisponible pour "
+            "tous les clients. Charger le référentiel avec "
+            "`manage.py load_anssi_referential`."
+        )
         raise NoActiveReferentialError(
-            "Aucun référentiel actif : lancez `manage.py load_anssi_referential`."
+            "Le diagnostic est momentanément indisponible. Nos équipes en sont "
+            "informées ; réessayez d'ici quelques minutes."
         )
     return referential
 
