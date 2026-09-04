@@ -287,6 +287,26 @@ def build_weather_context(tenant) -> dict:
     breach_total = len(findings_ouvertes)
     breach_types_hidden = max(0, len(groupes) - len(breach_rows))
 
+    # Le temps du jour tient compte des FUITES, pas seulement des alertes.
+    #
+    # Défaut relevé le 04/09/2026 sur un vrai client : le bulletin titrait
+    # « ⛅ Quelques nuages — rien d'urgent » quelques lignes au-dessus d'un
+    # bloc « Sessions / cookies compromis — Critique ». Le titre contredisait
+    # le contenu du même email, ce qui est pire que l'un ou l'autre pris
+    # séparément : le lecteur pressé s'arrête au titre.
+    #
+    # La cause : l'humeur ne se calculait que sur les contrôles de
+    # surveillance et sur la sévérité des ALERTES. Or l'alerte ouverte pour
+    # une compromission porte sa propre sévérité, qui n'est pas celle de la
+    # fuite la plus grave qu'elle recouvre — deux fuites critiques vivaient
+    # donc sous une alerte « avertissement ».
+    if any(f.severity == BreachFinding.Severity.CRITICAL for f in findings_ouvertes):
+        worst = CheckResult.Status.CRITICAL
+    elif findings_ouvertes and _STATUS_RANK[worst] < _STATUS_RANK[CheckResult.Status.WARNING]:
+        # Une fuite ouverte, même « élevée » ou « attention », n'est pas un
+        # beau temps : il reste quelque chose à traiter.
+        worst = CheckResult.Status.WARNING
+
     context = {
         "tenant_name": tenant.name,
         "date": timezone.localdate(),

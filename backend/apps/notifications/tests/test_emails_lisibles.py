@@ -228,3 +228,45 @@ class TestAucunResteDeGabarit:
                     f"{gabarit} laisse « {residu} » dans le message envoyé — "
                     "un commentaire multi-ligne doit utiliser {% comment %}."
                 )
+
+
+class TestLeTitreNeContreditPasLeContenu:
+    """Défaut relevé sur un vrai client : le bulletin titrait « ⛅ Quelques
+    nuages — rien d'urgent » quelques lignes au-dessus d'un bloc « Sessions /
+    cookies compromis — Critique ».
+
+    Le titre contredisait le contenu du même email — pire que l'un ou l'autre
+    pris séparément, parce que le lecteur pressé s'arrête au titre. L'humeur
+    ne regardait que les contrôles et la sévérité des ALERTES ; or l'alerte
+    ouverte pour une compromission porte sa propre sévérité, qui n'est pas
+    celle de la fuite la plus grave qu'elle recouvre.
+    """
+
+    def test_une_fuite_critique_donne_un_orage(self, tenant, website_asset):
+        _finding(tenant, website_asset, severity="critical", endpoint="sessions")
+
+        contexte = services.build_weather_context(tenant)
+
+        assert contexte["mood_emoji"] == "⛈️", (
+            "Une compromission critique ouverte ne peut pas s'annoncer sous un ciel dégagé."
+        )
+        assert contexte["tout_va_bien"] is False
+
+    def test_une_fuite_non_critique_ecarte_quand_meme_le_beau_temps(self, tenant, website_asset):
+        _finding(tenant, website_asset, severity="attention", endpoint="asm")
+
+        contexte = services.build_weather_context(tenant)
+
+        assert contexte["mood_emoji"] == "⛅"
+        assert contexte["tout_va_bien"] is False
+
+    def test_la_gravite_annoncee_en_tete_est_celle_du_premier_bloc(self, tenant, website_asset):
+        """Le lien explicite entre le titre et ce qui suit : si le premier
+        bloc est critique, le ciel doit l'être aussi."""
+        _finding(tenant, website_asset, severity="critical", endpoint="sessions")
+        _finding(tenant, website_asset, severity="attention", endpoint="asm")
+
+        contexte = services.build_weather_context(tenant)
+
+        assert contexte["open_breach_findings"][0]["severity_label"] == "Critique"
+        assert contexte["mood_emoji"] == "⛈️"

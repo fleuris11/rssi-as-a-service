@@ -238,11 +238,27 @@ export default function ActionPlanPage() {
         </Card>
       )}
 
+      {/* Deux vides très différents, et un seul message les couvrait.
+          Un client qui venait de terminer son diagnostic sans aucun écart
+          lisait « Terminez une évaluation » — on lui demandait de faire ce
+          qu'il venait de faire. `projected` n'existe qu'une fois une
+          évaluation terminée : c'est le signal qui distingue les deux cas. */}
       {items.length === 0 ? (
-        <EmptyState
-          title="Aucune action pour l’instant"
-          description="Terminez une évaluation pour générer votre plan d’action priorisé."
-        />
+        projected ? (
+          <EmptyState
+            title="Aucune action à mener"
+            description={
+              'Votre diagnostic ne fait apparaître aucun écart : il n’y a rien à ' +
+              'corriger pour le moment. Refaites-le après un changement dans votre ' +
+              'organisation, ou si de nouvelles mesures vous concernent.'
+            }
+          />
+        ) : (
+          <EmptyState
+            title="Aucune action pour l’instant"
+            description="Terminez une évaluation pour générer votre plan d’action priorisé."
+          />
+        )
       ) : (
         <div className="grid gap-6 md:grid-cols-3">
           {STATUSES.map((column) => (
