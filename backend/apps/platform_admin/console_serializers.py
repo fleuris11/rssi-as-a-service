@@ -58,8 +58,8 @@ class TenantUpdateSerializer(serializers.ModelSerializer):
     # Un champ qui traiterait 0 comme « vide » appliquerait 24 h à un client à
     # qui l'exploitant vient d'accorder l'inverse (voir
     # threat_intelligence.services.scan_cooldown_hours).
-    scan_cooldown_hours = serializers.IntegerField(
-        required=False, allow_null=True, min_value=0, max_value=8760
+    scan_cooldown_minutes = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0, max_value=525600
     )
 
     class Meta:
@@ -74,7 +74,7 @@ class TenantUpdateSerializer(serializers.ModelSerializer):
             "website",
             "account_manager",
             "internal_notes",
-            "scan_cooldown_hours",
+            "scan_cooldown_minutes",
         ]
         extra_kwargs = {field: {"required": False} for field in fields}
 
@@ -84,7 +84,8 @@ class TenantSerializer(serializers.ModelSerializer):
     # Le délai RÉELLEMENT appliqué, surcharge et réglage de plateforme
     # combinés : sans lui, la fiche montrerait « (vide) » sans dire ce qui
     # s'applique à la place, et l'exploitant devrait aller lire la console.
-    effective_scan_cooldown_hours = serializers.SerializerMethodField()
+    effective_scan_cooldown_minutes = serializers.SerializerMethodField()
+    effective_scan_cooldown_label = serializers.SerializerMethodField()
     archived_by_email = serializers.CharField(
         source="archived_by.email", read_only=True, default=""
     )
@@ -99,8 +100,9 @@ class TenantSerializer(serializers.ModelSerializer):
             "headcount",
             "is_active",
             "ai_enabled",
-            "scan_cooldown_hours",
-            "effective_scan_cooldown_hours",
+            "scan_cooldown_minutes",
+            "effective_scan_cooldown_minutes",
+            "effective_scan_cooldown_label",
             "contact_email",
             "contact_phone",
             "address",
@@ -115,10 +117,20 @@ class TenantSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_effective_scan_cooldown_hours(self, tenant) -> int:
+    def get_effective_scan_cooldown_minutes(self, tenant) -> int:
         from apps.threat_intelligence import services as threat_intelligence_services
 
-        return threat_intelligence_services.scan_cooldown_hours(tenant)
+        return threat_intelligence_services.scan_cooldown_minutes(tenant)
+
+    def get_effective_scan_cooldown_label(self, tenant) -> str:
+        """« 30 minutes », « 2 h », « 1 h 30 » — le délai tel qu'on le lit.
+        Formaté ici plutôt qu'à l'écran : la même phrase sert la fiche et le
+        message envoyé au client, et deux formatages divergeraient."""
+        from apps.threat_intelligence import services as threat_intelligence_services
+
+        return threat_intelligence_services.format_cooldown(
+            threat_intelligence_services.scan_cooldown_minutes(tenant)
+        )
 
 
 class MemberSerializer(serializers.ModelSerializer):

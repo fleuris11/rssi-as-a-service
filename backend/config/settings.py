@@ -285,6 +285,13 @@ BREACHSENSE_QUOTA_SAFETY_MARGIN = env.int("BREACHSENSE_QUOTA_SAFETY_MARGIN", def
 # Anti-abus (ADR-013) : délai minimal entre deux scans manuels déclenchés
 # par le même tenant — ne s'applique pas au scan initial automatique.
 BREACHSENSE_SCAN_COOLDOWN_HOURS = env.int("BREACHSENSE_SCAN_COOLDOWN_HOURS", default=24)
+# Le produit raisonne en MINUTES de bout en bout (modèle, réglage de console,
+# API, cache). La variable d'environnement reste en heures — c'est un contrat
+# déjà déployé qu'on ne casse pas — et c'est ICI, en un seul endroit, qu'elle
+# est convertie. Une seconde conversion ailleurs serait une occasion de
+# multiplier ou diviser par 60 au mauvais moment, erreur d'autant plus
+# coûteuse qu'elle produit un délai plausible.
+BREACHSENSE_SCAN_COOLDOWN_MINUTES = BREACHSENSE_SCAN_COOLDOWN_HOURS * 60
 # Taille du pool d'actifs monitorés en temps réel (webhook) — palier
 # Essentials. À ajuster si la licence change de palier.
 BREACHSENSE_MONITORED_ASSET_POOL_SIZE = env.int("BREACHSENSE_MONITORED_ASSET_POOL_SIZE", default=15)

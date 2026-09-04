@@ -50,7 +50,7 @@ SIGNUP_OPEN = "signup_open"
 MAINTENANCE_MESSAGE = "maintenance_message"
 TRASH_RETENTION_DAYS = "trash_retention_days"
 CTI_MODE = "cti_mode"
-SCAN_COOLDOWN_HOURS = "scan_cooldown_hours"
+SCAN_COOLDOWN_MINUTES = "scan_cooldown_minutes"
 
 REGISTRY: dict[str, SettingSpec] = {
     spec.key: spec
@@ -69,16 +69,21 @@ REGISTRY: dict[str, SettingSpec] = {
             sensitive=True,
         ),
         SettingSpec(
-            SCAN_COOLDOWN_HOURS,
-            "Délai entre deux analyses manuelles (heures)",
+            SCAN_COOLDOWN_MINUTES,
+            "Délai entre deux analyses manuelles (minutes)",
             "Temps d'attente imposé à un client entre deux analyses lancées "
             "depuis son espace. Il protège le budget de requêtes partagé, pas "
-            "le client. Un client précis peut recevoir sa propre valeur depuis "
-            "sa fiche — celle-ci ne s'applique qu'à défaut. 0 = aucun délai.",
+            "le client. Exprimé en minutes : 1440 = 24 h. Un client précis "
+            "peut recevoir sa propre valeur depuis sa fiche, section « Délai "
+            "entre deux analyses » — celle-ci ne s'applique qu'à défaut. "
+            "0 = aucun délai.",
             "int",
-            django_setting="BREACHSENSE_SCAN_COOLDOWN_HOURS",
+            # Pointe sur le réglage DÉJÀ converti (config/settings.py) : la
+            # variable d'environnement reste en heures, mais elle est traduite
+            # en un seul endroit, jamais ici.
+            django_setting="BREACHSENSE_SCAN_COOLDOWN_MINUTES",
             minimum=0,
-            maximum=8760,
+            maximum=525600,
             group="Licence de renseignement",
         ),
         SettingSpec(

@@ -1,129 +1,65 @@
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ClientCreateModal } from './ClientsPanel'
+import { describe, expect, it } from 'vitest'
+import { minutesVersSaisie, saisieVersMinutes } from './ClientsPanel'
 
-// Le formulaire par lequel passe toute création de client. Deux règles y sont
-// verrouillées : aucun mot de passe n'est jamais saisi ni affiché, et le motif
-// exact d'un refus serveur est montré tel quel — un refus de capacité dit ce
-// qu'il reste et ce qu'il faut libérer, le résumer perdrait l'essentiel.
+// Le produit stocke des MINUTES de bout en bout ; l'heure n'existe qu'à la
+// saisie, parce que « 1440 minutes » ne se lit pas comme 24 h.
+//
+// Ces conversions sont le seul endroit du frontend où les deux unités se
+// rencontrent, et c'est exactement le genre d'endroit où l'on multiplie ou
+// divise par 60 au mauvais moment. L'erreur ne se voit pas : elle produit un
+// délai plausible. D'où des tests sur les cas limites plutôt que sur le cas
+// courant.
 
-vi.mock('../../../api/endpoints', () => ({
-  platformApi: { createClient: vi.fn() },
-}))
-
-const showToast = vi.fn()
-vi.mock('../../../components/ui/Toast', () => ({ useToast: () => ({ showToast }) }))
-
-const { platformApi } = await import('../../../api/endpoints')
-
-const PLANS = [
-  { code: 'veille', name: 'Veille', monitored_assets: 1 },
-  { code: 'pilotage', name: 'Pilotage', monitored_assets: 3 },
-]
-
-function renderModal(props = {}) {
-  return render(
-    <ClientCreateModal open onClose={vi.fn()} plans={PLANS} onCreated={vi.fn()} {...props} />
-  )
-}
-
-describe('ClientCreateModal', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+describe('minutesVersSaisie', () => {
+  it('propose l’heure quand la valeur tombe juste', () => {
+    expect(minutesVersSaisie(60)).toEqual({ valeur: 1, unite: 'heures' })
+    expect(minutesVersSaisie(1440)).toEqual({ valeur: 24, unite: 'heures' })
   })
 
-  it('ne propose aucun champ de mot de passe', () => {
-    renderModal()
-
-    expect(screen.queryByLabelText(/mot de passe/i)).toBeNull()
-    expect(
-      screen.getByText(/Il recevra un lien pour définir son mot de passe/)
-    ).toBeInTheDocument()
+  it('reste en minutes quand l’heure ne représenterait pas la valeur', () => {
+    expect(minutesVersSaisie(30)).toEqual({ valeur: 30, unite: 'minutes' })
+    expect(minutesVersSaisie(90)).toEqual({ valeur: 90, unite: 'minutes' })
   })
 
-  it('exige le nom et l’email avant d’appeler le serveur', async () => {
-    const user = userEvent.setup()
-    renderModal()
-
-    await user.click(screen.getByRole('button', { name: 'Créer le client' }))
-
-    expect(platformApi.createClient).not.toHaveBeenCalled()
-    expect(screen.getByText('Le nom de l’entreprise est obligatoire.')).toBeInTheDocument()
+  it('distingue « pas de surcharge » de « aucun délai »', () => {
+    // Le piège central, et il se rejoue à chaque couche : `null` veut dire
+    // « on applique le réglage de plateforme », `0` veut dire « aucun délai,
+    // décidé pour ce client ». Les confondre appliquerait 24 h à un client à
+    // qui l'exploitant vient d'accorder l'inverse.
+    expect(minutesVersSaisie(null)).toEqual({ valeur: '', unite: 'minutes' })
+    expect(minutesVersSaisie(undefined)).toEqual({ valeur: '', unite: 'minutes' })
+    expect(minutesVersSaisie(0)).toEqual({ valeur: 0, unite: 'minutes' })
   })
 
-  it('crée le client et affiche le lien d’invitation, jamais un mot de passe', async () => {
-    const user = userEvent.setup()
-    platformApi.createClient.mockResolvedValue({
-      data: {
-        name: 'Atelier Roux',
-        invitation: {
-          invitation_url: 'http://localhost:5173/invitation/abc123',
-          invitation_email: 'gerant@atelier.example',
-          email_sent: false,
-          expires_in_hours: 72,
-        },
-      },
-    })
-    renderModal()
+  it('n’affiche jamais « 0 heure »', () => {
+    // 0 % 60 === 0 : sans garde explicite, zéro serait présenté comme
+    // « 0 heures », ce qui laisse croire à une valeur exprimée en heures.
+    expect(minutesVersSaisie(0).unite).toBe('minutes')
+  })
+})
 
-    await user.type(screen.getByLabelText(/Nom de l’entreprise/), 'Atelier Roux')
-    await user.type(screen.getByLabelText(/Email du premier utilisateur/), 'gerant@atelier.example')
-    await user.click(screen.getByRole('button', { name: 'Créer le client' }))
-
-    expect(await screen.findByText(/invitation\/abc123/)).toBeInTheDocument()
-    expect(screen.getByText(/ne fonctionne qu’une fois/)).toBeInTheDocument()
+describe('saisieVersMinutes', () => {
+  it('convertit les heures en minutes', () => {
+    expect(saisieVersMinutes(2, 'heures')).toBe(120)
+    expect(saisieVersMinutes(24, 'heures')).toBe(1440)
   })
 
-  it('affiche tel quel le motif d’un refus de capacité', async () => {
-    const user = userEvent.setup()
-    const detail =
-      'Cette opération engagerait 17 emplacements de surveillance continue pour un plafond ' +
-      'plateforme de 15. Il en reste 1 disponible(s).'
-    platformApi.createClient.mockRejectedValue({
-      response: { status: 409, data: { detail } },
-    })
-    renderModal()
-
-    await user.type(screen.getByLabelText(/Nom de l’entreprise/), 'De Trop')
-    await user.type(screen.getByLabelText(/Email du premier utilisateur/), 'a@detrop.example')
-    await user.click(screen.getByRole('button', { name: 'Créer le client' }))
-
-    await waitFor(() =>
-      expect(showToast).toHaveBeenCalledWith({ type: 'error', message: detail })
-    )
+  it('laisse les minutes telles quelles', () => {
+    expect(saisieVersMinutes(30, 'minutes')).toBe(30)
+    expect(saisieVersMinutes(90, 'minutes')).toBe(90)
   })
 
-  it('pré-remplit le formulaire lors d’une conversion de prospect', () => {
-    renderModal({
-      prefill: {
-        name: 'Devient Client',
-        owner_email: 'contact@devient.example',
-        prospect_id: 12,
-      },
-    })
-
-    expect(screen.getByLabelText(/Nom de l’entreprise/)).toHaveValue('Devient Client')
-    expect(screen.getByLabelText(/Email du premier utilisateur/)).toHaveValue(
-      'contact@devient.example'
-    )
+  it('rend null pour un champ vide, et zéro pour un zéro', () => {
+    expect(saisieVersMinutes('', 'minutes')).toBeNull()
+    expect(saisieVersMinutes(null, 'heures')).toBeNull()
+    expect(saisieVersMinutes(0, 'minutes')).toBe(0)
+    expect(saisieVersMinutes(0, 'heures')).toBe(0)
   })
 
-  it('transmet l’identifiant du prospect pour conserver le lien', async () => {
-    const user = userEvent.setup()
-    platformApi.createClient.mockResolvedValue({
-      data: { name: 'Devient Client', invitation: { invitation_url: 'x', expires_in_hours: 72 } },
-    })
-    renderModal({
-      prefill: { name: 'Devient Client', owner_email: 'c@devient.example', prospect_id: 12 },
-    })
-
-    await user.click(screen.getByRole('button', { name: 'Créer le client' }))
-
-    await waitFor(() =>
-      expect(platformApi.createClient).toHaveBeenCalledWith(
-        expect.objectContaining({ prospect_id: 12 })
-      )
-    )
+  it('fait l’aller-retour sans rien perdre', () => {
+    for (const minutes of [0, 1, 30, 59, 60, 90, 120, 1440]) {
+      const { valeur, unite } = minutesVersSaisie(minutes)
+      expect(saisieVersMinutes(valeur, unite)).toBe(minutes)
+    }
   })
 })

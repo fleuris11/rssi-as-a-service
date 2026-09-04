@@ -475,7 +475,11 @@ class ThreatIntelligenceStatusView(APIView):
                     max(0, assets_quota - assets_used) if assets_quota else None
                 ),
                 "cooldown_active": bool(cache.get(cooldown_key)),
-                "cooldown_hours": services.scan_cooldown_hours(tenant),
+                "cooldown_minutes": services.scan_cooldown_minutes(tenant),
+                # Déjà formaté pour l'écran : « 30 minutes », « 2 h »,
+                # « 1 h 30 ». Laisser le frontend recomposer la phrase
+                # depuis un nombre de minutes produirait « 90 minutes ».
+                "cooldown_label": services.format_cooldown(services.scan_cooldown_minutes(tenant)),
                 "critical_open_findings": services.count_critical_open_findings(tenant),
             }
         )

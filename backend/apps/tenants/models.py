@@ -20,14 +20,25 @@ class Tenant(models.Model):
     # false makes every AI endpoint return 403 and the frontend hides them.
     ai_enabled = models.BooleanField(default=True)
 
-    # Délai minimal entre deux analyses lancées à la main, POUR CE CLIENT.
+    # Délai minimal entre deux analyses lancées à la main, POUR CE CLIENT,
+    # **en minutes**.
+    #
+    # La minute est l'unité canonique de bout en bout — modèle, réglage de
+    # plateforme, API, cache. L'heure n'existe plus qu'à la saisie, comme
+    # commodité d'affichage. Un système qui stocke des heures ici et des
+    # minutes là finit par diviser ou multiplier par 60 au mauvais endroit, et
+    # ce genre d'erreur ne se voit pas : elle donne un délai plausible.
+    #
     # `null` = on applique le réglage de plateforme (console d'administration,
-    # à défaut BREACHSENSE_SCAN_COOLDOWN_HOURS). Une surcharge par client
-    # existe parce que le délai n'a pas la même justification partout : il
-    # protège un budget de requêtes partagé, et un client qu'on accompagne de
-    # près — ou qu'on démarche — n'a pas à subir le rythme calibré pour le
-    # parc. `0` est une valeur valide et signifie « aucun délai ».
-    scan_cooldown_hours = models.PositiveSmallIntegerField(null=True, blank=True)
+    # à défaut BREACHSENSE_SCAN_COOLDOWN_HOURS, converti en minutes).
+    # Une surcharge par client existe parce que le délai n'a pas la même
+    # justification partout : il protège un budget de requêtes partagé, et un
+    # client qu'on accompagne de près — ou qu'on démarche — n'a pas à subir le
+    # rythme calibré pour le parc. `0` est une valeur valide : « aucun délai ».
+    #
+    # PositiveIntegerField et non Small : 8760 heures tenaient dans un
+    # SmallInt, 525 600 minutes n'y tiendraient pas.
+    scan_cooldown_minutes = models.PositiveIntegerField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 

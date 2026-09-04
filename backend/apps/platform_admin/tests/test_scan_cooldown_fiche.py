@@ -55,43 +55,45 @@ class TestLaFicheExposeLeDelai:
 
         assert response.status_code == status.HTTP_200_OK
         fiche = response.data["fiche"]
-        assert fiche["scan_cooldown_hours"] is None
-        assert fiche["effective_scan_cooldown_hours"] == 24
+        assert fiche["scan_cooldown_minutes"] is None
+        assert fiche["effective_scan_cooldown_minutes"] == 1440
 
     def test_on_peut_donner_sa_propre_valeur_a_un_client(self, staff_client, tenant):
-        response = staff_client.patch(_url(tenant), {"scan_cooldown_hours": 2}, format="json")
+        response = staff_client.patch(_url(tenant), {"scan_cooldown_minutes": 2}, format="json")
 
         assert response.status_code in (status.HTTP_200_OK, status.HTTP_202_ACCEPTED)
         tenant.refresh_from_db()
-        assert threat_intelligence_services.scan_cooldown_hours(tenant) == 2
+        assert threat_intelligence_services.scan_cooldown_minutes(tenant) == 2
 
     def test_zero_veut_dire_aucun_delai_et_non_pas_vide(self, staff_client, tenant):
         """Le piège, à travers toute la pile cette fois : sérialiseur, modèle,
         résolution. Un 0 traité comme « non renseigné » rendrait le réglage
         impossible à exprimer."""
-        response = staff_client.patch(_url(tenant), {"scan_cooldown_hours": 0}, format="json")
+        response = staff_client.patch(_url(tenant), {"scan_cooldown_minutes": 0}, format="json")
 
         assert response.status_code in (status.HTTP_200_OK, status.HTTP_202_ACCEPTED)
         tenant.refresh_from_db()
-        assert tenant.scan_cooldown_hours == 0
-        assert threat_intelligence_services.scan_cooldown_hours(tenant) == 0
+        assert tenant.scan_cooldown_minutes == 0
+        assert threat_intelligence_services.scan_cooldown_minutes(tenant) == 0
 
     def test_vider_le_champ_remet_le_reglage_de_plateforme(self, staff_client, tenant):
-        tenant.scan_cooldown_hours = 2
-        tenant.save(update_fields=["scan_cooldown_hours"])
+        tenant.scan_cooldown_minutes = 2
+        tenant.save(update_fields=["scan_cooldown_minutes"])
 
-        staff_client.patch(_url(tenant), {"scan_cooldown_hours": None}, format="json")
+        staff_client.patch(_url(tenant), {"scan_cooldown_minutes": None}, format="json")
 
         tenant.refresh_from_db()
-        assert tenant.scan_cooldown_hours is None
-        assert threat_intelligence_services.scan_cooldown_hours(tenant) == 24
+        assert tenant.scan_cooldown_minutes is None
+        assert threat_intelligence_services.scan_cooldown_minutes(tenant) == 1440
 
     def test_une_valeur_absurde_est_refusee(self, staff_client, tenant):
         """Un an d'attente n'est pas un réglage, c'est une panne. La borne
         évite qu'une faute de frappe bloque un client sans que personne ne
         comprenne pourquoi."""
-        response = staff_client.patch(_url(tenant), {"scan_cooldown_hours": 99999}, format="json")
+        response = staff_client.patch(
+            _url(tenant), {"scan_cooldown_minutes": 999999}, format="json"
+        )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         tenant.refresh_from_db()
-        assert tenant.scan_cooldown_hours is None
+        assert tenant.scan_cooldown_minutes is None

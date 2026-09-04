@@ -613,6 +613,34 @@ function ActionsSection({ tenant, onChanged }) {
   )
 }
 
+/**
+ * Conversions entre ce qui est STOCKÉ (des minutes, toujours) et ce qui est
+ * SAISI (une valeur plus une unité).
+ *
+ * La minute est l'unité canonique du produit — modèle, réglage de plateforme,
+ * API, cache. L'heure n'existe qu'ici, à la saisie, parce que « 1440 minutes »
+ * ne se lit pas comme 24 h.
+ *
+ * Le zéro est le piège, et il se rejoue à chaque couche traversée : `null`
+ * veut dire « pas de surcharge, on applique le réglage de plateforme », `0`
+ * veut dire « aucun délai, décidé pour ce client ». D'où les comparaisons
+ * explicites à `null`/`''` plutôt que des tests de vérité — un `||` bien
+ * innocent transformerait 0 en vide et ferait retomber sur 24 h un client à
+ * qui l'exploitant vient d'accorder l'inverse.
+ */
+export function minutesVersSaisie(minutes) {
+  if (minutes === null || minutes === undefined) return { valeur: '', unite: 'minutes' }
+  if (minutes !== 0 && minutes % 60 === 0) return { valeur: minutes / 60, unite: 'heures' }
+  return { valeur: minutes, unite: 'minutes' }
+}
+
+export function saisieVersMinutes(valeur, unite) {
+  if (valeur === '' || valeur === null || valeur === undefined) return null
+  const n = Number(valeur)
+  if (Number.isNaN(n)) return null
+  return unite === 'heures' ? n * 60 : n
+}
+
 export function ClientDetail({ tenantId, plans, onBack, onChanged }) {
   const { showToast } = useToast()
   const [tenant, setTenant] = useState(null)
@@ -639,8 +667,11 @@ export function ClientDetail({ tenantId, plans, onBack, onChanged }) {
       // Le zéro, lui, est une VALEUR : « aucun délai pour ce client ».
       // `?? ''` et non `|| ''` — sinon 0 deviendrait vide, et l'exploitant
       // qui accorde « aucun délai » verrait sa décision retomber sur 24 h.
-      scan_cooldown_hours:
-        response.data.fiche.scan_cooldown_hours ?? '',
+      //
+      // Stocké en MINUTES ; on propose l'heure à la saisie quand la valeur
+      // tombe juste, parce que « 1440 minutes » ne se lit pas comme 24 h.
+      scan_cooldown_value: minutesVersSaisie(response.data.fiche.scan_cooldown_minutes).valeur,
+      scan_cooldown_unite: minutesVersSaisie(response.data.fiche.scan_cooldown_minutes).unite,
     })
   }, [tenantId])
 
@@ -657,9 +688,14 @@ export function ClientDetail({ tenantId, plans, onBack, onChanged }) {
       const payload = { ...form }
       if (payload.headcount === '') payload.headcount = null
       // Vide -> null : on retire la surcharge et le client repasse sous le
-      // réglage de plateforme. Toute autre valeur, zéro compris, est envoyée.
-      payload.scan_cooldown_hours =
-        payload.scan_cooldown_hours === '' ? null : Number(payload.scan_cooldown_hours)
+      // réglage de plateforme. Toute autre valeur, zéro compris, est envoyée,
+      // convertie dans l'unité canonique du produit : la minute.
+      payload.scan_cooldown_minutes = saisieVersMinutes(
+        payload.scan_cooldown_value,
+        payload.scan_cooldown_unite
+      )
+      delete payload.scan_cooldown_value
+      delete payload.scan_cooldown_unite
       await platformApi.updateClient(tenantId, payload)
       await load()
       onChanged?.()
@@ -733,19 +769,43 @@ export function ClientDetail({ tenantId, plans, onBack, onChanged }) {
               Temps d’attente imposé à ce client entre deux analyses lancées depuis son
               espace. Il protège le budget de requêtes partagé, pas le client.
             </p>
-            <div className="mt-3 max-w-xs">
-              <Field
-                label="Heures (vide = réglage de la plateforme)"
-                name="scan_cooldown_hours"
-                type="number"
-                value={form.scan_cooldown_hours}
-                onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))}
-              />
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <div className="w-40">
+                <Field
+                  label="Valeur (vide = réglage de la plateforme)"
+                  name="scan_cooldown_value"
+                  type="number"
+                  value={form.scan_cooldown_value}
+                  onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))}
+                />
+              </div>
+              <div className="w-36">
+                <label
+                  className="block text-sm font-medium text-ink-700"
+                  htmlFor="scan_cooldown_unite"
+                >
+                  Unité
+                </label>
+                <select
+                  id="scan_cooldown_unite"
+                  className="transition-smooth mt-1 w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-brand-600"
+                  value={form.scan_cooldown_unite || 'minutes'}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, scan_cooldown_unite: e.target.value }))
+                  }
+                >
+                  <option value="minutes">minutes</option>
+                  <option value="heures">heures</option>
+                </select>
+              </div>
             </div>
             <p className="mt-2 text-xs text-ink-500">
-              Actuellement appliqué : <strong>{fiche?.effective_scan_cooldown_hours} h</strong>
-              {form.scan_cooldown_hours === '' ? ' (réglage de la plateforme)' : ' (propre à ce client)'}.
-              {' '}Saisir <strong>0</strong> retire tout délai pour ce client.
+              Actuellement appliqué :{' '}
+              <strong>{fiche?.effective_scan_cooldown_label}</strong>
+              {form.scan_cooldown_value === ''
+                ? ' (réglage de la plateforme)'
+                : ' (propre à ce client)'}
+              . Saisir <strong>0</strong> retire tout délai pour ce client.
             </p>
           </div>
           <Field label="Notes internes" name="internal_notes" type="textarea" value={form.internal_notes} onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))} />

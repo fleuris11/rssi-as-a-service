@@ -138,7 +138,7 @@ EDITABLE_TENANT_FIELDS = (
     # la fiche peut l'écrire, et `snapshot_tenant` l'inclut, donc toute
     # modification apparaît dans le journal d'audit. Un réglage qui allonge ou
     # supprime un délai commercial doit laisser une trace de qui l'a décidé.
-    "scan_cooldown_hours",
+    "scan_cooldown_minutes",
 )
 
 
