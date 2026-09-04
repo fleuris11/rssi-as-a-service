@@ -4011,3 +4011,38 @@ Vérifié dans le navigateur sur une vraie fiche, et en test : vide → 24 h,
 | Capacité | 8/15 engagés, 2 occupés |
 
 1032 tests backend verts (3 échecs WeasyPrint environnementaux, constants).
+
+### Le délai se règle en minutes — et l'unité unique n'est pas un détail
+
+Demande de l'exploitant : pouvoir régler des délais courts. En heures, le plus
+petit délai non nul était une heure entière.
+
+**La minute devient l'unité canonique de bout en bout** — modèle, réglage de
+plateforme, API, cache. L'heure ne subsiste qu'à la saisie et à l'affichage.
+
+Ce choix n'est pas cosmétique, et j'en ai eu la démonstration en le faisant :
+ma première version laissait le registre lire `BREACHSENSE_SCAN_COOLDOWN_HOURS`
+en le traitant comme des minutes. Le défaut passait **silencieusement de 24 h à
+24 minutes**. Le test l'a attrapé.
+
+C'est la nature de l'erreur d'unité : elle ne plante pas, elle produit une
+valeur *plausible*. Un système à deux unités en fabrique indéfiniment. Il n'y a
+donc désormais **qu'un seul point de conversion**, dans `config/settings.py`,
+et un test s'appuie dessus — surcharger `..._HOURS` dans un test n'a plus
+d'effet, ce qui est précisément la garantie recherchée.
+
+**Migration de données autant que de schéma** : les surcharges déjà saisies
+sont converties (× 60), pas réinterprétées. Sans cela, un client réglé à « 2 »
+serait passé de deux heures à deux minutes sans que personne ne le voie.
+
+**Formatage côté serveur** : « 30 minutes », « 2 h », « 1 h 30 », « aucun
+délai ». Jamais « 90 minutes », que personne ne lit comme une heure et demie.
+La même phrase sert la fiche et le message client — deux formatages
+divergeraient au premier changement.
+
+Le zéro garde son sens à chaque couche : `allow_null` côté sérialiseur, garde
+explicite dans `minutesVersSaisie` (`0 % 60 === 0` aurait affiché « 0 heures »),
+`??` plutôt que `||` dans le formulaire.
+
+Vérifications : 1042 tests backend, 139 Vitest, dont 8 sur les conversions
+aller-retour. Cycle complet éprouvé sur une vraie fiche.
