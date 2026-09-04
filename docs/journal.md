@@ -3964,3 +3964,50 @@ explicite). **Aucune erreur HTTP ni JavaScript sur l'ensemble du parcours.**
 137 tests Vitest verts (16 fichiers), 61 tests notifications verts. `eslint` :
 0 erreur. Corrections vérifiées en les neutralisant : sans elles, les tests
 échouent en nommant ce qui manque.
+
+### Un réglage annoncé mais jamais construit
+
+Signalé par l'exploitant : « tu as dit ça côté admin mais sur la fiche client
+je ne vois nulle part où le mettre ». Il avait raison.
+
+La description du réglage de plateforme annonçait, de ma main : « Un client
+précis peut recevoir sa propre valeur depuis sa fiche ». **C'était faux au
+moment où la phrase a été écrite.** La colonne `scan_cooldown_hours` existait,
+la cascade de résolution fonctionnait et était testée — mais rien n'exposait le
+champ, ni l'API de la console, ni l'écran.
+
+Une description qui promet un réglage inexistant est pire qu'une absence de
+réglage : elle envoie chercher.
+
+**Trois trous, pas un**, et seul le dernier se voyait à l'exécution :
+
+1. `TenantUpdateSerializer` ne connaissait pas le champ ;
+2. `TenantSerializer` ne le renvoyait pas, ni le délai *réellement appliqué* —
+   la fiche aurait affiché « (vide) » sans dire ce qui s'applique à la place ;
+3. **`EDITABLE_TENANT_FIELDS` le rejetait silencieusement.** Les premiers tests
+   passaient le sérialiseur puis échouaient à la persistance, sans erreur. Ce
+   sont eux qui ont révélé qu'il restait une couche.
+
+L'ajout à cette liste blanche a un effet de bord voulu : `snapshot_tenant`
+l'inclut, donc toute modification apparaît au **journal d'audit**. Un réglage
+qui allonge ou supprime un délai commercial doit laisser une trace de qui l'a
+décidé.
+
+Le zéro est traité avec le même soin qu'ailleurs, parce que **le piège se
+rejoue à chaque couche traversée** : `allow_null` côté sérialiseur, `??` et non
+`||` côté formulaire. Un `||` transformerait 0 en vide, et l'exploitant qui
+accorde « aucun délai » verrait sa décision retomber sur 24 h.
+
+Vérifié dans le navigateur sur une vraie fiche, et en test : vide → 24 h,
+2 → 2 h, 0 → 0 h, vider → 24 h, valeur absurde refusée en 400.
+
+### Vérification du déploiement de `009bb88`
+
+| Contrôle | Résultat |
+|---|---|
+| Migration `scan_cooldown_hours` | appliquée, délai résolu à 24 h |
+| Cohérence du bulletin | ⛈️ Orage, « Sessions / cookies compromis — Critique » en tête |
+| Emails de démonstration | coupés — seul CRRH reçoit encore la météo |
+| Capacité | 8/15 engagés, 2 occupés |
+
+1032 tests backend verts (3 échecs WeasyPrint environnementaux, constants).
