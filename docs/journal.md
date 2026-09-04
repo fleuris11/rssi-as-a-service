@@ -3651,3 +3651,70 @@ désenregistrer. Et `afinhab.org` n'est même pas un actif déclaré par CRRH.
 Conséquence commerciale, à trancher : CRRH n'a donc **pas** de surveillance
 continue au sens du produit, alors que son domaine est bien enregistré côté
 fournisseur. Les deux moitiés du mécanisme existent sans se connaître.
+
+---
+
+## 2026-09-04 (suite) — La fuite était aussi dans l'écran, pas seulement dans les erreurs
+
+Trois défauts signalés par l'exploitant à partir de **captures de son propre
+produit**, après le correctif des messages d'erreur. Les trois étaient réels.
+
+### 1. L'écran publiait l'état du parc
+
+`ThreatIntelligenceStatusView` renvoyait le budget de requêtes **partagé** et
+l'occupation du **pool de licence**, et l'écran « Compromissions » les
+affichait tels quels :
+
+> Quota de requêtes restant (plateforme) : 971
+> 0 / 15 emplacements utilisés … dans la limite de 15 actifs pour toute la plateforme
+
+C'est **la même fuite que celle bouchée le matin même**, dans l'interface
+normale et permanente cette fois, pas dans un message d'échec. Elle n'avait pas
+été vue parce que l'audit regardait les exceptions, pas l'écran.
+
+Leçon de méthode, et elle se répète : **auditer une catégorie de code
+(« les messages d'erreur ») laisse passer la même faute ailleurs.** Ce qu'il
+faut auditer, c'est une *surface* — tout ce qu'un client peut lire.
+
+Le statut ne renvoie plus que des grandeurs tirées de l'offre du client. Les
+plafonds de plateforme continuent de refuser côté serveur, ils ne se racontent
+plus. La prop `poolStatus` est renommée `statut` : un nom qui ment est le début
+de la fuite suivante.
+
+### 2. Le délai entre analyses est désormais réglable
+
+24 h figées pour tout le monde, par variable d'environnement. Or ce délai
+protège le **budget partagé**, pas le client — il n'a donc pas à être le même
+pour un prospect qu'on démarche et pour le parc en croisière.
+
+Deux niveaux : `tenant.scan_cooldown_hours` (fiche client, nullable) puis le
+réglage de plateforme dans la console, puis l'environnement.
+
+**Deux pièges, trouvés en écrivant les tests plutôt qu'en production :**
+
+- `0` veut dire « aucun délai », pas « non renseigné ». Un `if surcharge:`
+  l'aurait fait retomber sur 24 h — l'inverse exact de la demande.
+- `mark_scan_cooldown` posait une empreinte calée sur l'environnement pendant
+  que la vérification lisait la valeur résolue. Régler 2 h dans la console
+  aurait laissé un blocage de 24 h en cache.
+
+### 3. « Surveiller » refuse — et ce n'est pas un bug
+
+Les journaux de production le disent sans ambiguïté :
+
+```
+ERROR BREACHSENSE_WEBHOOK_CALLBACK_URL absente :
+      surveillance continue impossible à activer sur cet environnement.
+```
+
+`BREACHSENSE_WEBHOOK_CALLBACK_URL`, `..._USERNAME` et `..._PASSWORD` sont vides
+en production depuis le déploiement initial. La surveillance continue ne peut
+donc pas être vendue en l'état. **Reste à faire, côté exploitation** — deux de
+ces valeurs sont des secrets, qui se génèrent avec `deploy/configurer-secret.sh`
+et se déclarent ensuite côté fournisseur.
+
+### Vérifications
+
+1007 tests backend verts (3 échecs WeasyPrint environnementaux, constants).
+Tests frontend de l'écran Compromissions verts, dont un nouveau qui échoue si
+le mot « plateforme » réapparaît dans le rendu. `ruff` et `eslint` propres.
