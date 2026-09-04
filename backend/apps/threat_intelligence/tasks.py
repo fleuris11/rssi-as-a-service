@@ -24,7 +24,7 @@ from celery import shared_task
 from apps.monitoring.models import Asset
 from apps.tenants import services as tenants_services
 
-from . import services
+from . import client_messages, services
 from .models import BreachScanJob
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,13 @@ def run_breach_scan_task(self, tenant_id, asset_id=None, triggered_by="manual", 
             exc_info=True,
         )
         if job is not None:
-            services.mark_job_failed(job, str(exc))
+            # JAMAIS `str(exc)` ici. `BreachScanJob.error_message` est exposé
+            # au client par `BreachScanJobSerializer` : y écrire l'exception
+            # brute affichait dans l'espace client des phrases comme
+            # « Breachsense a répondu 400 : Request missing the appropriate
+            # parameters ». Le détail technique est dans la ligne de journal
+            # juste au-dessus, avec sa pile — c'est là qu'il sert.
+            services.mark_job_failed(job, client_messages.SCAN_FAILED)
         return None
 
     if job is not None:

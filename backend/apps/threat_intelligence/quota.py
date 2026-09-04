@@ -11,6 +11,8 @@ from django.core.cache import cache
 from django.db.models import Sum
 from django.utils import timezone
 
+from . import client_messages
+
 logger = logging.getLogger(__name__)
 
 REMAINING_CACHE_KEY = "breachsense:quota:remaining"
@@ -56,11 +58,16 @@ class QuotaManager:
         if remaining is None:
             return
         if remaining <= margin:
-            raise QuotaExceededError(
-                f"Budget de requêtes Breachsense insuffisant ({remaining} restantes, "
-                f"marge de sécurité {margin}). Réessayez plus tard ou augmentez le palier "
-                "de licence."
+            # Le chiffre exact est celui de la LICENCE, partagée par tous les
+            # clients : l'afficher revient à publier la consommation du parc.
+            # L'exploitant le trouve dans les journaux, le client lit une
+            # indisponibilité temporaire — ce qu'elle est réellement pour lui.
+            logger.warning(
+                "Budget de requêtes fournisseur insuffisant : %s restantes, marge %s.",
+                remaining,
+                margin,
             )
+            raise QuotaExceededError(client_messages.SCAN_TEMPORARILY_UNAVAILABLE)
 
     def record_usage(
         self,

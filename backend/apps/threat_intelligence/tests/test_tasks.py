@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from apps.threat_intelligence import services
+from apps.threat_intelligence import client_messages, services
 from apps.threat_intelligence.models import BreachScanJob
 from apps.threat_intelligence.tasks import run_breach_scan_task
 
@@ -87,7 +87,12 @@ class TestRunBreachScanTask:
 
         job.refresh_from_db()
         assert job.status == BreachScanJob.Status.FAILED
-        assert "boom" in job.error_message
+        # Ce test affirmait l'inverse — « boom » DANS error_message — et
+        # verrouillait donc la fuite : ce champ est sérialisé vers le client
+        # (BreachScanJobSerializer), et il y affichait le texte brut de
+        # l'exception du fournisseur. Le détail vit dans les journaux.
+        assert "boom" not in job.error_message
+        assert job.error_message == client_messages.SCAN_FAILED
 
     def test_transient_failure_retries_before_exhaustion(self, tenant, website_asset):
         job = services.create_scan_job(

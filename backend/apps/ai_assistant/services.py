@@ -137,8 +137,10 @@ def ensure_quota_available(tenant) -> AIUsageQuota:
     quota = get_or_create_current_quota(tenant)
     if quota.remaining_tokens <= 0:
         raise QuotaExceededError(
-            "Le quota mensuel de tokens IA de cette entreprise est épuisé. "
-            "Il sera réinitialisé au début du mois prochain."
+            # « tokens » est du jargon de fournisseur : un dirigeant de PME
+            # lit une limite d'usage, pas une unité de facturation d'API.
+            "Vous avez atteint la limite d'utilisation de l'assistant pour ce "
+            "mois. Elle repart au début du mois prochain."
         )
     return quota
 
@@ -253,9 +255,15 @@ def rehydrate_text(text: str, mapping: dict) -> str:
 def _fernet() -> Fernet:
     key = settings.AI_PSEUDONYMIZATION_KEY
     if not key:
+        # `AIError` remonte au client en `detail` dans plusieurs vues : un nom
+        # de variable d'environnement n'a rien à y faire. Le diagnostic — le
+        # seul qui permette de corriger — part dans les journaux.
+        logger.error(
+            "AI_PSEUDONYMIZATION_KEY absente : pseudonymisation impossible, "
+            "toute fonction IA est bloquée sur cet environnement."
+        )
         raise AIError(
-            "AI_PSEUDONYMIZATION_KEY n'est pas configurée : impossible de chiffrer "
-            "la table de correspondance de pseudonymisation."
+            "Cette fonction est momentanément indisponible. Nos équipes en sont informées."
         )
     return Fernet(key.encode() if isinstance(key, str) else key)
 

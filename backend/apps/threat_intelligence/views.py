@@ -390,7 +390,13 @@ class BreachScanTriggerView(APIView):
         except entitlements.EntitlementError as exc:
             return Response({"detail": exc.message}, status=status.HTTP_402_PAYMENT_REQUIRED)
         except platform_capacity.PlatformCapacityError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            # `client_message`, jamais `str(exc)` : le message d'exploitation
+            # porte le compteur du parc (« 87/1000 ») et notre palier de
+            # licence. Le back-office, lui, continue de lire `str(exc)`.
+            logger.warning("Capacité plateforme atteinte : %s", exc)
+            return Response(
+                {"detail": exc.client_message}, status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
 
         try:
             job = services.create_scan_job(

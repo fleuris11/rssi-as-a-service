@@ -22,7 +22,7 @@ from apps.monitoring import services as monitoring_services
 from apps.monitoring.models import Alert, Asset
 from apps.tenants import services as tenants_services
 
-from . import correlation, exposure, plain_language
+from . import client_messages, correlation, exposure, plain_language
 from . import quota as quota_module
 from .models import (
     BreachFinding,
@@ -286,11 +286,14 @@ def ingest_raw_findings(
 def ensure_scan_cooldown_elapsed(tenant) -> None:
     key = SCAN_COOLDOWN_CACHE_KEY.format(tenant_id=tenant.id)
     if cache.get(key):
-        raise CooldownActiveError(
-            "Un scan Breachsense a déjà été lancé récemment pour cette entreprise. "
-            f"Réessayez dans quelques heures (délai anti-abus : "
-            f"{settings.BREACHSENSE_SCAN_COOLDOWN_HOURS}h)."
+        # Le délai exact (et le mot « anti-abus ») regardent l'exploitation,
+        # pas le client : il lit une attente, pas un soupçon.
+        logger.info(
+            "Scan refusé pour le tenant %s : délai anti-abus de %sh non écoulé.",
+            tenant.id,
+            settings.BREACHSENSE_SCAN_COOLDOWN_HOURS,
         )
+        raise CooldownActiveError(client_messages.SCAN_COOLDOWN)
 
 
 def mark_scan_cooldown(tenant) -> None:
@@ -404,19 +407,25 @@ def register_monitored_asset(*, tenant, asset: Asset) -> MonitoredAsset:
     if asset.tenant_id != tenant.id:
         raise ThreatIntelligenceError("Cet actif n'appartient pas à cette entreprise.")
     if MonitoredAsset.all_objects.filter(asset=asset, is_active=True).exists():
-        raise AssetAlreadyMonitoredError(
-            "Cet actif est déjà surveillé en temps réel par Breachsense."
-        )
+        raise AssetAlreadyMonitoredError(client_messages.ASSET_ALREADY_MONITORED)
     if not settings.BREACHSENSE_WEBHOOK_CALLBACK_URL:
-        raise WebhookNotConfiguredError(
-            "L'URL publique du webhook Breachsense n'est pas configurée sur cet environnement "
-            "(disponible uniquement une fois la plateforme déployée)."
+        # Un défaut de NOTRE configuration ne se raconte pas au client : il
+        # paie pour ne pas s'en occuper. L'exploitant, lui, doit le voir.
+        logger.error(
+            "BREACHSENSE_WEBHOOK_CALLBACK_URL absente : surveillance continue "
+            "impossible à activer sur cet environnement."
         )
+        raise WebhookNotConfiguredError(client_messages.MONITORING_UNAVAILABLE)
     if pool_capacity_remaining() <= 0:
-        raise PoolFullError(
-            f"Le pool Breachsense de {settings.BREACHSENSE_MONITORED_ASSET_POOL_SIZE} actifs "
-            "monitorés est complet. Retirez un actif existant avant d'en ajouter un nouveau."
+        # Le plafond est celui de la PLATEFORME, partagé par tous les clients
+        # (ADR-013). Le dire au client reviendrait à lui apprendre combien
+        # d'actifs les autres surveillent — et à lui présenter comme une
+        # limite de son offre ce qui est une limite de notre licence.
+        logger.warning(
+            "Pool de surveillance continue saturé : refus d'enregistrement pour le tenant %s.",
+            tenant.id,
         )
+        raise PoolFullError(client_messages.MONITORING_CAPACITY_REACHED)
 
     provider = get_provider()
     domain = derive_scan_domain(asset)

@@ -50,9 +50,31 @@ def alert_thresholds() -> tuple[float, ...]:
 
 
 class PlatformCapacityError(Exception):
-    """Le plafond plateforme serait dépassé. Le message porte toujours ce qui
-    reste disponible et ce qu'il faudrait libérer — un refus sans indication
-    de sortie oblige l'exploitant à aller lire le code."""
+    """Le plafond plateforme serait dépassé.
+
+    **Deux messages, deux publics.** ``str(exc)`` porte le détail
+    d'exploitation — combien d'emplacements, sur quel plafond, ce qu'il faut
+    libérer : c'est ce que le back-office affiche, et un refus sans
+    indication de sortie obligerait l'exploitant à aller lire le code.
+
+    ``client_message`` est ce qu'un CLIENT a le droit de lire. Le détail
+    d'exploitation n'est pas seulement inutile pour lui : « il reste 3
+    emplacements sur 15 » lui apprend la taille du parc et la consommation
+    des autres clients. Dans un produit dont l'argument est le cloisonnement,
+    c'est une fuite entre locataires — et elle passait par un message
+    d'erreur, l'endroit où personne ne pense à en chercher une.
+    """
+
+    #: Repli neutre : une indisponibilité temporaire, sans chiffre ni cause.
+    DEFAULT_CLIENT_MESSAGE = (
+        "Cette action n'est pas disponible pour le moment. Contactez-nous : "
+        "nous la débloquons pour vous."
+    )
+
+    def __init__(self, operator_message: str, *, client_message: str | None = None):
+        super().__init__(operator_message)
+        self.operator_message = operator_message
+        self.client_message = client_message or self.DEFAULT_CLIENT_MESSAGE
 
 
 @dataclass
@@ -194,7 +216,11 @@ def ensure_monitored_slots_available(*, additional: int, excluding_subscription_
             f"Cette opération engagerait {projected} emplacements de surveillance continue "
             f"pour un plafond plateforme de {capacity}. Il en reste {remaining} disponible(s). "
             "Libérez des emplacements (suspension ou changement de plan d'un client existant) "
-            "ou passez à un palier de licence supérieur avant de poursuivre."
+            "ou passez à un palier de licence supérieur avant de poursuivre.",
+            client_message=(
+                "La surveillance continue ne peut pas être activée pour le "
+                "moment. Contactez-nous : nous l'activons pour vous."
+            ),
         )
 
 
@@ -215,7 +241,13 @@ def ensure_scan_budget_available(*, additional: int = 1) -> None:
         raise PlatformCapacityError(
             f"Le budget d'analyses de la plateforme pour ce mois est atteint "
             f"({used}/{capacity}). Il reste {max(0, capacity - used)} analyse(s). "
-            "Attendez le mois suivant ou passez à un palier de licence supérieur."
+            "Attendez le mois suivant ou passez à un palier de licence supérieur.",
+            # Vu du client, c'est une indisponibilité passagère : ni le
+            # compteur du parc, ni notre palier de licence ne le concernent.
+            client_message=(
+                "Les analyses sont momentanément indisponibles. Réessayez "
+                "d'ici quelques heures ; contactez-nous si c'est urgent."
+            ),
         )
 
 

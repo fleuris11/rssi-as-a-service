@@ -163,7 +163,13 @@ class TestMonitoredAssetAPI:
             )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "complet" in response.data["detail"]
+        detail = response.data["detail"]
+        # Le plafond est celui de la PLATEFORME, partagé par tous les clients
+        # (ADR-013) : le client lit une limite de son offre et une sortie, pas
+        # le nom du fournisseur ni la taille du parc.
+        assert "offre" in detail and "contactez-nous" in detail.lower()
+        assert "breachsense" not in detail.lower()
+        assert not any(c.isdigit() for c in detail)
 
     def test_unregister_asset(
         self, api_client, tenant, tenant_owner, website_asset, fake_provider, settings
