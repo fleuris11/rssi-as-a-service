@@ -635,6 +635,12 @@ export function ClientDetail({ tenantId, plans, onBack, onChanged }) {
       website: response.data.fiche.website || '',
       account_manager: response.data.fiche.account_manager || '',
       internal_notes: response.data.fiche.internal_notes || '',
+      // Chaîne vide = pas de surcharge (le réglage de plateforme s'applique).
+      // Le zéro, lui, est une VALEUR : « aucun délai pour ce client ».
+      // `?? ''` et non `|| ''` — sinon 0 deviendrait vide, et l'exploitant
+      // qui accorde « aucun délai » verrait sa décision retomber sur 24 h.
+      scan_cooldown_hours:
+        response.data.fiche.scan_cooldown_hours ?? '',
     })
   }, [tenantId])
 
@@ -650,6 +656,10 @@ export function ClientDetail({ tenantId, plans, onBack, onChanged }) {
     try {
       const payload = { ...form }
       if (payload.headcount === '') payload.headcount = null
+      // Vide -> null : on retire la surcharge et le client repasse sous le
+      // réglage de plateforme. Toute autre valeur, zéro compris, est envoyée.
+      payload.scan_cooldown_hours =
+        payload.scan_cooldown_hours === '' ? null : Number(payload.scan_cooldown_hours)
       await platformApi.updateClient(tenantId, payload)
       await load()
       onChanged?.()
@@ -716,6 +726,28 @@ export function ClientDetail({ tenantId, plans, onBack, onChanged }) {
             <Field label="Référent commercial" name="account_manager" value={form.account_manager} onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))} />
           </div>
           <Field label="Adresse" name="address" type="textarea" rows={2} value={form.address} onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))} />
+
+          <div className="rounded-md border border-ink-200 bg-ink-50/60 p-4">
+            <p className="text-sm font-medium text-ink-800">Délai entre deux analyses</p>
+            <p className="mt-1 text-sm text-ink-600">
+              Temps d’attente imposé à ce client entre deux analyses lancées depuis son
+              espace. Il protège le budget de requêtes partagé, pas le client.
+            </p>
+            <div className="mt-3 max-w-xs">
+              <Field
+                label="Heures (vide = réglage de la plateforme)"
+                name="scan_cooldown_hours"
+                type="number"
+                value={form.scan_cooldown_hours}
+                onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))}
+              />
+            </div>
+            <p className="mt-2 text-xs text-ink-500">
+              Actuellement appliqué : <strong>{fiche?.effective_scan_cooldown_hours} h</strong>
+              {form.scan_cooldown_hours === '' ? ' (réglage de la plateforme)' : ' (propre à ce client)'}.
+              {' '}Saisir <strong>0</strong> retire tout délai pour ce client.
+            </p>
+          </div>
           <Field label="Notes internes" name="internal_notes" type="textarea" value={form.internal_notes} onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))} />
           <div className="flex justify-end">
             <Button type="submit" loading={busy}>

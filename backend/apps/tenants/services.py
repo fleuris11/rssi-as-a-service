@@ -132,6 +132,13 @@ EDITABLE_TENANT_FIELDS = (
     "website",
     "account_manager",
     "internal_notes",
+    # Surcharge du délai entre deux analyses manuelles (ADR-013 : le délai
+    # protège le budget de requêtes PARTAGÉ, pas le client — il n'a donc pas
+    # à être le même pour tous). Figurer dans cette liste sert deux choses :
+    # la fiche peut l'écrire, et `snapshot_tenant` l'inclut, donc toute
+    # modification apparaît dans le journal d'audit. Un réglage qui allonge ou
+    # supprime un délai commercial doit laisser une trace de qui l'a décidé.
+    "scan_cooldown_hours",
 )
 
 

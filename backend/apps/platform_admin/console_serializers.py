@@ -49,6 +49,19 @@ class ClientCreateSerializer(serializers.Serializer):
 
 
 class TenantUpdateSerializer(serializers.ModelSerializer):
+    # Surcharge du délai entre deux analyses manuelles, POUR CE CLIENT.
+    #
+    # `allow_null` est le cœur du champ, et il porte deux valeurs distinctes
+    # qu'il ne faut surtout pas confondre :
+    #   - `null` → aucune surcharge, on applique le réglage de plateforme ;
+    #   - `0`    → aucun délai, décidé pour ce client.
+    # Un champ qui traiterait 0 comme « vide » appliquerait 24 h à un client à
+    # qui l'exploitant vient d'accorder l'inverse (voir
+    # threat_intelligence.services.scan_cooldown_hours).
+    scan_cooldown_hours = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0, max_value=8760
+    )
+
     class Meta:
         model = Tenant
         fields = [
@@ -61,12 +74,17 @@ class TenantUpdateSerializer(serializers.ModelSerializer):
             "website",
             "account_manager",
             "internal_notes",
+            "scan_cooldown_hours",
         ]
         extra_kwargs = {field: {"required": False} for field in fields}
 
 
 class TenantSerializer(serializers.ModelSerializer):
     is_archived = serializers.BooleanField(read_only=True)
+    # Le délai RÉELLEMENT appliqué, surcharge et réglage de plateforme
+    # combinés : sans lui, la fiche montrerait « (vide) » sans dire ce qui
+    # s'applique à la place, et l'exploitant devrait aller lire la console.
+    effective_scan_cooldown_hours = serializers.SerializerMethodField()
     archived_by_email = serializers.CharField(
         source="archived_by.email", read_only=True, default=""
     )
@@ -81,6 +99,8 @@ class TenantSerializer(serializers.ModelSerializer):
             "headcount",
             "is_active",
             "ai_enabled",
+            "scan_cooldown_hours",
+            "effective_scan_cooldown_hours",
             "contact_email",
             "contact_phone",
             "address",
@@ -94,6 +114,11 @@ class TenantSerializer(serializers.ModelSerializer):
             "archive_reason",
         ]
         read_only_fields = fields
+
+    def get_effective_scan_cooldown_hours(self, tenant) -> int:
+        from apps.threat_intelligence import services as threat_intelligence_services
+
+        return threat_intelligence_services.scan_cooldown_hours(tenant)
 
 
 class MemberSerializer(serializers.ModelSerializer):
