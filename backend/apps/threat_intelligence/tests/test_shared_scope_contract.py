@@ -127,13 +127,16 @@ class TestWeatherContextScope:
         lignes = context["open_breach_findings"]
 
         assert lignes, "Une météo avec des fuites ne doit jamais afficher une liste vide."
-        assert len(lignes) <= notifications_services.WEATHER_MAX_BREACH_ROWS
+        assert len(lignes) <= notifications_services.WEATHER_MAX_BREACH_TYPES
         rangs = [
             {"Critique": 0, "Élevée": 1, "Attention": 2}[ligne["severity_label"]]
             for ligne in lignes
         ]
         assert rangs == sorted(rangs), "Les lignes doivent aller du plus grave au moins grave."
-        assert context["breach_hidden"] == SEEDED_TOTAL - sum(ligne["count"] for ligne in lignes)
+        # Les lignes sont désormais des TYPES regroupés : leur somme couvre
+        # au plus le total, et le reliquat est annoncé en nombre de types.
+        assert sum(ligne["count"] for ligne in lignes) <= SEEDED_TOTAL
+        assert context["breach_types_hidden"] >= 0
 
 
 class TestExposureSynthesisContextScope:

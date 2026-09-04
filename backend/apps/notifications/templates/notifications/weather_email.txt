@@ -1,27 +1,57 @@
-{% autoescape off %}Météo cyber — {{ tenant_name }} — {{ date|date:"d/m/Y" }}
+{% autoescape off %}{{ mood_emoji }}  {{ mood_label|upper }} — {{ tenant_name }}
+{{ date|date:"l j F Y"|capfirst }}
 
-{{ mood_emoji }} {{ mood_label }}
+{{ mood_verdict }}
 {% if enriched_summary %}
 {{ enriched_summary }}
 {% endif %}
-Vos actifs surveillés :
-{% for asset in assets %}
-- {{ asset.value }} ({{ asset.type_label }}){% if asset.uptime_24h != None %} — disponibilité 24h : {{ asset.uptime_24h }} %{% endif %}
-{% for check in asset.checks %}    {{ check.label }} : {{ check.status_label }}
-{% endfor %}{% endfor %}
-{% if open_alerts %}
-Alertes ouvertes ({{ open_alerts|length }}) :
-{% for alert in open_alerts %}- {{ alert.asset_value }} — {{ alert.type_label }} ({{ alert.severity_label }})
-{% endfor %}{% else %}
-Aucune alerte ouverte.
-{% endif %}
 {% if open_breach_findings %}
-Compromissions détectées ({{ breach_total }}), les plus graves d'abord :
-{% for finding in open_breach_findings %}- {{ finding.asset_value }}{% if finding.identifier %} ({{ finding.identifier }}){% endif %} — {{ finding.source_label }} ({{ finding.severity_label }}){% if finding.count > 1 %} — {{ finding.count }} occurrences{% endif %}
-{% endfor %}{% if breach_hidden %}
-… et {{ breach_hidden }} autre(s), à consulter dans votre tableau de bord.
-{% endif %}{% endif %}
-Tableau de bord complet : {{ dashboard_url }}
+──────────────────────────────────────────
+CE QUI VOUS CONCERNE AUJOURD'HUI
+──────────────────────────────────────────
+{% for groupe in open_breach_findings %}
+{{ forloop.counter }}. {{ groupe.type_label|upper }} — {{ groupe.severity_label }}{% if groupe.count > 1 %} ({{ groupe.count }} éléments){% endif %}
+   Concerne : {{ groupe.assets_label }}{% if groupe.assets_extra %} et {{ groupe.assets_extra }} autre(s){% endif %}
+
+   Ce que c'est
+   {{ groupe.meaning }}
+
+   Ce qu'il faut faire
+   {{ groupe.action }}
+{% endfor %}{% if breach_types_hidden %}
+Et {{ breach_types_hidden }} autre(s) type(s) de compromission, à consulter dans votre espace.
+{% endif %}{% endif %}{% if open_alerts %}
+──────────────────────────────────────────
+SURVEILLANCE
+──────────────────────────────────────────
+{% for alert in open_alerts %}
+{{ alert.type_label|upper }} — {{ alert.severity_label }}{% if alert.count > 1 %} ({{ alert.count }} actifs){% endif %}
+   Concerne : {{ alert.assets_label }}{% if alert.assets_extra %} et {{ alert.assets_extra }} autre(s){% endif %}
+
+   Ce que c'est
+   {{ alert.meaning }}
+
+   Ce qu'il faut faire
+   {{ alert.action }}
+{% endfor %}{% endif %}
+──────────────────────────────────────────
+L'ÉTAT DE VOS ACTIFS
+──────────────────────────────────────────
+{% for asset in assets %}
+{{ asset.mood_emoji }}  {{ asset.value }} — {{ asset.mood_label }}{% if asset.uptime_24h != None %} (disponibilité 24 h : {{ asset.uptime_24h }} %){% endif %}
+{% if not asset.is_ok %}{% for check in asset.checks %}    {{ check.label }} : {{ check.status_label }}
+{% endfor %}{% endif %}{% endfor %}
+{% if tout_va_bien %}
+Aucune action attendue de votre part. Nous continuons à surveiller.
+{% endif %}
+──────────────────────────────────────────
+Voir le détail complet : {{ dashboard_url }}
+
+Comment lire le temps du jour :
+{% for symbole, titre, sens in legende %}  {{ symbole }}  {{ titre }} — {{ sens }}
+{% endfor %}
+Vous recevez ce bulletin chaque matin. Vous pouvez en changer l'heure, ou
+l'arrêter, depuis vos préférences.
 
 — RSSI as a Service
 {% endautoescape %}

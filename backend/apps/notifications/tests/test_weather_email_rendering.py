@@ -90,7 +90,7 @@ class TestOrdreEtRegroupement:
         lignes = services.build_weather_context(tenant)["open_breach_findings"]
 
         assert any(ligne["severity_label"] == "Élevée" for ligne in lignes)
-        assert len(lignes) <= services.WEATHER_MAX_BREACH_ROWS
+        assert len(lignes) <= services.WEATHER_MAX_BREACH_TYPES
 
     def test_les_lignes_identiques_sont_regroupees_avec_leur_nombre(self, tenant, website_asset):
         for _ in range(5):
@@ -110,8 +110,10 @@ class TestOrdreEtRegroupement:
         contexte = services.build_weather_context(tenant)
 
         assert contexte["breach_total"] == 30
-        # Le client doit savoir qu'il ne voit pas tout, et où voir le reste.
-        assert contexte["breach_hidden"] > 0
+        # Trente fuites du MÊME type ne font qu'une entrée : le dirigeant lit
+        # « de quoi il s'agit », pas trente fois la même ligne.
+        assert len(contexte["open_breach_findings"]) == 1
+        assert contexte["open_breach_findings"][0]["count"] == 30
 
 
 @pytest.mark.django_db

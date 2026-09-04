@@ -101,7 +101,7 @@ class TestBuildWeatherContext:
 
         context = services.build_weather_context(tenant)
 
-        assert context["mood_emoji"] == "🔴"
+        assert context["mood_emoji"] == "⛈️"  # orage
         assert len(context["open_alerts"]) == 1
 
     def test_mood_is_warning_from_a_check_status_alone(self, tenant, website_asset):
@@ -114,7 +114,7 @@ class TestBuildWeatherContext:
 
         context = services.build_weather_context(tenant)
 
-        assert context["mood_emoji"] == "⚠️"
+        assert context["mood_emoji"] == "⛅"  # quelques nuages
 
 
 class TestWeatherEnrichment:
@@ -195,6 +195,8 @@ class TestSendWeatherEmail:
         assert len(mail.outbox) == 0
 
     def test_subject_carries_the_mood_emoji(self, tenant, tenant_owner, website_asset):
+        """L'objet porte le temps qu'il fait : c'est l'information la plus
+        utile avant même l'ouverture, dans une boîte de réception pleine."""
         Alert.all_objects.create(
             tenant=tenant,
             asset=website_asset,
@@ -204,7 +206,11 @@ class TestSendWeatherEmail:
 
         services.send_weather_email(tenant)
 
-        assert "🔴" in mail.outbox[0].subject
+        objet = mail.outbox[0].subject
+        assert "⛈️" in objet and "Orage" in objet
+        # « Bulletin », pas « Alerte » : les deux emails ne doivent pas se
+        # confondre dans une liste de messages.
+        assert "Bulletin" in objet and "Alerte" not in objet
 
 
 class TestSendRealtimeAlertEmail:

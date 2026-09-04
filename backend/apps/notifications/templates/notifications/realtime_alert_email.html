@@ -1,25 +1,81 @@
+{% comment %}
+Email d'ALERTE. À ne surtout pas confondre avec le bulletin quotidien.
+
+   Le bulletin est un point de situation qu'on lit au calme, daté, avec la
+   métaphore météo et l'état de tous les actifs. Celui-ci est un ÉVÉNEMENT :
+   une seule chose s'est produite, maintenant, et une action est attendue.
+
+   Trois choses les séparent au premier coup d'œil, y compris avant ouverture :
+   le bandeau est rouge et non bleu, il ne porte AUCUN symbole météo, et il ne
+   parle que d'un seul actif. Un lecteur qui reçoit les deux le même matin doit
+   savoir lequel ouvrir en premier sans les lire.
+
+   Contraintes de courrier électronique : tableaux, styles en ligne, aucune
+   feuille externe, aucun script.
+{% endcomment %}
 <!doctype html>
 <html lang="fr">
-  <body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;padding:24px 16px;">
+  <body style="margin:0;padding:0;background:#eef2f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1f2937;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef2f7;padding:24px 12px;">
       <tr>
-        <td>
-          <p style="font-size:24px;margin:0 0 8px;">🔴</p>
-          <h1 style="font-size:18px;margin:0 0 16px;">Alerte — {{ tenant_name }}</h1>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:10px;overflow:hidden;">
 
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;margin-bottom:20px;">
-            <tr><td style="padding:4px 0;color:#64748b;">Actif</td><td style="padding:4px 0;"><strong>{{ asset_value }}</strong></td></tr>
-            <tr><td style="padding:4px 0;color:#64748b;">Type</td><td style="padding:4px 0;">{{ alert_type_label }}</td></tr>
-            <tr><td style="padding:4px 0;color:#64748b;">Sévérité</td><td style="padding:4px 0;">{{ severity_label }}</td></tr>
+            <tr>
+              <td style="background:#9f1239;padding:22px 28px;">
+                <p style="margin:0;font-size:11px;font-weight:700;letter-spacing:1.4px;color:#fbcfe8;text-transform:uppercase;">
+                  Alerte de surveillance
+                </p>
+                <p style="margin:6px 0 0;font-size:21px;font-weight:600;color:#ffffff;line-height:1.3;">
+                  {{ alert_type_label }}
+                </p>
+                <p style="margin:6px 0 0;font-size:14px;color:#fbcfe8;">
+                  {{ asset_value }}
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:26px 28px 0;">
+                <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:0.6px;color:#6b7280;text-transform:uppercase;">
+                  Ce qui se passe
+                </p>
+                <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#374151;">
+                  {{ meaning }}
+                </p>
+
+                <p style="margin:0 0 4px;font-size:11px;font-weight:700;letter-spacing:0.6px;color:#92400e;text-transform:uppercase;">
+                  Ce qu'il faut faire
+                </p>
+                <p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#78350f;background:#fffbeb;padding:14px 16px;border-radius:6px;">
+                  {{ action }}
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:0 28px 8px;">
+                <a href="{{ dashboard_url }}" style="display:inline-block;background:#9f1239;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:6px;font-size:14px;font-weight:500;">
+                  Voir dans mon espace
+                </a>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:22px 28px 26px;">
+                <div style="border-top:1px solid #e5e7eb;padding-top:14px;">
+                  <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.6;">
+                    Vous recevez cet email parce qu'une anomalie vient d'être détectée sur un
+                    actif que vous nous avez déclaré. Il est distinct de votre bulletin
+                    quotidien, qui reste envoyé chaque matin.<br>
+                    RSSI as a Service — nous détectons et vous alertons ; nous n'intervenons
+                    pas sur vos systèmes.
+                  </p>
+                </div>
+              </td>
+            </tr>
+
           </table>
-
-          <p style="margin:0 0 20px;">
-            <a href="{{ dashboard_url }}" style="display:inline-block;background:#0f172a;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;font-size:13px;">
-              Voir le tableau de bord
-            </a>
-          </p>
-
-          <p style="margin:0;font-size:11px;color:#94a3b8;">RSSI as a Service</p>
         </td>
       </tr>
     </table>

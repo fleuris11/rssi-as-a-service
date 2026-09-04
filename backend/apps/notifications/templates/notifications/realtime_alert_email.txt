@@ -1,9 +1,24 @@
-🔴 Alerte — {{ tenant_name }}
+{% autoescape off %}ALERTE DE SURVEILLANCE — {{ tenant_name }}
 
-Actif : {{ asset_value }}
-Type : {{ alert_type_label }}
-Sévérité : {{ severity_label }}
+{{ alert_type_label }}
+{{ asset_value }}
 
-Tableau de bord complet : {{ dashboard_url }}
+──────────────────────────────────────────
+CE QUI SE PASSE
+──────────────────────────────────────────
+{{ meaning }}
 
-— RSSI as a Service
+──────────────────────────────────────────
+CE QU'IL FAUT FAIRE
+──────────────────────────────────────────
+{{ action }}
+
+Voir dans votre espace : {{ dashboard_url }}
+
+Vous recevez cet email parce qu'une anomalie vient d'être détectée sur un
+actif que vous nous avez déclaré. Il est distinct de votre bulletin
+quotidien, qui reste envoyé chaque matin.
+
+RSSI as a Service — nous détectons et vous alertons ; nous n'intervenons
+pas sur vos systèmes.
+{% endautoescape %}

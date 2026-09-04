@@ -343,6 +343,7 @@ class Command(BaseCommand):
             assets = self._ensure_assets(tenant, admin)
             created = self._ensure_findings(tenant, assets)
             self._ensure_synthesis(tenant)
+            self._mute_emails(tenant)
 
         total = BreachFinding.all_objects.filter(tenant=tenant).count()
         self.stdout.write(
@@ -354,6 +355,36 @@ class Command(BaseCommand):
         )
 
     # --- Étapes ------------------------------------------------------------
+
+    def _mute_emails(self, tenant: Tenant) -> None:
+        """Le tenant de démonstration n'envoie aucun email. Jamais.
+
+        Ses comptes sont sur ``cabinet-durand-demo.fr``, un domaine qui
+        n'existe pas — et c'est voulu, personne ne doit pouvoir confondre la
+        démonstration avec un vrai client. Mais les préférences de
+        notification, elles, partaient sur le défaut du modèle
+        (``weather_enabled=True``) : la météo quotidienne était donc réellement
+        envoyée, chaque matin à 8 h, à une adresse inexistante.
+
+        Relevé en production : **dix rebonds « 521 Domain not found :
+        NXDOMAIN »**, un par jour depuis le 26 août, dans la boîte d'envoi.
+
+        Ce n'est pas qu'un désagrément. Un domaine qui émet quotidiennement
+        vers des adresses inexistantes voit sa **réputation d'expéditeur**
+        se dégrader, et ce sont les emails des VRAIS clients qui finissent en
+        indésirables. Une donnée de démonstration ne doit rien envoyer.
+        """
+        from apps.notifications.models import NotificationPreferences
+
+        prefs, _ = NotificationPreferences.all_objects.update_or_create(
+            tenant=tenant,
+            defaults={
+                "weather_enabled": False,
+                "realtime_alerts_enabled": False,
+                "weather_enrichment_enabled": False,
+            },
+        )
+        self.stdout.write("Emails désactivés pour le tenant de démonstration.")
 
     def _ensure_tenant(self) -> Tenant:
         tenant, created = Tenant.objects.get_or_create(
