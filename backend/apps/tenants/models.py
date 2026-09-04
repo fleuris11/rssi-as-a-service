@@ -19,6 +19,16 @@ class Tenant(models.Model):
     # enrichie) — checked by apps.ai_assistant.services before any call;
     # false makes every AI endpoint return 403 and the frontend hides them.
     ai_enabled = models.BooleanField(default=True)
+
+    # Délai minimal entre deux analyses lancées à la main, POUR CE CLIENT.
+    # `null` = on applique le réglage de plateforme (console d'administration,
+    # à défaut BREACHSENSE_SCAN_COOLDOWN_HOURS). Une surcharge par client
+    # existe parce que le délai n'a pas la même justification partout : il
+    # protège un budget de requêtes partagé, et un client qu'on accompagne de
+    # près — ou qu'on démarche — n'a pas à subir le rythme calibré pour le
+    # parc. `0` est une valeur valide et signifie « aucun délai ».
+    scan_cooldown_hours = models.PositiveSmallIntegerField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     # --- Fiche commerciale (phase 11) --------------------------------------

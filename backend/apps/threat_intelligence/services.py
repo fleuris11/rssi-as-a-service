@@ -283,7 +283,35 @@ def ingest_raw_findings(
 # --- Mode requête : scan de diagnostic --------------------------------------
 
 
+def scan_cooldown_hours(tenant) -> int:
+    """Délai entre deux analyses manuelles, en heures, pour CE client.
+
+    Trois niveaux, du plus spécifique au plus général :
+
+    1. ``tenant.scan_cooldown_hours`` — la surcharge par client, réglée depuis
+       sa fiche. ``0`` y est une valeur valide (« aucun délai »), d'où le test
+       sur ``is not None`` et non sur la vérité de la valeur : un ``0`` traité
+       comme « non renseigné » retomberait sur le réglage de plateforme et
+       ferait exactement l'inverse de ce que l'exploitant a demandé.
+    2. le réglage de plateforme, modifiable depuis la console sans
+       redéploiement ;
+    3. la variable d'environnement, tant que personne n'a rien réglé.
+    """
+    surcharge = getattr(tenant, "scan_cooldown_hours", None)
+    if surcharge is not None:
+        return int(surcharge)
+
+    from apps.platform_admin import settings_registry
+
+    try:
+        return int(settings_registry.get(settings_registry.SCAN_COOLDOWN_HOURS))
+    except Exception:  # noqa: BLE001 - base indisponible : on garde le défaut
+        return int(settings.BREACHSENSE_SCAN_COOLDOWN_HOURS)
+
+
 def ensure_scan_cooldown_elapsed(tenant) -> None:
+    if scan_cooldown_hours(tenant) <= 0:
+        return
     key = SCAN_COOLDOWN_CACHE_KEY.format(tenant_id=tenant.id)
     if cache.get(key):
         # Le délai exact (et le mot « anti-abus ») regardent l'exploitation,
@@ -297,8 +325,15 @@ def ensure_scan_cooldown_elapsed(tenant) -> None:
 
 
 def mark_scan_cooldown(tenant) -> None:
+    # La durée posée doit être celle qui sera VÉRIFIÉE (surcharge client puis
+    # réglage de plateforme), pas la variable d'environnement : sinon régler
+    # 2 h dans la console laisserait quand même une empreinte de 24 h en
+    # cache, et le client resterait bloqué un jour entier malgré le réglage.
+    heures = scan_cooldown_hours(tenant)
+    if heures <= 0:
+        return
     key = SCAN_COOLDOWN_CACHE_KEY.format(tenant_id=tenant.id)
-    cache.set(key, True, timeout=settings.BREACHSENSE_SCAN_COOLDOWN_HOURS * 3600)
+    cache.set(key, True, timeout=heures * 3600)
 
 
 def create_scan_job(*, tenant, asset: Asset | None = None, triggered_by: str) -> BreachScanJob:
