@@ -3596,3 +3596,58 @@ dire »* se ressemblent beaucoup vu de l'écran, et pas du tout vu du code.
 4. **CRRH a déclaré `ratp.fr`** parmi ses actifs. L'ADR-010 pose qu'un actif
    n'est vérifié que s'il est déclaré — mais déclarer n'est pas posséder.
    Surveiller le domaine d'un tiers n'est pas anodin : à trancher.
+
+### Vérification après déploiement (04/09/2026, commit `a48a413`)
+
+Le correctif est déployé et vérifié **sur la production réelle**, pas en local.
+
+`verifier_breachsense --domaine crrhuemoa.org` — la commande ajoutée pour ça :
+
+```
+Mode CTI résolu : live
+Budget : 981 requêtes restantes ce mois.
+Pool : 2 actif(s) enregistré(s) — afinhab.org, crrhuemoa.org
+Recherche /creds : 2 résultat(s), 1 requête(s) consommée(s).
+Toutes les vérifications passent.
+```
+
+Puis un **scan réel** pour CRRH, par le vrai chemin (job + tâche Celery) :
+
+| | Avant | Après |
+|---|---|---|
+| Statut du job | `failed` (400) | **`done`** |
+| Fuites | 0 | **137** |
+| Requêtes consommées | — | 9 (une par endpoint) |
+
+Répartition : `combo` 102, `asm` 31, `sessions` 2, `creds` 2 — dont **2
+critiques**, 112 élevées, 23 attention. **106 portent un secret chiffré**,
+donc le pipeline de masquage et de chiffrement (ADR-014) a bien tourné sur le
+chemin réel. Une alerte de surveillance a été ouverte.
+
+Les 2 `creds` correspondent exactement au `{"cnt":2}` relevé lors de la sonde :
+ces fuites attendaient depuis le début, rien ne pouvait aller les chercher.
+
+**Et l'IA repart d'elle-même**, comme annoncé : synthèse d'exposition générée
+en 966 caractères, avec les identifiants correctement masqués
+(`wk••••@cr••••.org`). Elle n'avait jamais été en panne — elle n'avait pas de
+matière.
+
+### Un défaut découvert par la vérification elle-même
+
+Le rapprochement du pool, rendu possible par le correctif de `ast` (la liste
+renvoyait des références « None » auparavant) :
+
+```
+chez Breachsense : ['afinhab.org', 'crrhuemoa.org']
+dans la base     : {}
+ORPHELINS        : ['afinhab.org', 'crrhuemoa.org']
+```
+
+**La table `MonitoredAsset` est vide.** Deux emplacements sur quinze de la
+licence plateforme sont consommés par des domaines que l'application ne
+connaît pas : elle ne peut ni les rattacher à un client, ni les
+désenregistrer. Et `afinhab.org` n'est même pas un actif déclaré par CRRH.
+
+Conséquence commerciale, à trancher : CRRH n'a donc **pas** de surveillance
+continue au sens du produit, alors que son domaine est bien enregistré côté
+fournisseur. Les deux moitiés du mécanisme existent sans se connaître.
