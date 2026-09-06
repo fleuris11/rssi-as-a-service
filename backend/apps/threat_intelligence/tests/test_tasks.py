@@ -120,3 +120,107 @@ class TestRunBreachScanTask:
         # Not marked failed yet — a retry is still pending, per CLAUDE.md's
         # idempotent/retryable task guidance.
         assert job.status == BreachScanJob.Status.RUNNING
+
+
+class TestAnalyseLanceeParLExploitant:
+    """L'origine `platform_admin` traverse la tâche, `execute_scan`, puis
+    l'écriture de l'usage. Les tests de la console bouchonnent `.delay` et
+    s'arrêtent à l'envoi : personne ne parcourait la chaîne complète.
+
+    Ce que ces tests garantissent, précisément : l'analyse aboutit avec cette
+    origine, elle parcourt tous les actifs du client, et elle laisse une ligne
+    d'usage portant la bonne origine — une analyse de l'exploitant consomme la
+    licence, elle doit donc se compter comme les autres.
+
+    Ce qu'ils NE garantissent PAS, et il faut le dire : la base de test est
+    construite depuis les migrations, donc un `max_length` réduit dans le
+    modèle sans migration ne provoque ici aucune erreur. La correspondance
+    entre le modèle et la longueur réelle des valeurs est vérifiée au niveau
+    Python, dans `platform_admin/tests/test_analyse_depuis_la_console.py`
+    (`test_l_origine_tient_dans_sa_colonne`). Vérifié en réintroduisant le
+    défaut : ce fichier-ci reste vert, l'autre tombe.
+    """
+
+    def test_l_analyse_de_l_exploitant_va_jusqu_a_l_ecriture_de_l_usage(
+        self, tenant, website_asset, fake_provider
+    ):
+        from apps.threat_intelligence.models import BreachIntelligenceUsage
+
+        origine = BreachIntelligenceUsage.TriggeredBy.PLATFORM_ADMIN
+        job = services.create_scan_job(tenant=tenant, asset=None, triggered_by=origine)
+
+        with patch("apps.threat_intelligence.services.get_provider", return_value=fake_provider):
+            run_breach_scan_task(
+                tenant_id=str(tenant.id), asset_id=None, triggered_by=origine, job_id=job.id
+            )
+
+        job.refresh_from_db()
+        assert job.status == BreachScanJob.Status.DONE
+
+        usage = BreachIntelligenceUsage.all_objects.filter(tenant=tenant).order_by("-id").first()
+        assert usage is not None, "L'analyse de l'exploitant consomme la licence : elle se compte."
+        assert usage.triggered_by == origine
+
+    def test_l_analyse_de_l_exploitant_porte_sur_tous_les_actifs(
+        self, tenant, tenant_owner, website_asset, fake_provider
+    ):
+        """`asset_id=None` signifie « tous les actifs », pas « aucun ».
+
+        Ce test devait au départ démontrer qu'un `job.id` arrivé par erreur
+        dans `asset_id` ne trouvait aucun actif. Il a échoué — et pour une
+        raison qui vaut mieux que la démonstration prévue : les deux
+        identifiants sont de petits entiers issus de séquences distinctes,
+        et ils se rencontrent. Ici, `job.id` valait exactement l'identifiant
+        d'un actif existant.
+
+        Le décalage d'arguments n'aurait donc pas produit une erreur visible :
+        il aurait analysé **un autre actif que celui demandé**, en silence, et
+        facturé la requête au client. Un défaut qui se voit est un défaut
+        facile ; celui-là ne se voyait pas.
+
+        D'où le contrat tenu ici, formulé en positif : une analyse sans actif
+        précis les parcourt TOUS.
+        """
+        from apps.monitoring import services as monitoring_services
+        from apps.monitoring.models import Asset
+        from apps.threat_intelligence.models import BreachIntelligenceUsage
+
+        second = monitoring_services.create_asset(
+            tenant=tenant,
+            user=tenant_owner,
+            type=Asset.Type.EMAIL_DOMAIN,
+            value="second-actif.example",
+            ownership_confirmed=True,
+        )
+        attendus = services.scannable_assets(tenant)
+        assert len(attendus) >= 2, "Prérequis : les deux actifs doivent être analysables."
+
+        origine = BreachIntelligenceUsage.TriggeredBy.PLATFORM_ADMIN
+        job = services.create_scan_job(tenant=tenant, asset=None, triggered_by=origine)
+
+        vus = []
+        provider = fake_provider
+        original = provider.scan_domain
+
+        def tracer(domain):
+            vus.append(domain)
+            return original(domain)
+
+        provider.scan_domain = tracer
+
+        with patch("apps.threat_intelligence.services.get_provider", return_value=provider):
+            run_breach_scan_task(
+                tenant_id=str(tenant.id), asset_id=None, triggered_by=origine, job_id=job.id
+            )
+
+        job.refresh_from_db()
+        assert job.status == BreachScanJob.Status.DONE
+        # Comparaison sur le NOMBRE d'actifs atteints : le provider reçoit le
+        # nom d'hôte (« example.com »), pas la valeur brute de l'actif
+        # (« https://example.com »). Ce qui compte ici est qu'ils soient tous
+        # parcourus, pas la forme exacte de ce qui leur est transmis.
+        assert len(set(vus)) == len(attendus), (
+            f"L'analyse de l'exploitant doit parcourir les {len(attendus)} actifs du "
+            f"client ; {len(set(vus))} atteint(s) : {sorted(set(vus))}."
+        )
+        assert second.value in vus or second.value.removeprefix("https://") in vus
