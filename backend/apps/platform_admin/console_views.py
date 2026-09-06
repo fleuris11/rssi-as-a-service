@@ -631,8 +631,9 @@ class ClientActionView(ConsoleView):
 
         if action == "scan":
             from apps.threat_intelligence import services as ti_services
+            from apps.threat_intelligence.models import BreachIntelligenceUsage
             from apps.threat_intelligence.quota import QuotaExceededError, QuotaManager
-            from apps.threat_intelligence.tasks import run_breach_scan
+            from apps.threat_intelligence.tasks import run_breach_scan_task
 
             try:
                 entitlements.ensure_operational(tenant, action="Une analyse")
@@ -643,10 +644,23 @@ class ClientActionView(ConsoleView):
             except QuotaExceededError as exc:
                 return self.refused(exc, status.HTTP_409_CONFLICT)
 
+            # Ce chemin n'avait JAMAIS été exercé : il importait
+            # `run_breach_scan`, qui n'existe pas — la tâche s'appelle
+            # `run_breach_scan_task` — et l'analyse échouait donc en 500 sur un
+            # ImportError, avant même d'atteindre le worker. Le second défaut
+            # attendait juste derrière : les arguments étaient positionnels,
+            # donc `job.id` serait arrivé dans `asset_id`.
             job = ti_services.create_scan_job(
-                tenant=tenant, asset=None, triggered_by="platform_admin"
+                tenant=tenant,
+                asset=None,
+                triggered_by=BreachIntelligenceUsage.TriggeredBy.PLATFORM_ADMIN,
             )
-            run_breach_scan.delay(str(tenant.id), job.id)
+            run_breach_scan_task.delay(
+                tenant_id=str(tenant.id),
+                asset_id=None,
+                triggered_by=BreachIntelligenceUsage.TriggeredBy.PLATFORM_ADMIN,
+                job_id=job.id,
+            )
             self.audit(
                 request,
                 AdminAuditLog.Action.SCAN_TRIGGERED,
@@ -656,14 +670,33 @@ class ClientActionView(ConsoleView):
             return Response({"job_id": job.id}, status=status.HTTP_202_ACCEPTED)
 
         if action == "refresh_synthesis":
-            from apps.threat_intelligence.tasks import refresh_exposure_synthesis
+            # Exactement la même panne que l'action « scan », sur la ligne
+            # d'à côté : `refresh_exposure_synthesis` n'est pas une tâche
+            # Celery, c'est la fonction de service homonyme dans
+            # threat_intelligence.services. La tâche est
+            # `generate_exposure_synthesis_task`, elle vit dans ai_assistant
+            # (la synthèse est un cas d'usage IA, file `ai`), et elle prend un
+            # identifiant d'AIJob — pas un identifiant de tenant.
+            #
+            # Ce chemin non plus n'avait jamais été appelé. Il a été trouvé
+            # par le test générique qui exerce chaque action de la fiche, pas
+            # par une relecture : le défaut est invisible tant qu'on ne
+            # traverse pas la branche.
+            from apps.ai_assistant.models import AIJob
+            from apps.ai_assistant.tasks import generate_exposure_synthesis_task
 
             try:
                 entitlements.ensure_operational(tenant, action="La synthèse d'exposition")
             except entitlements.EntitlementError as exc:
                 return self.refused(exc, status.HTTP_402_PAYMENT_REQUIRED)
 
-            refresh_exposure_synthesis.delay(str(tenant.id))
+            job = AIJob.all_objects.create(
+                tenant=tenant,
+                use_case=AIJob.UseCase.EXPOSURE_SYNTHESIS,
+                status=AIJob.Status.PENDING,
+                created_by=request.user,
+            )
+            generate_exposure_synthesis_task.delay(job.id)
             self.audit(
                 request,
                 AdminAuditLog.Action.SCAN_TRIGGERED,
@@ -671,19 +704,12 @@ class ClientActionView(ConsoleView):
                 target=tenant.name,
                 detail="Régénération de la synthèse d'exposition.",
             )
-            return Response(status=status.HTTP_202_ACCEPTED)
+            return Response({"job_id": job.id}, status=status.HTTP_202_ACCEPTED)
 
         # purge_secrets
-        from apps.threat_intelligence.models import BreachFinding
+        from apps.threat_intelligence import services as ti_services
 
-        purged = 0
-        for finding in BreachFinding.all_objects.filter(
-            tenant=tenant, encrypted_secret__isnull=False, secret_purged_at__isnull=True
-        ):
-            finding.encrypted_secret = None
-            finding.secret_purged_at = timezone.now()
-            finding.save(update_fields=["encrypted_secret", "secret_purged_at"])
-            purged += 1
+        purged = ti_services.purge_tenant_secrets(tenant)
 
         self.audit(
             request,

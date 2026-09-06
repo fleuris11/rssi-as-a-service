@@ -163,11 +163,15 @@ class BreachIntelligenceUsage(TenantScopedModel):
     class TriggeredBy(models.TextChoices):
         INITIAL = "initial", "Scan initial (déclaration d'actif)"
         MANUAL = "manual", "Scan manuel"
+        # Déclenché par l'exploitant depuis la fiche client, pas par le client
+        # lui-même. La distinction compte pour l'attribution : c'est la même
+        # licence qui paie, mais pas la même personne qui décide.
+        PLATFORM_ADMIN = "platform_admin", "Analyse lancée par l'exploitant"
 
     endpoint = models.CharField(max_length=20, blank=True)
     requests_consumed = models.PositiveIntegerField(default=0)
     remaining_after = models.IntegerField(null=True, blank=True)
-    triggered_by = models.CharField(max_length=10, choices=TriggeredBy.choices)
+    triggered_by = models.CharField(max_length=20, choices=TriggeredBy.choices)
     findings_created = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -195,7 +199,7 @@ class BreachScanJob(TenantScopedModel):
     )
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     triggered_by = models.CharField(
-        max_length=10, choices=BreachIntelligenceUsage.TriggeredBy.choices
+        max_length=20, choices=BreachIntelligenceUsage.TriggeredBy.choices
     )
     result_ref = models.JSONField(default=dict, blank=True)
     error_message = models.TextField(blank=True)
