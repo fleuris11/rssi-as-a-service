@@ -4114,3 +4114,116 @@ consomme à lui seul une large part du budget de requêtes partagé.
 ### Vérifications
 
 1054 tests backend verts (3 échecs WeasyPrint environnementaux, constants).
+
+---
+
+## 6 septembre 2026 (suite) — Trois symptômes, quatre défauts jamais exercés
+
+Retour client après le déploiement de `878ab22`, en trois points : la page
+Exposition se fige, l'analyse ne dit jamais si elle est terminée, et le bouton
+d'analyse de la fiche client échoue toujours côté exploitant.
+
+### Le figeage : j'avais la bonne cause pour la mauvaise raison
+
+Mon hypothèse de départ était que la liste des compromissions était trop
+longue. Les journaux Caddy de production disent le contraire, chiffres à
+l'appui :
+
+    0,10 s      1 570 o   /api/v1/threat-intelligence/findings/?status=open
+    5,96 s    728 283 o   /api/v1/threat-intelligence/exposure-feed/
+
+La liste Compromissions est paginée à 20 et ne pèse rien. C'est le **flux
+d'exposition** qui écrase le navigateur. Mesuré sur le compte CRRH :
+
+    ratp.fr        : 28 450 fuites sérialisées + 28 450 composantes de score
+    crrhuemoa.org  :    137
+    afinhab.org    :     27
+
+Deux causes distinctes, donc deux corrections :
+
+1. **La liste** est plafonnée à 100 fuites par actif, déjà triées par gravité
+   puis fraîcheur. Le compte total reste exact et l'écran dit la troncature :
+   « 100 affichés, sur 28 450 au total ». Une liste tronquée sans mention de
+   la troncature ment par omission.
+2. **Les composantes du score.** L'amortissement vaut 0,6 par rang : au-delà
+   du 30e, chaque composante pèse 0 point. On transportait 28 420 lignes
+   disant « cette fuite n'a rien ajouté au score » — une justification qui ne
+   justifie rien.
+
+Règle tenue par les tests : **borner l'affichage ne doit jamais borner
+l'analyse.** Le score somme toujours toutes les fuites, et un premier jet du
+correctif recomposait les signaux de réutilisation à partir des seules fuites
+affichées — un mot de passe réutilisé au 4 000e rang aurait disparu. Corrigé
+avant commit, et tenu par un test dédié.
+
+### L'analyse qui « s'arrête » quand on change d'écran
+
+Elle ne s'arrête pas : elle tourne dans un worker Celery. C'est l'écran qui
+l'oubliait — `scanning` ne vivait que dans le composant React, détruit au
+démontage. Le client revenait, ne voyait plus rien, relançait, et se heurtait
+au délai anti-abus qui lui refusait l'analyse qu'il croyait avoir perdue.
+
+Le statut expose désormais `running_scan_id` et `last_scan_finished_at` : la
+page retrouve une analyse en cours à chaque chargement, et affiche « L'analyse
+se poursuit sur nos serveurs, même si vous quittez cette page ». Sans le
+second champ, une page sans analyse en cours serait indiscernable d'une page
+où rien n'a jamais été lancé.
+
+Défaut trouvé au passage : l'écran affichait « Une nouvelle sera possible
+d'ici  h » — `cooldown_hours` n'existe plus depuis le passage du délai en
+minutes.
+
+### Le vrai enseignement : quatre défauts sur des chemins jamais appelés
+
+Le bouton d'analyse de la fiche client importait `run_breach_scan`, qui
+n'existe pas — la tâche s'appelle `run_breach_scan_task`. **Il n'avait donc
+jamais fonctionné une seule fois depuis son écriture.** L'import était à
+l'intérieur de la branche `if action == "scan"` : Python ne lit jamais cette
+ligne tant que personne n'appelle l'action. Ni ruff, ni un import du module,
+ni un test des autres actions ne pouvaient le voir.
+
+J'ai écrit un test générique qui appelle **chaque** action de la fiche client
+et exige seulement qu'aucune ne réponde 500. Il a immédiatement trouvé deux
+autres pannes du même genre, sur les lignes d'à côté :
+
+- `refresh_synthesis` importait `refresh_exposure_synthesis` depuis
+  `threat_intelligence.tasks` — c'est une fonction de *services*, pas une
+  tâche ; la vraie tâche vit dans `ai_assistant` et prend un identifiant
+  d'`AIJob`, pas de tenant ;
+- `purge_secrets` filtrait sur `encrypted_secret` (le champ s'appelle
+  `secret_encrypted`), écrivait `None` dans un `BinaryField` non nullable, et
+  **ne remettait pas `has_secret` à faux** — l'interface aurait continué
+  d'annoncer « mot de passe récupérable » sur des fuites dont le secret venait
+  d'être détruit. Des trois, le seul qui mentait en silence. La logique est
+  repartie dans `services.purge_tenant_secrets`, à côté de la purge par
+  rétention dont elle partage les règles.
+
+Plus les deux défauts qui attendaient derrière l'`ImportError` initial :
+arguments positionnels (`job.id` serait arrivé dans `asset_id`) et origine
+`platform_admin` (14 caractères) dans une colonne de 10.
+
+**Une branche jamais appelée par un test n'est pas du code testé, c'est du
+code supposé.** Trois actions, quatre défauts, zéro détecté en quatre mois.
+
+### Vérifications
+
+1083 tests backend verts (3 échecs WeasyPrint environnementaux, constants sous
+Windows, verts en CI Linux), 145 tests frontend verts, ruff et eslint propres.
+
+Chaque garde vérifiée en réintroduisant son défaut : sans le plafond, la
+sérialisation repart à 300 ; sans le filtre, les composantes à 0 point
+reviennent ; sans la reprise, l'écran oublie l'analyse en cours ; avec le
+mauvais nom d'import, six tests tombent d'un coup.
+
+Un de mes tests était vide de sens et je ne l'ai vu qu'en réintroduisant le
+défaut : le fixture omettait `findings_hidden`, donc `undefined > 0` était
+faux quelle que soit la condition écrite dans la page. Le test passait avec la
+correction **et** sans elle. Corrigé — c'est précisément ce que la
+réintroduction sert à attraper.
+
+### Reste à faire
+
+- `ratp.fr` déclaré par CRRH — point ouvert depuis le 03/09, coût désormais
+  mesuré (28 450 fuites, saturation du plafond de pagination).
+- Le webhook Breachsense n'a toujours jamais reçu de notification réelle.
+- Aucun appel humain à CRRH.
