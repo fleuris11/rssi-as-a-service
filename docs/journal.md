@@ -4046,3 +4046,71 @@ explicite dans `minutesVersSaisie` (`0 % 60 === 0` aurait affiché « 0 heures �
 
 Vérifications : 1042 tests backend, 139 Vitest, dont 8 sur les conversions
 aller-retour. Cycle complet éprouvé sur une vraie fiche.
+
+---
+
+## 2026-09-06 — Une donnée du fournisseur fait tomber toute l'analyse
+
+Signalé par l'exploitant : l'analyse lancée depuis l'espace client de CRRH
+échoue, et celle lancée depuis la fiche d'administration aussi.
+
+### La cause
+
+```
+DataError: value too long for type character varying(60)
+```
+
+`finding_type` est repris **tel quel** de la charge Breachsense — un nom de
+logiciel malveillant, une catégorie, un type de contenu. Rien n'en garantit la
+longueur, et la colonne en accepte 60.
+
+C'est **la même famille de défaut que le 3 septembre** : une donnée étrangère
+qu'on laisse traverser sans la borner finit par heurter une contrainte, et elle
+le fait au pire moment — en production, sur le seul vrai client.
+
+### Trois défauts, pas un
+
+Le journal du worker montre que la perte va bien au-delà de l'échec :
+
+1. **Valeur non bornée.** Corrigée à la *frontière* (le normalizer), unique
+   endroit où une donnée étrangère entre. On tronque plutôt qu'on ne rejette :
+   refuser l'information qui compte pour protéger celle qui ne compte pas
+   serait un mauvais échange.
+2. **Aucune isolation.** L'échec d'un actif a détruit les résultats des **deux
+   autres**, déjà récupérés. Un lot qui perd tout à cause d'un élément est un
+   lot mal conçu.
+3. **Usage non compté.** `record_usage` n'était jamais atteint : une
+   quarantaine de requêtes réellement consommées, jamais décomptées. La garde
+   de capacité croyait disposer de plus de budget qu'en réalité. **Un scan raté
+   coûte exactement aussi cher qu'un scan réussi.**
+
+Le troisième est le plus sournois : il ne se manifeste par aucun symptôme
+visible, il fausse simplement un compteur dont dépend une décision commerciale.
+
+### La garde qui manquait
+
+Les bornes du normalizer sont des constantes — la couche fournisseur ne peut
+pas lire les modèles Django (ADR-013). Un test les compare aux `max_length`
+réels : **une constante recopiée diverge un jour**, et la divergence ne se voit
+qu'en production.
+
+Douze tests, dont un qui va **jusqu'à l'écriture en base**. Les autres
+s'arrêtent au normalizer et n'auraient rien vu — c'est PostgreSQL qui a refusé,
+pas le code Python. Vérifiés en retirant chaque correction : sans le bornage,
+le test rejoue exactement `value too long for type character varying(60)` ;
+sans l'isolation, l'exception d'un actif remonte et emporte le lot.
+
+### `ratp.fr`, à trancher
+
+L'exploitant s'étonne que l'analyse remonte des éléments concernant `ratp.fr`.
+Ce n'est pas un défaut : **ce domaine est déclaré comme actif par CRRH**, et une
+analyse sans actif précis les parcourt tous.
+
+Mais le point soulevé le 03/09 reste entier — *déclarer n'est pas posséder*. Et
+il a maintenant un coût mesurable : les journaux montrent que `ratp.fr` sature
+le plafond de pagination sur trois points d'entrée (20 pages chacun), donc il
+consomme à lui seul une large part du budget de requêtes partagé.
+
+### Vérifications
+
+1054 tests backend verts (3 échecs WeasyPrint environnementaux, constants).
