@@ -176,11 +176,33 @@ function ScanStatusBar({ status, onScan, scanning }) {
             <span className="text-ink-500"> sur {status.scans_quota} comprises dans votre offre</span>
           ) : null}
         </p>
-        {status.cooldown_active && (
+        {/* `cooldown_hours` n'existe plus : le délai est réglable en minutes
+            depuis la fiche client, et le serveur envoie une phrase déjà
+            formée (« 30 minutes », « 1 h 30 »). L'ancien champ affichait
+            « d’ici  h ». */}
+        {status.cooldown_active && !scanning && (
           <p className="mt-1 text-xs text-warning-strong">
             Une analyse a déjà été lancée récemment pour votre entreprise. Une nouvelle sera
-            possible d’ici {status.cooldown_hours} h — les fuites détectées entre-temps vous
+            possible d’ici {status.cooldown_label} — les fuites détectées entre-temps vous
             parviennent sans attendre.
+          </p>
+        )}
+        {/* Ce que le client demandait sans l'obtenir : est-ce que ça tourne
+            encore, et est-ce que ça s'arrête si je vais ailleurs. */}
+        {scanning && (
+          <p className="mt-1 text-xs text-ink-500">
+            L’analyse se poursuit sur nos serveurs, même si vous quittez cette page ou fermez
+            votre navigateur. Revenez quand vous voulez : le résultat vous attendra ici.
+          </p>
+        )}
+        {!scanning && status.last_scan_finished_at && (
+          <p className="mt-1 text-xs text-ink-500">
+            Dernière analyse terminée le{' '}
+            {new Date(status.last_scan_finished_at).toLocaleString('fr-FR', {
+              dateStyle: 'long',
+              timeStyle: 'short',
+            })}
+            .
           </p>
         )}
       </div>
@@ -408,26 +430,48 @@ export default function CompromisesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
 
+  // Un seul endroit décide de ce qui se dit quand une analyse se termine —
+  // qu'elle ait été lancée dans cet onglet ou retrouvée en cours au
+  // chargement de la page.
+  const onScanSettled = useCallback(
+    async (job) => {
+      setScanning(false)
+      if (job.status === 'done') {
+        const created = job.result_ref?.findings_created ?? 0
+        showToast({
+          type: 'success',
+          message:
+            created > 0
+              ? `Analyse terminée : ${created} nouvelle${created > 1 ? 's' : ''} compromission${created > 1 ? 's' : ''} détectée${created > 1 ? 's' : ''}.`
+              : 'Analyse terminée : aucune nouvelle compromission détectée.',
+        })
+        await loadAll()
+      } else {
+        showToast({ type: 'error', message: 'L’analyse a échoué. Réessayez plus tard.' })
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  )
+
+  // Reprise d'une analyse déjà en cours. Le job tourne dans un worker : il
+  // survit au changement de page, au rechargement et à la fermeture du
+  // navigateur. Seul l'écran l'oubliait, parce que `scanning` ne vivait que
+  // dans ce composant — le client revenait, ne voyait plus rien, relançait,
+  // et se heurtait au délai anti-abus.
+  useEffect(() => {
+    if (status?.running_scan_id && !scanning) {
+      setScanning(true)
+      poll(status.running_scan_id, onScanSettled)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.running_scan_id])
+
   async function handleScan() {
     setScanning(true)
     try {
       const response = await threatIntelligenceApi.triggerScan()
-      poll(response.data.id, async (job) => {
-        setScanning(false)
-        if (job.status === 'done') {
-          const created = job.result_ref?.findings_created ?? 0
-          showToast({
-            type: 'success',
-            message:
-              created > 0
-                ? `Scan terminé : ${created} nouvelle${created > 1 ? 's' : ''} compromission${created > 1 ? 's' : ''} détectée${created > 1 ? 's' : ''}.`
-                : 'Scan terminé : aucune nouvelle compromission détectée.',
-          })
-          await loadAll()
-        } else {
-          showToast({ type: 'error', message: 'Le scan a échoué. Réessayez plus tard.' })
-        }
-      })
+      poll(response.data.id, onScanSettled)
     } catch (err) {
       setScanning(false)
       showToast({

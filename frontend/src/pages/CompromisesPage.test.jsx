@@ -50,7 +50,7 @@ const fuite = (id, severity, asset) => ({
   breach_date: '2026-07-03',
 })
 
-function servir(findings) {
+function servir(findings, statut = {}) {
   threatIntelligenceApi.listFindings.mockResolvedValue({ data: { results: findings } })
   // Statut CLOISONNÉ : ce que l'offre du client comprend, jamais les
   // chiffres de la plateforme (voir le test « ne montre jamais… » plus bas).
@@ -63,7 +63,14 @@ function servir(findings) {
       monitored_used: 0,
       monitored_remaining: 1,
       cooldown_active: false,
-      cooldown_hours: 24,
+      // Le serveur envoie une phrase déjà formée. `cooldown_hours` n'existe
+      // plus depuis que le délai se règle en minutes : l'écran affichait
+      // « d’ici  h ».
+      cooldown_minutes: 1440,
+      cooldown_label: '24 h',
+      running_scan_id: null,
+      last_scan_finished_at: null,
+      ...statut,
     },
   })
   monitoringApi.listAssets.mockResolvedValue({ data: { results: [] } })
@@ -138,5 +145,50 @@ describe('CompromisesPage', () => {
     expect(screen.getByText(/Analyses restantes ce mois/)).toBeInTheDocument()
     expect(screen.getByText('17')).toBeInTheDocument()
     expect(screen.getByText(/sur 20 comprises dans votre offre/)).toBeInTheDocument()
+  })
+
+  // Remonté par le client : « quand l'analyse est lancée ça ne me dit pas si
+  // c'est terminé ou pas, et si je change d'écran je ne sais pas si l'analyse
+  // s'arrête ». Elle ne s'arrête pas — elle tourne dans un worker. C'est
+  // l'écran qui l'oubliait, parce que l'état ne vivait que dans le composant.
+  describe('suivi de l’analyse', () => {
+    it('retrouve une analyse déjà en cours au chargement de la page', async () => {
+      // Le scénario exact : le client lance une analyse, va sur une autre
+      // page, revient. Le composant est neuf, mais le job tourne toujours.
+      servir([], { running_scan_id: 42 })
+      threatIntelligenceApi.getScanJob.mockResolvedValue({ data: { id: 42, status: 'running' } })
+      render(<CompromisesPage />)
+
+      expect(await screen.findByRole('button', { name: /Analyse en cours/ })).toBeInTheDocument()
+      expect(threatIntelligenceApi.getScanJob).toHaveBeenCalledWith(42)
+    })
+
+    it('dit que l’analyse continue si on quitte la page', async () => {
+      servir([], { running_scan_id: 42 })
+      threatIntelligenceApi.getScanJob.mockResolvedValue({ data: { id: 42, status: 'running' } })
+      render(<CompromisesPage />)
+
+      await screen.findByRole('button', { name: /Analyse en cours/ })
+      expect(screen.getByText(/se poursuit sur nos serveurs/)).toBeInTheDocument()
+    })
+
+    it('indique quand la dernière analyse s’est terminée', async () => {
+      // Sans cette phrase, une page sans analyse en cours est indiscernable
+      // d'une page où rien n'a jamais été lancé.
+      servir([], { last_scan_finished_at: '2026-09-06T16:08:57Z' })
+      render(<CompromisesPage />)
+
+      expect(await screen.findByText(/Dernière analyse terminée le/)).toBeInTheDocument()
+    })
+
+    it('n’affiche pas le délai anti-abus avec une unité perdue', async () => {
+      // `cooldown_hours` n'existe plus côté serveur : la phrase se composait
+      // en « Une nouvelle sera possible d’ici  h ».
+      servir([], { cooldown_active: true, cooldown_minutes: 90, cooldown_label: '1 h 30' })
+      render(<CompromisesPage />)
+
+      expect(await screen.findByText(/possible d’ici 1 h 30/)).toBeInTheDocument()
+      expect(document.body.textContent).not.toMatch(/d’ici\s+h/)
+    })
   })
 })
