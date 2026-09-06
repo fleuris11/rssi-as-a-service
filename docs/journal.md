@@ -4221,9 +4221,41 @@ faux quelle que soit la condition écrite dans la page. Le test passait avec la
 correction **et** sans elle. Corrigé — c'est précisément ce que la
 réintroduction sert à attraper.
 
+### Ce que le correctif règle, et ce qu'il ne règle pas
+
+Mesuré en local sur un volume identique à celui de CRRH (28 450 fuites sur un
+actif) :
+
+    fuites sérialisées   : 100      (au lieu de 28 450)
+    composantes de score : 8        (au lieu de 28 450)
+    findings_count       : 28 450   (inchangé — le compte reste exact)
+    poids de la réponse  : 85 Ko    (au lieu de 728 Ko compressés)
+
+Le figeage du navigateur est réglé. **La lenteur serveur ne l'est pas.** Profilé
+par étape :
+
+    lecture en base       : 3,79 s
+    corrélation           : 0,05 s
+    calcul du score       : 0,32 s
+    sérialisation (100)   : 0,08 s
+
+Le coût est presque entièrement dans la matérialisation de 28 450 instances
+Django. J'ai supposé que les colonnes larges (`raw_data`, `secret_encrypted`)
+en étaient la cause et mesuré un `defer()` sur les deux : **aucun gain**
+(4,94 s → 4,98 s → 5,22 s). L'hypothèse était fausse et la mesure l'a dit
+avant le commit — le changement n'a donc pas été livré.
+
+Réduire ce temps demanderait de calculer le score en SQL plutôt que sur des
+objets Python. C'est un remaniement du calcul central du produit, à faire avec
+son propre ADR et ses propres garanties de non-régression : pas dans un
+correctif de panne.
+
 ### Reste à faire
 
+- **Temps de réponse du flux d'exposition** : ~4 s pour un actif à 28 450
+  fuites, dominé par la lecture en base. Chiffré ci-dessus, non corrigé.
 - `ratp.fr` déclaré par CRRH — point ouvert depuis le 03/09, coût désormais
-  mesuré (28 450 fuites, saturation du plafond de pagination).
+  mesuré (28 450 fuites, saturation du plafond de pagination). C'est aussi lui
+  qui rend le point précédent visible : aucun autre actif n'approche ce volume.
 - Le webhook Breachsense n'a toujours jamais reçu de notification réelle.
 - Aucun appel humain à CRRH.
