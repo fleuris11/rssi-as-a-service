@@ -274,6 +274,42 @@ def _extract_breach_date(endpoint: str, payload: dict) -> date | None:
         return None
 
 
+# Longueurs maximales des champs texte alimentés par la charge du
+# FOURNISSEUR. Elles doivent correspondre exactement aux `max_length` de
+# ``BreachFinding`` — un test le vérifie
+# (``tests/test_normalizer_bornes.py``), parce que ce module reste
+# volontairement ignorant des modèles Django (ADR-013) et ne peut donc pas
+# les lire.
+#
+# Pourquoi ces bornes existent : `finding_type` vient tel quel du
+# fournisseur — un nom de logiciel malveillant, une catégorie, un type de
+# contenu. Rien ne garantit sa longueur. Le 06/09/2026, une valeur de plus de
+# 60 caractères a fait échouer l'analyse complète d'un client réel :
+# `DataError: value too long for type character varying(60)`, après avoir
+# consommé une quarantaine de requêtes de la licence.
+#
+# Tronquer ici plutôt qu'au modèle est délibéré : c'est la frontière, l'unique
+# endroit où une donnée étrangère entre dans le produit. Une donnée qu'on
+# laisse traverser non bornée finit toujours par heurter une contrainte, et
+# elle le fait au pire moment — en production, sur un vrai client.
+MAX_FINDING_TYPE = 60
+MAX_IDENTIFIER = 255
+MAX_SECRET_MASKED = 32
+
+
+def _borner(valeur: str, maximum: int) -> str:
+    """Tronque une valeur venue du fournisseur à ce que la base accepte.
+
+    Silencieusement : un `finding_type` coupé reste parfaitement lisible
+    (« RedLine Stealer variant… »), et refuser la fuite entière parce que le
+    nom de son malware est long serait perdre l'information qui compte pour
+    protéger celle qui ne compte pas.
+    """
+    if not valeur:
+        return valeur
+    return valeur[:maximum]
+
+
 def _extract_finding_type(endpoint: str, payload: dict) -> str:
     schema = ENDPOINT_SCHEMAS.get(endpoint)
     fields = (schema.type_field,) if schema and schema.type_field else ()
@@ -331,11 +367,12 @@ def normalize_finding(endpoint: str, raw: dict, *, tenant_emails: set[str] | Non
 
     return {
         "source_endpoint": endpoint if endpoint in SEVERITY_BY_ENDPOINT else "webhook",
-        "finding_type": finding_type,
+        # Bornés ici, à la frontière : au-delà, plus rien ne les contrôle.
+        "finding_type": _borner(finding_type, MAX_FINDING_TYPE),
         "severity": severity,
-        "identifier_plain": identifier_plain,
-        "identifier_masked": identifier_masked,
-        "secret_masked": secret_masked,
+        "identifier_plain": _borner(identifier_plain, MAX_IDENTIFIER),
+        "identifier_masked": _borner(identifier_masked, MAX_IDENTIFIER),
+        "secret_masked": _borner(secret_masked, MAX_SECRET_MASKED),
         "has_secret": secret_seen,
         "secret_plain": secret_plain,
         "breach_date": breach_date,

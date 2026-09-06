@@ -417,30 +417,66 @@ def execute_scan(*, tenant, assets: list[Asset], triggered_by: str) -> dict:
 
     total_created = 0
     total_requests = 0
+    assets_en_echec: list[str] = []
+
+    # Chaque actif est isolé. Un client peut en déclarer plusieurs, et le
+    # 06/09/2026 un seul d'entre eux a fait échouer l'analyse ENTIÈRE d'un
+    # client réel — les fuites des autres actifs, déjà récupérées, ont été
+    # perdues avec, après une quarantaine de requêtes consommées.
+    #
+    # Un lot qui perd tout à cause d'un élément est un lot mal conçu :
+    # ce qui a été trouvé pour les autres actifs est valable, et le doit
+    # rester. L'échec est signalé (journal, et statut du job si TOUT échoue),
+    # jamais silencieux.
     for asset in assets:
         domain = derive_scan_domain(asset)
-        scan_result = provider.scan_domain(domain)
-        total_requests += scan_result.requests_consumed
-        created = ingest_raw_findings(
-            tenant=tenant,
-            asset=asset,
-            raw_findings=scan_result.findings,
-            tenant_emails=tenant_emails,
-        )
-        total_created += len(created)
+        try:
+            scan_result = provider.scan_domain(domain)
+            total_requests += scan_result.requests_consumed
+            created = ingest_raw_findings(
+                tenant=tenant,
+                asset=asset,
+                raw_findings=scan_result.findings,
+                tenant_emails=tenant_emails,
+            )
+            total_created += len(created)
+        except Exception:  # noqa: BLE001 - un actif ne fait pas tomber les autres
+            assets_en_echec.append(asset.value)
+            logger.exception(
+                "Analyse en échec pour l'actif %s (tenant %s) — les autres actifs "
+                "de ce lot continuent.",
+                asset.value,
+                tenant.id,
+            )
 
-    manager.record_usage(
-        tenant=tenant,
-        endpoint="scan",
-        requests_consumed=total_requests,
-        remaining_after=manager.get_remaining(),
-        triggered_by=triggered_by,
-        findings_created=total_created,
-    )
+    # Enregistré MÊME en cas d'échec partiel : les requêtes ont réellement été
+    # consommées sur la licence. Ne pas les compter fausserait le budget de la
+    # plateforme, et la garde de capacité avec lui — un scan qui échoue coûte
+    # exactement aussi cher qu'un scan qui réussit.
+    if total_requests:
+        manager.record_usage(
+            tenant=tenant,
+            endpoint="scan",
+            requests_consumed=total_requests,
+            remaining_after=manager.get_remaining(),
+            triggered_by=triggered_by,
+            findings_created=total_created,
+        )
     if triggered_by == TriggeredBy.MANUAL:
         mark_scan_cooldown(tenant)
 
-    return {"findings_created": total_created, "requests_consumed": total_requests}
+    # Tous les actifs en échec : il n'y a rien à montrer au client, l'analyse
+    # est un échec et doit se présenter comme tel. Un échec partiel, lui, a
+    # produit des résultats exploitables — il est rapporté, pas transformé
+    # en échec global.
+    if assets_en_echec and total_created == 0 and len(assets_en_echec) == len(assets):
+        raise ThreatIntelligenceError(f"Analyse impossible pour {', '.join(assets_en_echec)}.")
+
+    return {
+        "findings_created": total_created,
+        "requests_consumed": total_requests,
+        "assets_en_echec": assets_en_echec,
+    }
 
 
 def scannable_assets(tenant, *, asset: Asset | None = None) -> list[Asset]:
