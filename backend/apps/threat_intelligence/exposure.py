@@ -166,6 +166,16 @@ def compute_exposure_score(findings: list[BreachFinding], *, now=None) -> Exposu
             detail_parts.append("mot de passe récupérable")
         if rank > 0:
             detail_parts.append(f"{rank + 1}e fuite sur cet actif, pondérée à la baisse")
+        # Une composante à 0 point n'explique rien : elle dit « cette fuite
+        # n'a pas bougé le score ». Avec un amortissement de 0,6 par rang,
+        # tout ce qui suit le 30e environ retombe à zéro — sur un actif réel
+        # de production, cela faisait 28 420 lignes de « 4 231e fuite,
+        # pondérée à la baisse — 0 point », transportées jusqu'au navigateur
+        # et rendues à l'écran. Le total, lui, continue de sommer TOUTES les
+        # fuites juste au-dessus : le score reste exact au point près, seule
+        # sa justification s'arrête là où elle cesse d'être une justification.
+        if points <= 0:
+            continue
         components.append(
             ScoreComponent(
                 finding_id=finding.id,

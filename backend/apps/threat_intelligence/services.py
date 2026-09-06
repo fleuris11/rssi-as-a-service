@@ -383,6 +383,44 @@ def get_scan_job(*, tenant, job_id):
     return BreachScanJob.all_objects.filter(tenant=tenant, id=job_id).first()
 
 
+def get_running_scan_job(tenant) -> BreachScanJob | None:
+    """L'analyse en cours de ce tenant, s'il y en a une.
+
+    Une analyse s'exécute dans un worker Celery : elle ne dépend en rien de
+    l'onglet qui l'a lancée. Mais l'écran ne le savait que par une variable
+    de composant React, détruite au premier changement de page — le client
+    revenait sur « Compromissions » et ne voyait plus rien, sans pouvoir
+    savoir si son analyse tournait encore, avait fini, ou n'était jamais
+    partie. Il relançait alors, et tombait sur le délai anti-abus.
+
+    Rendre le job interrogeable depuis l'état du tenant répond aux trois
+    questions d'un coup : est-ce que ça tourne, est-ce que c'est fini, et
+    est-ce que ça continue si je vais ailleurs (oui — et l'écran peut enfin
+    le dire).
+    """
+    return (
+        BreachScanJob.all_objects.filter(
+            tenant=tenant,
+            status__in=[BreachScanJob.Status.PENDING, BreachScanJob.Status.RUNNING],
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+
+def get_last_finished_scan_job(tenant) -> BreachScanJob | None:
+    """La dernière analyse terminée. « Est-ce que c'est fini ? » a deux
+    réponses : « non, ça tourne » et « oui, le tel jour à telle heure ». Sans
+    la seconde, une page sans analyse en cours est indiscernable d'une page
+    où rien n'a jamais été lancé."""
+    return (
+        BreachScanJob.all_objects.filter(tenant=tenant, status=BreachScanJob.Status.DONE)
+        .exclude(finished_at=None)
+        .order_by("-finished_at")
+        .first()
+    )
+
+
 def mark_job_running(job: BreachScanJob) -> BreachScanJob:
     job.status = BreachScanJob.Status.RUNNING
     job.save(update_fields=["status"])
@@ -876,6 +914,12 @@ def serialize_finding_for_feed(finding: BreachFinding, reuse_signals: list | Non
     }
 
 
+# Nombre de fuites détaillées par actif dans le flux d'exposition. Au-delà,
+# seul le compte est transmis. Ce plafond protège le navigateur du client, pas
+# le serveur : c'est lui qui a lâché en premier.
+MAX_FINDINGS_PAR_ACTIF = 100
+
+
 def build_exposure_feed(tenant) -> dict:
     """Fuites ouvertes groupées par actif, chaque groupe portant son score
     d'exposition et ses composantes, groupes triés par score décroissant.
@@ -923,9 +967,19 @@ def build_exposure_feed(tenant) -> dict:
         asset = asset_findings[0].asset
         score = exposure.compute_exposure_score(asset_findings)
         asset_findings.sort(key=exposure.freshness_sort_key)
-        serialized = [
-            serialize_finding_for_feed(f, reuse_by_finding.get(f.id)) for f in asset_findings
-        ]
+        # Le SCORE se calcule sur tout, la LISTE est bornée.
+        #
+        # Le 06/09/2026, un actif d'un client réel portait 28 450 fuites : la
+        # réponse les sérialisait toutes, le navigateur tentait d'en rendre
+        # autant de lignes, et l'onglet se figeait sur « Page ne répondant
+        # pas ». La page devenait inutilisable — pas lente, inutilisable.
+        #
+        # Une liste de 28 450 lignes n'apprend rien de plus que ses cent
+        # premières : elles sont déjà triées du plus grave et du plus récent
+        # au reste. Le compte total, lui, est conservé et affiché — c'est lui
+        # qui porte l'information « il y en a beaucoup ».
+        visibles = asset_findings[:MAX_FINDINGS_PAR_ACTIF]
+        serialized = [serialize_finding_for_feed(f, reuse_by_finding.get(f.id)) for f in visibles]
         groups.append(
             {
                 "asset_id": asset.id,
@@ -933,9 +987,23 @@ def build_exposure_feed(tenant) -> dict:
                 "asset_type_label": asset.get_type_display(),
                 **score.as_dict(),
                 "findings": serialized,
+                # Ce que la carte doit pouvoir dire : « 100 affichées sur
+                # 28 450 ». Sans ces deux nombres, une liste tronquée ment
+                # par omission.
+                "findings_shown": len(serialized),
+                "findings_hidden": max(0, len(asset_findings) - len(serialized)),
                 # Section dédiée de la carte de l'actif : la synthèse des
                 # réutilisations possibles qui le concernent.
-                "reuse_signals": [signal for f in serialized for signal in f["reuse_signals"]],
+                #
+                # Parcourt TOUTES les fuites de l'actif, pas seulement les
+                # cent affichées. Une réutilisation de mot de passe est
+                # précisément le signal rare et grave qu'on ne peut pas se
+                # permettre de perdre parce qu'il se trouvait au 4 000e rang
+                # d'une liste tronquée : borner l'affichage ne doit jamais
+                # borner l'analyse.
+                "reuse_signals": [
+                    signal for f in asset_findings for signal in reuse_by_finding.get(f.id, [])
+                ],
             }
         )
 
@@ -1039,6 +1107,34 @@ def purge_expired_secrets(*, now=None) -> SecretPurgeRun:
         retention_days,
     )
     return run
+
+
+def purge_tenant_secrets(tenant, *, now=None) -> int:
+    """Efface immédiatement TOUS les secrets encore détenus pour un client,
+    sans attendre l'expiration de la rétention. Geste d'exploitant : un client
+    le demande, ou un incident l'impose.
+
+    Écrit en services et non dans la vue de la console — c'est la même
+    opération que ``purge_expired_secrets`` à la fenêtre près, et elle doit
+    obéir aux mêmes règles. La version qui vivait dans la vue en violait
+    trois d'un coup :
+
+    - elle filtrait sur ``encrypted_secret``, champ inexistant (il s'appelle
+      ``secret_encrypted``) — l'action tombait en erreur serveur ;
+    - elle affectait ``None`` à un ``BinaryField`` qui vaut ``b""`` par
+      défaut et n'est pas nullable ;
+    - elle ne remettait pas ``has_secret`` à faux, donc l'interface aurait
+      continué d'annoncer « mot de passe récupérable » sur des fuites dont le
+      secret venait d'être détruit. Le plus grave des trois : les deux
+      premiers échouent bruyamment, celui-ci ment en silence.
+
+    Idempotente : le filtre porte sur ``has_secret=True``, donc un second
+    appel ne trouve rien et ne réécrit aucune date de purge.
+    """
+    now = now or timezone.now()
+    return BreachFinding.all_objects.filter(tenant=tenant, has_secret=True).update(
+        secret_encrypted=b"", has_secret=False, secret_purged_at=now
+    )
 
 
 def list_purge_runs(limit: int = 50):

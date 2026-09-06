@@ -481,6 +481,13 @@ class ThreatIntelligenceStatusView(APIView):
                 # depuis un nombre de minutes produirait « 90 minutes ».
                 "cooldown_label": services.format_cooldown(services.scan_cooldown_minutes(tenant)),
                 "critical_open_findings": services.count_critical_open_findings(tenant),
+                # Permet à l'écran de retrouver une analyse déjà lancée après
+                # un changement de page ou un rechargement — le job tourne
+                # côté worker, pas dans l'onglet.
+                "running_scan_id": getattr(services.get_running_scan_job(tenant), "id", None),
+                "last_scan_finished_at": getattr(
+                    services.get_last_finished_scan_job(tenant), "finished_at", None
+                ),
             }
         )
 

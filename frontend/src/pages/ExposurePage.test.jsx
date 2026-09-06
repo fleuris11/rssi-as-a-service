@@ -84,6 +84,13 @@ function feed(findings, overrides = {}) {
           level: 'preoccupant',
           level_label: 'Préoccupant',
           findings_count: findings.length,
+          // Le serveur envoie TOUJOURS ces deux champs, y compris à zéro.
+          // Les omettre du fixture rendait vide le test « ne dit rien quand
+          // tout est affiché » : `undefined > 0` est faux quelle que soit la
+          // condition écrite dans la page, donc le test passait même avec le
+          // bandeau affiché en permanence.
+          findings_shown: findings.length,
+          findings_hidden: 0,
           components: [
             {
               finding_id: 11,
@@ -242,6 +249,51 @@ describe('ExposurePage', () => {
 
       expect(await screen.findByRole('heading', { name: 'Analyse' })).toBeInTheDocument()
       expect(screen.getByText(/Antérieure à vos dernières actions/)).toBeInTheDocument()
+    })
+  })
+
+  // Le serveur ne transmet plus que les cent fuites les plus graves par actif
+  // (panne du 06/09/2026 : 28 450 fuites sérialisées figeaient l'onglet du
+  // client). Une liste tronquée sans mention de la troncature ment par
+  // omission — le dirigeant croirait avoir tout vu.
+  describe('liste tronquée', () => {
+    it('dit combien de fuites sont affichées et combien restent', async () => {
+      threatIntelligenceApi.exposureFeed.mockResolvedValue(
+        feed([CORRELATED_FINDING], {
+          assets: [
+            {
+              asset_id: 1,
+              asset_value: 'exemple.fr',
+              asset_type_label: 'Domaine email',
+              score: 96,
+              level: 'critique',
+              level_label: 'Critique',
+              findings_count: 28450,
+              findings_shown: 100,
+              findings_hidden: 28350,
+              components: [],
+              findings: [CORRELATED_FINDING],
+              reuse_signals: [],
+            },
+          ],
+        })
+      )
+      render(<ExposurePage />)
+
+      await screen.findByText('96')
+      expect(screen.getByText(/28450 au total pour cet actif/)).toBeInTheDocument()
+      expect(screen.getByText(/28350 autres sont plus anciens ou moins graves/)).toBeInTheDocument()
+      expect(screen.getByText(/restent comptés dans le score/)).toBeInTheDocument()
+    })
+
+    it('ne dit rien quand tout est affiché', async () => {
+      // Le cas de la quasi-totalité des clients : douze fuites, aucune
+      // troncature. Une mention permanente inquiéterait pour rien.
+      threatIntelligenceApi.exposureFeed.mockResolvedValue(feed([CORRELATED_FINDING]))
+      render(<ExposurePage />)
+
+      await screen.findByText('62')
+      expect(screen.queryByText(/au total pour cet actif/)).not.toBeInTheDocument()
     })
   })
 })

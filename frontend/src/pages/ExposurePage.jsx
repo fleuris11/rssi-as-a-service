@@ -339,6 +339,18 @@ function AssetCard({ group, canReveal, onReveal, expanded, onToggle, retentionDa
               />
             ))}
           </ul>
+          {group.findings_hidden > 0 && (
+            /* Une liste tronquée sans mention de la troncature ment par
+               omission : le dirigeant croirait avoir tout vu. On dit le
+               nombre affiché, le total, et pourquoi ces cent-là. */
+            <p className="mt-3 rounded-md bg-ink-50 px-3 py-2 text-xs text-ink-600">
+              Les {group.findings_shown} éléments les plus graves et les plus récents sont
+              affichés, sur {group.findings_count} au total pour cet actif. Les{' '}
+              {group.findings_hidden} autres sont plus anciens ou moins graves ; ils restent
+              comptés dans le score ci-dessus. Traitez ceux-ci d’abord : la liste se
+              renouvellera.
+            </p>
+          )}
         </>
       )}
     </Card>
