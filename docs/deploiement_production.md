@@ -379,6 +379,312 @@ sauvegarde réellement externalisée et automatique reste à mettre en place.
 
 ---
 
+## 6 bis. Retour à la v1 — procédure de repli
+
+> **À qui s'adresse cette section** : à quelqu'un qui découvre le projet, un
+> soir d'incident. Elle se lit de haut en bas et ne suppose aucune
+> connaissance préalable de l'architecture. Toutes les commandes ont été
+> exécutées le 8 septembre 2026 telles qu'elles sont écrites — sauf celles du
+> **cas B**, qui écrasent la production et ont donc été vérifiées sur une base
+> jetable (voir « Ce qui a été réellement exécuté », en fin de section).
+
+### 6 bis.1 Le point de retour
+
+La version en exploitation a été figée avant l'ouverture des travaux de V2 :
+
+| | |
+|---|---|
+| **Tag** | `v1.0-production` (annoté), objet `3c62272` → commit `eecd03a` |
+| **Commit** | `eecd03a` — *test(cti): parcourt la chaine complete d'une analyse lancee par l'exploitant* |
+| **Mise en production** | 6 septembre 2026, 17h44 UTC — exécution n°14 du workflow « Déploiement production » |
+| **Client servi** | CRRH, offre Souverain (premier client réel, créé le 3 septembre 2026) |
+| **Tests verts sur ce commit** | CI n°55, ses cinq travaux au vert : 1089 tests backend, 145 tests frontend unitaires, 19 parcours de bout en bout |
+| **Branche de correctifs** | `maintenance/v1`, partie de ce tag |
+| **Sauvegarde de référence** | `rssi_2026-09-08_03h30.tar.gz` (186 224 octets, 11 905 lignes de SQL), restauration vérifiée |
+
+Le tag et la branche sont sur le dépôt distant. Pour le vérifier depuis
+n'importe quel poste, sans avoir cloné le projet :
+
+```bash
+git ls-remote --tags https://github.com/fleuris11/rssi-as-a-service.git v1.0-production
+# 3c62272...  refs/tags/v1.0-production        <- l'objet du tag annoté
+# eecd03a...  refs/tags/v1.0-production^{}     <- le commit qu'il désigne
+```
+
+**Pourquoi un tag annoté et pas un tag simple** : le tag annoté porte un
+message, un auteur et une date. Il répond tout seul à la question qu'on se
+pose à 2 h du matin — *quel est au juste cet état, et pourquoi l'a-t-on
+gardé ?* :
+
+```bash
+git cat-file -p v1.0-production
+```
+
+### 6 bis.2 D'abord : dans quel cas êtes-vous ?
+
+Deux situations, deux procédures. **Cette étape prend trente secondes et
+détermine tout le reste** — ne la sautez pas.
+
+La question est : *la V2 a-t-elle migré la base de production ?* Ramener le
+code de la v1 sur une base au schéma V2 est le seul scénario où le retour
+arrière peut abîmer davantage que l'incident.
+
+```bash
+ssh ubuntu@152.228.136.251
+cd ~/rssi
+git fetch --tags --quiet origin
+
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  psql -U rssiasservice -d rssiasservice -tAc \
+  "SELECT app||'/'||name FROM django_migrations
+   WHERE app NOT IN ('admin','auth','contenttypes','sessions','token_blacklist')
+   ORDER BY 1;" < /dev/null | sort > /tmp/appliquees.txt
+
+git ls-tree -r --name-only v1.0-production \
+  | grep -oE 'apps/[a-z_]+/migrations/[0-9]{4}[a-z0-9_]*' \
+  | sed -E 's#apps/([a-z_]+)/migrations/#\1/#' | sort > /tmp/dans_v1.txt
+
+comm -23 /tmp/appliquees.txt /tmp/dans_v1.txt
+```
+
+Cette dernière commande liste **les migrations appliquées en base que le code
+de la v1 ne connaît pas**.
+
+- **Sortie vide → cas A.** La base est compatible avec la v1. Retour du code
+  seul. C'est le cas normal, et c'est celui mesuré le 8 septembre 2026
+  (33 migrations appliquées, 33 présentes dans le tag, aucun écart).
+- **Sortie non vide → cas B.** Il faut ramener la base avec le code.
+
+> `< /dev/null` sur les appels `docker compose exec -T` n'est pas décoratif :
+> sans lui, `exec` hérite de l'entrée standard et **dévore la suite du
+> script**. Le symptôme est déroutant — le script s'arrête sans erreur après
+> la première commande.
+
+### 6 bis.3 Cas A — retour du code seul (environ 2 minutes)
+
+**Chemin normal. À préférer systématiquement** : c'est le chemin automatisé,
+celui qui vérifie la CI, celui qui contrôle le résultat depuis l'extérieur.
+
+1. GitHub → onglet **Actions** → workflow **« Déploiement production »** →
+   bouton **Run workflow**.
+2. Renseigner :
+   - *Use workflow from* : **`main`** — c'est la branche d'où est lue la
+     **définition** du workflow, pas la version déployée. La laisser sur
+     `main` ;
+   - *Commit, branche ou TAG à déployer* : **`v1.0-production`** ;
+   - *Motif du déploiement* : par exemple `retour arriere V2 - incident du JJ/MM`.
+3. Lancer et attendre.
+
+**Durée mesurée** (exécution n°14 du 06/09/2026, chemin identique) : **50 s au
+total**, dont 35 s pour l'étape de déploiement et 9 s pour la vérification
+externe. Compter quelques minutes de plus si le cache de construction Docker
+du serveur ne contient plus les couches de la v1 — après plusieurs semaines de
+V2, c'est probable.
+
+Le workflow s'arrête de lui-même si quelque chose cloche :
+
+- il **refuse de déployer** si la CI n'est pas verte sur le commit visé ;
+- il **échoue** si `https://rssiasservice.online/healthz` ne répond pas 200
+  dans les 150 secondes qui suivent le redémarrage.
+
+Le résumé d'exécution indique la **ref demandée**, le **commit** et le **tag
+exact** — de quoi vérifier d'un coup d'œil qu'on a bien déployé
+`v1.0-production` et non `main`.
+
+#### Si le workflow refuse : « La CI n'est pas verte sur … (état : aucune) »
+
+Ce n'est pas un échec de la v1. Les exécutions de workflow finissent par
+disparaître avec le temps ; la garde ne trouve alors plus de CI verte sur ce
+commit et refuse, par principe.
+
+Le recours existe déjà et ne demande **aucune modification du dépôt** :
+
+1. GitHub → **Actions** → workflow **CI** → **Run workflow** ;
+2. dans *Use workflow from*, choisir le **tag `v1.0-production`** (le sélecteur
+   liste les tags autant que les branches) ;
+3. attendre la CI (**5 min 01 s** mesurées sur l'exécution n°55) ;
+4. relancer le déploiement.
+
+> Cette relance manuelle de la CI n'a pas été ajoutée pour ce cas-ci : elle
+> existe depuis qu'un push sur `main` n'avait produit aucun run, rendant la
+> production inatteignable. Le commentaire en tête de `ci.yml` le raconte.
+
+### 6 bis.4 Cas A bis — GitHub est indisponible
+
+Le repli manuel, à n'utiliser que si le workflow ne peut pas tourner. Il fait
+exactement ce que fait le workflow, **sans la vérification de CI ni le
+contrôle externe** — que vous ferez donc à la main, à l'étape 6 bis.6.
+
+```bash
+ssh ubuntu@152.228.136.251
+cd ~/rssi
+
+git log --oneline -1                       # noter la version en place AVANT
+git fetch --tags --quiet origin
+git checkout --quiet v1.0-production
+git log --oneline -1                       # doit afficher eecd03a
+chmod +x deploy/*.sh
+
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+`git checkout` sur un tag laisse le dépôt en **HEAD détachée** : c'est normal,
+c'est déjà l'état dans lequel le workflow laisse le serveur après chaque
+déploiement (`git status -sb` affiche `## HEAD (no branch)`).
+
+`--build` n'est pas optionnel : le frontend est compilé dans l'image Caddy, un
+simple redémarrage ne ramènerait pas l'interface de la v1.
+
+### 6 bis.5 Cas B — retour du code **et** de la base
+
+À n'exécuter que si l'étape 6 bis.2 a listé des migrations inconnues de la v1.
+**Cette procédure écrase la base de production.** Lisez-la en entier avant de
+taper la première commande.
+
+```bash
+ssh ubuntu@152.228.136.251
+cd ~/rssi
+
+# 1. Arrêter ce qui écrit en base. Postgres et Caddy restent debout : le site
+#    doit continuer de répondre quelque chose, et Postgres doit rester
+#    accessible pour recevoir la restauration.
+docker compose -f docker-compose.prod.yml stop web worker beat
+
+# 2. Sauvegarder l'état ACTUEL avant de l'écraser. C'est le seul filet si le
+#    retour arrière se révèle être une erreur de diagnostic.
+./deploy/sauvegarde.sh
+
+# 3. Extraire la sauvegarde visée et VÉRIFIER de quoi il s'agit avant tout.
+T=$(mktemp -d)
+tar xzf ~/sauvegardes/rssi_2026-09-08_03h30.tar.gz -C "$T"
+cat "$T/commit.txt"   # doit désigner eecd03a — le code qui tournait alors
+cat "$T/date.txt"     # doit désigner la nuit attendue
+
+# 4. Restaurer la base. Le dump est produit avec --clean --if-exists : il
+#    efface les objets avant de les recréer. ON_ERROR_STOP=1 arrête à la
+#    première erreur plutôt que de laisser une base à moitié restaurée.
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  psql -U rssiasservice -d rssiasservice -v ON_ERROR_STOP=1 -q < "$T/base.sql"
+
+# 5. Restaurer les clés de chiffrement — SEULEMENT si elles ont changé depuis
+#    la sauvegarde. En cas de doute, restaurez : une base rendue illisible
+#    coûte plus cher qu'un réglage de V2 à ressaisir.
+cp backend/.env backend/.env.avant-retour   # toujours, avant d'écraser
+cp "$T/env" backend/.env
+chmod 600 backend/.env
+
+rm -rf "$T"
+```
+
+> **`backend/.env` et non `.env`.** À la racine, `.env` est un **lien
+> symbolique** vers `backend/.env` (`ls -la .env` le montre). Écrire dans
+> `backend/.env` met bien à jour les deux ; remplacer le lien par un fichier
+> ferait diverger les deux emplacements à la première rotation de mot de
+> passe.
+
+> **Pourquoi le `.env` est dans la sauvegarde.** Les mots de passe fuités sont
+> chiffrés en base (ADR-014). Une base restaurée sans sa clé Fernet est en
+> partie **définitivement illisible**. La sauvegarde du 08/09 contient bien
+> les trois clés attendues — `AI_PSEUDONYMIZATION_KEY`, `TOTP_ENCRYPTION_KEY`,
+> `BREACH_SECRET_ENCRYPTION_KEY` — sur 33 variables.
+
+Puis ramener le code : **cas A** (workflow) ou **cas A bis** (SSH). Le service
+`migrate` rejouera les migrations de la v1 ; toutes étant déjà appliquées dans
+la base restaurée, il n'aura rien à faire.
+
+**Durée** : compter une dizaine de minutes. La restauration elle-même est
+rapide — **1 seconde** pour les 1,6 Mo du dump du 08/09, mesuré. Le temps part
+dans l'arrêt des services, la sauvegarde de sécurité et les vérifications.
+
+### 6 bis.6 Vérifier que le retour a bien eu lieu
+
+Ne pas s'en tenir au vert du workflow. Trois contrôles, dans cet ordre :
+
+```bash
+# 1. Vu d'Internet — la seule mesure qui dit ce qu'un visiteur constate.
+curl -s -o /dev/null -w 'healthz : HTTP %{http_code} en %{time_total}s\n' \
+     https://rssiasservice.online/healthz
+curl -s https://rssiasservice.online/healthz          # {"status": "ok"}
+
+# 2. La version réellement en place sur le serveur.
+ssh ubuntu@152.228.136.251 'cd ~/rssi && git log --oneline -1'
+#   -> eecd03a test(cti): parcourt la chaine complete ...
+
+# 3. Tous les conteneurs sont debout, et `migrate` est sorti en 0.
+ssh ubuntu@152.228.136.251 \
+  'cd ~/rssi && docker compose -f docker-compose.prod.yml ps -a \
+   --format "table {{.Service}}\t{{.Status}}" < /dev/null'
+#   migrate doit afficher « Exited (0) » — pas un autre code.
+```
+
+Puis, en cas B seulement, que les données sont bien celles attendues :
+
+```bash
+ssh ubuntu@152.228.136.251 'cd ~/rssi && for t in tenants_tenant accounts_user \
+  assessments_assessment monitoring_asset django_migrations; do
+  printf "%-26s %s\n" "$t" "$(docker compose -f docker-compose.prod.yml exec -T \
+  postgres psql -U rssiasservice -d rssiasservice -tAc "SELECT count(*) FROM $t;" \
+  < /dev/null)"; done'
+```
+
+Relevé sur la sauvegarde du 08/09 (les mêmes valeurs qu'en production ce
+jour-là) : 7 entreprises, 10 comptes dont 1 administrateur, 4 diagnostics,
+7 actifs surveillés, 65 migrations, 51 tables.
+
+### 6 bis.7 Après le retour
+
+La production tourne à nouveau en v1. **Ne corrigez pas l'incident sur
+`main`** — `main` porte désormais la V2, et la fusionner reviendrait à
+redéployer ce dont vous venez de sortir.
+
+```bash
+git fetch origin
+git switch maintenance/v1        # partie de v1.0-production
+git switch -c fix/mon-correctif
+# ... correction + tests ...
+```
+
+Puis PR vers `maintenance/v1`, CI verte, et déploiement de **la branche**
+`maintenance/v1` par le workflow (le champ accepte une branche aussi bien
+qu'un tag). Reporter ensuite le correctif sur `main` — un `cherry-pick` suffit
+tant que les deux branches n'ont pas trop divergé.
+
+### 6 bis.8 Ce que cette procédure ne couvre pas
+
+Trois limites, énoncées pour qu'on ne les découvre pas le jour venu.
+
+1. **Les données créées depuis la sauvegarde sont perdues en cas B.** La
+   sauvegarde date de 3 h 30 ; tout ce que le client a saisi depuis disparaît.
+   C'est la raison d'être de la sauvegarde de sécurité de l'étape 2 : elle
+   permet de repêcher a posteriori ce qui a été écrasé.
+2. **Aucune page de maintenance.** Pendant le cas B, le site répond mais
+   l'application est arrêtée : le visiteur voit des erreurs, pas un message.
+3. **Le retour arrière n'a jamais été exécuté en vraie grandeur.** Ses
+   éléments l'ont été séparément (voir ci-dessous), mais la bascule complète
+   sur la production, non. La première exécution réelle est à faire **hors
+   incident**, à froid, un jour où l'on peut se permettre qu'elle échoue.
+
+### 6 bis.9 Ce qui a été réellement exécuté le 8 septembre 2026
+
+Distinction volontaire : une procédure qui prétend être vérifiée sans l'être
+est pire qu'une procédure honnêtement annotée.
+
+| Élément | Vérification |
+|---|---|
+| Existence du tag et de la branche sur le distant | `git ls-remote` — les deux répondent |
+| Le serveur connaît le tag | `git fetch --tags` puis `git tag -l` sur le VPS : `v1.0-production` → `eecd03a` |
+| Commande de décision cas A / cas B (6 bis.2) | exécutée sur la production : sortie vide, 33 = 33 |
+| Intégrité de la sauvegarde | `gzip -t` OK ; marqueur `PostgreSQL database dump complete` présent (le fichier n'est pas tronqué) |
+| Contenu de la sauvegarde | `base.sql` 1 652 678 octets / 11 905 lignes / 51 `CREATE TABLE` / 51 blocs `COPY` ; `env` 1 909 octets, 33 variables, les 3 clés Fernet présentes ; `commit.txt` → `eecd03a` ; `date.txt` → `2026-09-08T03:30:02+00:00` |
+| **Restauration réelle** | dump restauré dans une base **jetable** (`verif_restauration_20260908`) avec `ON_ERROR_STOP=1` : **1 s**, 51 tables, effectifs identiques à la production (7 / 10 / 4 / 7 / 65), 1 compte administrateur retrouvé. Base supprimée ensuite ; la production n'a pas été touchée |
+| Le workflow accepte un tag | vérifié par lecture et par l'API : `actions/checkout` résout un tag comme une branche, et l'environnement `production` n'impose **aucune** restriction de refs déployables (`deployment_branch_policy: null`) |
+| La garde de CI accepterait ce commit | requête à l'API GitHub reproduite à la main sur `eecd03a` : CI n°55, `conclusion: success`, ses 5 travaux verts |
+| Durées annoncées | relevées sur les exécutions réelles n°14 (déploiement, 50 s) et n°55 (CI, 5 min 01 s) |
+| `/healthz` | 200 en 0,38 s, `{"status": "ok"}` |
+| Commandes du **cas B** sur la production | **non exécutées** — elles écrasent la base. Vérifiées sur la base jetable, à un argument près (`-d verif_restauration_20260908` au lieu de `-d rssiasservice`) |
+
+---
+
 ## 7. Défauts découverts en conditions réelles
 
 Cette section a une valeur particulière pour le mémoire : **aucun de ces
@@ -663,7 +969,7 @@ modèle économe par défaut selon le cadrage Green IT) et licence Breachsense.
 | **Sauvegarde externalisée automatique** | La copie hors serveur est manuelle. | Élevée |
 | **Surveillance externe à activer** | La surveillance interne fonctionne et son alerte a été vérifiée. La sonde externe (UptimeRobot, §11 bis) demande une inscription : sans elle, une panne du serveur lui-même ne déclenche rien. | Élevée |
 | **Relecture juridique** | Les CGV sont une trame minimale ; le contrat de sous-traitance (DPA) reste à rédiger (`docs/legal/README.md`). | Élevée |
-| **Correctif de la course aux migrations à déployer** | Corrigé dans le dépôt et vérifié sur une base vierge, pas encore appliqué au serveur : la production tourne toujours avec les trois services appliquant les migrations en parallèle. | Élevée |
+| **Répétition du retour arrière à froid** | La procédure de repli vers `v1.0-production` (§6 bis) est écrite et ses éléments vérifiés un à un, mais la bascule complète n'a jamais été jouée sur la production. Une procédure de repli jamais exécutée est une hypothèse, pas un filet — même raisonnement que pour une sauvegarde jamais restaurée. À jouer un jour où l'on peut se permettre qu'elle échoue. | Élevée |
 | **Protection de la branche `main` à activer** | Marche à suivre au §11 ter. Sans elle, rien n'empêche techniquement de fusionner sur du rouge — ce qui vient de se produire pendant deux semaines. | Élevée |
 | **Défauts d'image trouvés par un outil, pas par les tests** | Le Dockerfile n'appliquait aucune mise à jour de sécurité Debian ; c'est Trivy qui l'a signalé, pas la suite de tests. **Deuxième fois** pour cette classe de défaut (la première : la course aux migrations, vue par la CI et non par les tests). Aucun test ne peut voir un paquet système périmé ou une procédure de déploiement fausse — c'est une limite de méthode à assumer, pas un test à écrire. | Moyenne — méthode |
 | **Palier de licence CTI** | 15 emplacements partagés, dont 13 engagés par le jeu de démonstration. Deux restent disponibles. | Moyenne |
