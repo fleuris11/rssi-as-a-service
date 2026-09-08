@@ -4259,3 +4259,134 @@ correctif de panne.
   qui rend le point précédent visible : aucun autre actif n'approche ce volume.
 - Le webhook Breachsense n'a toujours jamais reçu de notification réelle.
 - Aucun appel humain à CRRH.
+
+---
+
+## 8 septembre 2026 — Un point de retour, avant d'ouvrir la V2
+
+Les travaux de V2 vont toucher des parties centrales du produit, qui tourne
+en production pour un vrai client depuis le 3 septembre. Séance consacrée
+uniquement à pouvoir revenir en arrière **sans réfléchir**.
+
+### Ce qui a été fait
+
+**Un tag annoté `v1.0-production` sur `eecd03a`**, poussé sur le distant. Tag
+annoté et non simple : il porte un message qui répond seul à la question qu'on
+se pose un soir d'incident — date de mise en production (6 septembre, 17h44
+UTC, exécution n°14 du workflow), client servi (CRRH, offre Souverain), tests
+verts sur ce commit (CI n°55 : 1089 backend, 145 frontend, 19 parcours de bout
+en bout), et sauvegarde de référence associée.
+
+**Une branche `maintenance/v1`** partie de ce tag, poussée elle aussi : de quoi
+corriger un incident de production pendant que la V2 avance sur `main`.
+
+**Une procédure de repli** au §6 bis de `docs/deploiement_production.md`,
+écrite pour quelqu'un qui découvre le projet.
+
+### La sauvegarde : ce que « vérifier » voulait dire
+
+L'objectif était de contrôler la sauvegarde de la nuit précédente — pas
+seulement sa présence. `rssi_2026-09-08_03h30.tar.gz`, 186 224 octets,
+horodatée du 8 à 03h30 UTC, dans une série dont la taille croît régulièrement
+depuis le 24 août (22 Ko → 186 Ko) : rien qui ressemble à une sauvegarde
+brutalement tronquée.
+
+Taille et horodatage ne disent pourtant pas qu'une archive est **récupérable**.
+Trois niveaux ont donc été franchis :
+
+1. **Intégrité** : `gzip -t` passe, et le marqueur `PostgreSQL database dump
+   complete` est présent — le dump n'est pas coupé en plein milieu.
+2. **Complétude** : 11 905 lignes de SQL, 51 `CREATE TABLE`, 51 blocs `COPY`,
+   et le `.env` avec ses 33 variables dont les **trois clés Fernet**
+   (`AI_PSEUDONYMIZATION_KEY`, `TOTP_ENCRYPTION_KEY`,
+   `BREACH_SECRET_ENCRYPTION_KEY`). C'est le point que l'on oublie : sans ces
+   clés, la base restaurée serait en partie définitivement illisible
+   (ADR-014).
+3. **Restauration réelle** : le dump a été rejoué dans une base **jetable**
+   (`verif_restauration_20260908`) sur le Postgres de production, avec
+   `ON_ERROR_STOP=1`. Une seconde. 51 tables, le compte administrateur, et
+   des effectifs identiques à la production sur les cinq tables témoins
+   (7 entreprises, 10 comptes, 4 diagnostics, 7 actifs, 65 migrations). Base
+   supprimée derrière ; la production n'a pas été touchée.
+
+Le troisième niveau est le seul qui prouve quelque chose. Les deux premiers
+disent qu'un fichier a la bonne forme.
+
+### Le workflow acceptait déjà un tag — ce qu'il fallait vérifier était ailleurs
+
+La tâche prévoyait d'ajouter le déploiement d'un tag si le workflow ne le
+permettait pas. Il le permettait : `actions/checkout` résout un tag exactement
+comme une branche, et le reste du workflow ne travaille que sur le SHA résolu.
+
+Le vrai risque était ailleurs, et invisible depuis le dépôt : **les
+environnements GitHub peuvent restreindre les refs déployables**. Un
+environnement `production` réglé sur « branches sélectionnées » aurait refusé
+le tag — au moment précis où l'on en aurait eu besoin. Vérifié par l'API :
+`deployment_branch_policy: null`, aucune restriction. C'est noté en commentaire
+dans le workflow, pour que le réglage ne soit pas resserré par mégarde un jour.
+
+Deux ajouts modestes, tournés vers l'usage réel :
+
+- l'intitulé du champ dit désormais « **TAG** » et souffle `v1.0-production` ;
+- le résumé d'exécution affiche la **ref demandée** et le **tag exact**
+  (`git describe --exact-match`) à côté du SHA. Sous la pression, lire
+  « v1.0-production » vaut mieux que relire quarante caractères hexadécimaux
+  pour se convaincre qu'on n'a pas redéployé `main`.
+
+### Une panne de retour arrière datée, et son recours
+
+La garde qui refuse de déployer du rouge interroge l'API pour trouver une CI
+verte **sur le commit visé**. Les exécutions de workflow finissent par
+disparaître : dans quelques mois, cette garde ne trouvera plus rien sur
+`eecd03a` et **refusera le retour arrière**. Le tag ne protège pas de ça.
+
+Le recours existe déjà, et il n'a pas fallu l'inventer : `ci.yml` porte un
+`workflow_dispatch` ajouté en août, après un push sur `main` resté sans run
+de CI, qui avait rendu la production inatteignable. Relancer la CI sur le tag
+(le sélecteur de ref liste les tags) régénère un run vert et débloque le
+déploiement. C'est documenté au §6 bis.3.
+
+### Le piège qui a coûté le plus de temps
+
+Le script de vérification s'arrêtait après sa **première** commande, sans
+erreur, sans message. `docker compose exec -T` lit l'entrée standard : lancé
+par `ssh … bash -s`, il héritait du script lui-même et en **dévorait la
+suite**. Un `< /dev/null` sur chaque appel règle le problème. Le piège est
+noté dans la procédure, parce que le symptôme n'oriente vers rien.
+
+### Décisions
+
+- **Deux cas de retour, pas un seul.** Ramener le code de la v1 sur une base
+  au schéma V2 est le seul scénario où le repli abîme plus que l'incident. La
+  procédure commence donc par une commande de trente secondes qui compare les
+  migrations appliquées en base à celles présentes dans le tag, et oriente
+  vers le cas A (code seul, ~2 min) ou le cas B (code + base, ~10 min).
+  Exécutée ce jour : 33 contre 33, aucun écart.
+- **Les durées annoncées sont mesurées, pas estimées** : 50 s pour le
+  déploiement (exécution n°14, dont 35 s de bascule et 9 s de contrôle
+  externe), 5 min 01 s pour la CI (n°55), 1 s pour la restauration du dump.
+- **La procédure distingue ce qui a été exécuté de ce qui ne l'a pas été**
+  (§6 bis.9). Les commandes du cas B écrasent la production : elles ont été
+  vérifiées sur la base jetable, à un argument près, et c'est écrit noir sur
+  blanc. Une procédure qui se prétend vérifiée sans l'être est pire qu'une
+  procédure honnêtement annotée.
+
+### Correction en passant
+
+Le §10 annonçait encore « correctif de la course aux migrations à déployer ».
+Il est appliqué depuis le déploiement du 6 septembre : `docker compose ps -a`
+montre le service `migrate` en `Exited (0)`. Ligne remplacée par le point qui,
+lui, reste ouvert : rejouer le retour arrière à froid.
+
+### Reste à faire
+
+- **Jouer le retour arrière en vraie grandeur, hors incident.** Ses éléments
+  ont été vérifiés un à un, la bascule complète non. Une procédure de repli
+  jamais exécutée est une hypothèse, pas un filet — exactement le raisonnement
+  qui avait conduit à restaurer la sauvegarde plutôt qu'à la contempler.
+- Aucune page de maintenance : pendant un cas B, le visiteur voit des erreurs.
+- La copie hors serveur des sauvegardes reste manuelle (point ouvert depuis le
+  24 août).
+- Les points ouverts de la séance du 6 septembre restent ouverts : temps de
+  réponse du flux d'exposition (~4 s sur `ratp.fr`), webhook Breachsense
+  jamais déclenché pour de vrai, aucun appel humain à CRRH.
