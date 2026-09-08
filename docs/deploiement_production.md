@@ -383,10 +383,11 @@ sauvegarde réellement externalisée et automatique reste à mettre en place.
 
 > **À qui s'adresse cette section** : à quelqu'un qui découvre le projet, un
 > soir d'incident. Elle se lit de haut en bas et ne suppose aucune
-> connaissance préalable de l'architecture. Toutes les commandes ont été
-> exécutées le 8 septembre 2026 telles qu'elles sont écrites — sauf celles du
-> **cas B**, qui écrasent la production et ont donc été vérifiées sur une base
-> jetable (voir « Ce qui a été réellement exécuté », en fin de section).
+> connaissance préalable de l'architecture. Les commandes de lecture et de
+> diagnostic ont été **exécutées le 8 septembre 2026 telles qu'elles sont
+> écrites** ; celles qui écrasent la production ou la redéploient ne l'ont pas
+> été, pour des raisons évidentes. Le §6 bis.10 dit ligne à ligne ce qui a été
+> vérifié et comment.
 
 ### 6 bis.1 Le point de retour
 
@@ -406,7 +407,7 @@ Le tag et la branche sont sur le dépôt distant. Pour le vérifier depuis
 n'importe quel poste, sans avoir cloné le projet :
 
 ```bash
-git ls-remote --tags https://github.com/fleuris11/rssi-as-a-service.git v1.0-production
+git ls-remote --tags https://github.com/fleuris11/rssi-as-a-service.git 'v1.0-production*'
 # 3c62272...  refs/tags/v1.0-production        <- l'objet du tag annoté
 # eecd03a...  refs/tags/v1.0-production^{}     <- le commit qu'il désigne
 ```
@@ -420,7 +421,32 @@ gardé ?* :
 git cat-file -p v1.0-production
 ```
 
-### 6 bis.2 D'abord : dans quel cas êtes-vous ?
+### 6 bis.2 Se connecter au serveur
+
+Toutes les commandes qui suivent supposent un accès SSH au VPS. **La forme
+nue échoue** — `ssh ubuntu@152.228.136.251` répond `Permission denied
+(publickey,password)` : la clé d'administration doit être désignée.
+
+```bash
+ssh -i ~/.ssh/rssi_vps ubuntu@152.228.136.251
+```
+
+`~/.ssh/rssi_vps` est la clé **d'administration** du poste de l'exploitant
+(empreinte `SHA256:pzaxczm3+v7ckehG2YC44rqJDd7czzSyeFq6VQTqWTQ`, commentaire
+`deploiement rssiasservice depuis poste Fleuris`). À ne pas confondre avec
+`~/.ssh/rssi_deploiement`, la clé **de GitHub Actions**, posée avec l'option
+`restrict` et volontairement bridée (§7 ter).
+
+Pour écrire `ssh rssi` au lieu de la forme longue, ajouter à `~/.ssh/config` :
+
+```
+Host rssi
+    HostName 152.228.136.251
+    User ubuntu
+    IdentityFile ~/.ssh/rssi_vps
+```
+
+### 6 bis.3 D'abord : dans quel cas êtes-vous ?
 
 Deux situations, deux procédures. **Cette étape prend trente secondes et
 détermine tout le reste** — ne la sautez pas.
@@ -430,7 +456,7 @@ code de la v1 sur une base au schéma V2 est le seul scénario où le retour
 arrière peut abîmer davantage que l'incident.
 
 ```bash
-ssh ubuntu@152.228.136.251
+ssh -i ~/.ssh/rssi_vps ubuntu@152.228.136.251
 cd ~/rssi
 git fetch --tags --quiet origin
 
@@ -460,7 +486,7 @@ de la v1 ne connaît pas**.
 > script**. Le symptôme est déroutant — le script s'arrête sans erreur après
 > la première commande.
 
-### 6 bis.3 Cas A — retour du code seul (environ 2 minutes)
+### 6 bis.4 Cas A — retour du code seul (environ 2 minutes)
 
 **Chemin normal. À préférer systématiquement** : c'est le chemin automatisé,
 celui qui vérifie la CI, celui qui contrôle le résultat depuis l'extérieur.
@@ -509,14 +535,14 @@ Le recours existe déjà et ne demande **aucune modification du dépôt** :
 > existe depuis qu'un push sur `main` n'avait produit aucun run, rendant la
 > production inatteignable. Le commentaire en tête de `ci.yml` le raconte.
 
-### 6 bis.4 Cas A bis — GitHub est indisponible
+### 6 bis.5 Cas A bis — GitHub est indisponible
 
 Le repli manuel, à n'utiliser que si le workflow ne peut pas tourner. Il fait
 exactement ce que fait le workflow, **sans la vérification de CI ni le
-contrôle externe** — que vous ferez donc à la main, à l'étape 6 bis.6.
+contrôle externe** — que vous ferez donc à la main, à l'étape 6 bis.7.
 
 ```bash
-ssh ubuntu@152.228.136.251
+ssh -i ~/.ssh/rssi_vps ubuntu@152.228.136.251
 cd ~/rssi
 
 git log --oneline -1                       # noter la version en place AVANT
@@ -535,14 +561,14 @@ déploiement (`git status -sb` affiche `## HEAD (no branch)`).
 `--build` n'est pas optionnel : le frontend est compilé dans l'image Caddy, un
 simple redémarrage ne ramènerait pas l'interface de la v1.
 
-### 6 bis.5 Cas B — retour du code **et** de la base
+### 6 bis.6 Cas B — retour du code **et** de la base
 
-À n'exécuter que si l'étape 6 bis.2 a listé des migrations inconnues de la v1.
+À n'exécuter que si l'étape 6 bis.3 a listé des migrations inconnues de la v1.
 **Cette procédure écrase la base de production.** Lisez-la en entier avant de
 taper la première commande.
 
 ```bash
-ssh ubuntu@152.228.136.251
+ssh -i ~/.ssh/rssi_vps ubuntu@152.228.136.251
 cd ~/rssi
 
 # 1. Arrêter ce qui écrit en base. Postgres et Caddy restent debout : le site
@@ -596,7 +622,7 @@ la base restaurée, il n'aura rien à faire.
 rapide — **1 seconde** pour les 1,6 Mo du dump du 08/09, mesuré. Le temps part
 dans l'arrêt des services, la sauvegarde de sécurité et les vérifications.
 
-### 6 bis.6 Vérifier que le retour a bien eu lieu
+### 6 bis.7 Vérifier que le retour a bien eu lieu
 
 Ne pas s'en tenir au vert du workflow. Trois contrôles, dans cet ordre :
 
@@ -607,11 +633,11 @@ curl -s -o /dev/null -w 'healthz : HTTP %{http_code} en %{time_total}s\n' \
 curl -s https://rssiasservice.online/healthz          # {"status": "ok"}
 
 # 2. La version réellement en place sur le serveur.
-ssh ubuntu@152.228.136.251 'cd ~/rssi && git log --oneline -1'
+ssh -i ~/.ssh/rssi_vps ubuntu@152.228.136.251 'cd ~/rssi && git log --oneline -1'
 #   -> eecd03a test(cti): parcourt la chaine complete ...
 
 # 3. Tous les conteneurs sont debout, et `migrate` est sorti en 0.
-ssh ubuntu@152.228.136.251 \
+ssh -i ~/.ssh/rssi_vps ubuntu@152.228.136.251 \
   'cd ~/rssi && docker compose -f docker-compose.prod.yml ps -a \
    --format "table {{.Service}}\t{{.Status}}" < /dev/null'
 #   migrate doit afficher « Exited (0) » — pas un autre code.
@@ -620,7 +646,7 @@ ssh ubuntu@152.228.136.251 \
 Puis, en cas B seulement, que les données sont bien celles attendues :
 
 ```bash
-ssh ubuntu@152.228.136.251 'cd ~/rssi && for t in tenants_tenant accounts_user \
+ssh -i ~/.ssh/rssi_vps ubuntu@152.228.136.251 'cd ~/rssi && for t in tenants_tenant accounts_user \
   assessments_assessment monitoring_asset django_migrations; do
   printf "%-26s %s\n" "$t" "$(docker compose -f docker-compose.prod.yml exec -T \
   postgres psql -U rssiasservice -d rssiasservice -tAc "SELECT count(*) FROM $t;" \
@@ -631,7 +657,7 @@ Relevé sur la sauvegarde du 08/09 (les mêmes valeurs qu'en production ce
 jour-là) : 7 entreprises, 10 comptes dont 1 administrateur, 4 diagnostics,
 7 actifs surveillés, 65 migrations, 51 tables.
 
-### 6 bis.7 Après le retour
+### 6 bis.8 Après le retour
 
 La production tourne à nouveau en v1. **Ne corrigez pas l'incident sur
 `main`** — `main` porte désormais la V2, et la fusionner reviendrait à
@@ -649,7 +675,7 @@ Puis PR vers `maintenance/v1`, CI verte, et déploiement de **la branche**
 qu'un tag). Reporter ensuite le correctif sur `main` — un `cherry-pick` suffit
 tant que les deux branches n'ont pas trop divergé.
 
-### 6 bis.8 Ce que cette procédure ne couvre pas
+### 6 bis.9 Ce que cette procédure ne couvre pas
 
 Trois limites, énoncées pour qu'on ne les découvre pas le jour venu.
 
@@ -664,7 +690,7 @@ Trois limites, énoncées pour qu'on ne les découvre pas le jour venu.
    sur la production, non. La première exécution réelle est à faire **hors
    incident**, à froid, un jour où l'on peut se permettre qu'elle échoue.
 
-### 6 bis.9 Ce qui a été réellement exécuté le 8 septembre 2026
+### 6 bis.10 Ce qui a été réellement exécuté le 8 septembre 2026
 
 Distinction volontaire : une procédure qui prétend être vérifiée sans l'être
 est pire qu'une procédure honnêtement annotée.
@@ -673,7 +699,7 @@ est pire qu'une procédure honnêtement annotée.
 |---|---|
 | Existence du tag et de la branche sur le distant | `git ls-remote` — les deux répondent |
 | Le serveur connaît le tag | `git fetch --tags` puis `git tag -l` sur le VPS : `v1.0-production` → `eecd03a` |
-| Commande de décision cas A / cas B (6 bis.2) | exécutée sur la production : sortie vide, 33 = 33 |
+| Commande de décision cas A / cas B (6 bis.3) | exécutée sur la production : sortie vide, 33 = 33 |
 | Intégrité de la sauvegarde | `gzip -t` OK ; marqueur `PostgreSQL database dump complete` présent (le fichier n'est pas tronqué) |
 | Contenu de la sauvegarde | `base.sql` 1 652 678 octets / 11 905 lignes / 51 `CREATE TABLE` / 51 blocs `COPY` ; `env` 1 909 octets, 33 variables, les 3 clés Fernet présentes ; `commit.txt` → `eecd03a` ; `date.txt` → `2026-09-08T03:30:02+00:00` |
 | **Restauration réelle** | dump restauré dans une base **jetable** (`verif_restauration_20260908`) avec `ON_ERROR_STOP=1` : **1 s**, 51 tables, effectifs identiques à la production (7 / 10 / 4 / 7 / 65), 1 compte administrateur retrouvé. Base supprimée ensuite ; la production n'a pas été touchée |
@@ -681,7 +707,10 @@ est pire qu'une procédure honnêtement annotée.
 | La garde de CI accepterait ce commit | requête à l'API GitHub reproduite à la main sur `eecd03a` : CI n°55, `conclusion: success`, ses 5 travaux verts |
 | Durées annoncées | relevées sur les exécutions réelles n°14 (déploiement, 50 s) et n°55 (CI, 5 min 01 s) |
 | `/healthz` | 200 en 0,38 s, `{"status": "ok"}` |
+| Commandes de vérification du §6 bis.7 | exécutées sur la production telles qu'écrites : `/healthz`, version en place, `ps -a`, et la boucle de comptage (7 / 10 / 4 / 7 / 65) |
 | Commandes du **cas B** sur la production | **non exécutées** — elles écrasent la base. Vérifiées sur la base jetable, à un argument près (`-d verif_restauration_20260908` au lieu de `-d rssiasservice`) |
+| Déclenchement du workflow (§6 bis.4) et repli SSH (§6 bis.5) | **non exécutés** — ils redéploieraient la production. C'est l'objet du point « répétition du retour arrière à froid » du §10 |
+| Deux commandes corrigées par la relecture | écrites d'abord sous une forme qui **échoue**, corrigées après les avoir lancées : `ssh ubuntu@…` sans `-i` (`Permission denied`) et `git ls-remote --tags … v1.0-production` sans `*`, qui tait la ligne `^{}` désignant le commit |
 
 ---
 
@@ -908,7 +937,7 @@ l'allocation d'un terminal est refusée (`PTY allocation request failed`).
 toucher à la clé personnelle de l'exploitant :
 
 ```bash
-ssh ubuntu@152.228.136.251
+ssh -i ~/.ssh/rssi_vps ubuntu@152.228.136.251
 cp ~/.ssh/authorized_keys ~/.ssh/authorized_keys.avant-revocation
 sed -i '/github-actions/d' ~/.ssh/authorized_keys
 ssh-keygen -lf ~/.ssh/authorized_keys   # doit ne plus lister HjEdWLX+...
@@ -1044,7 +1073,7 @@ alors que l'application serait morte.
 déclencher ne prouve rien :
 
 ```bash
-ssh ubuntu@152.228.136.251
+ssh -i ~/.ssh/rssi_vps ubuntu@152.228.136.251
 cd ~/rssi
 docker compose -f docker-compose.prod.yml stop caddy   # le site devient injoignable
 # attendre l'email (jusqu'a 10 min : detection + confirmation)

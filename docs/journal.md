@@ -4344,7 +4344,7 @@ Le recours existe déjà, et il n'a pas fallu l'inventer : `ci.yml` porte un
 `workflow_dispatch` ajouté en août, après un push sur `main` resté sans run
 de CI, qui avait rendu la production inatteignable. Relancer la CI sur le tag
 (le sélecteur de ref liste les tags) régénère un run vert et débloque le
-déploiement. C'est documenté au §6 bis.3.
+déploiement. C'est documenté au §6 bis.4.
 
 ### Le piège qui a coûté le plus de temps
 
@@ -4353,6 +4353,27 @@ erreur, sans message. `docker compose exec -T` lit l'entrée standard : lancé
 par `ssh … bash -s`, il héritait du script lui-même et en **dévorait la
 suite**. Un `< /dev/null` sur chaque appel règle le problème. Le piège est
 noté dans la procédure, parce que le symptôme n'oriente vers rien.
+
+### La relecture a trouvé deux commandes fausses
+
+Relire une procédure ne suffit pas : il faut lancer ce qu'on y a écrit. Deux
+commandes rédigées de mémoire échouaient.
+
+`ssh ubuntu@152.228.136.251`, la forme qui figurait déjà ailleurs dans le
+document, répond `Permission denied (publickey,password)` : la clé
+d'administration doit être désignée (`-i ~/.ssh/rssi_vps`). Huit occurrences
+corrigées dans tout le fichier, y compris dans la procédure de révocation de
+clé — c'est-à-dire au pire endroit possible pour une commande qui ne marche
+pas. Un §6 bis.2 dit désormais quelle clé ouvre le serveur, laquelle ne
+l'ouvre pas, et propose l'entrée `~/.ssh/config` qui rend la forme courte
+valide.
+
+`git ls-remote --tags <url> v1.0-production` ne rend **que** l'objet du tag,
+pas la ligne `^{}` qui désigne le commit — la sortie annoncée dans le document
+en montrait deux. Il faut le motif `'v1.0-production*'`.
+
+Aucune des deux n'est grave prise isolément. Les deux le deviennent un soir
+d'incident, dans une procédure censée être suivie sans réfléchir.
 
 ### Décisions
 
@@ -4366,7 +4387,7 @@ noté dans la procédure, parce que le symptôme n'oriente vers rien.
   déploiement (exécution n°14, dont 35 s de bascule et 9 s de contrôle
   externe), 5 min 01 s pour la CI (n°55), 1 s pour la restauration du dump.
 - **La procédure distingue ce qui a été exécuté de ce qui ne l'a pas été**
-  (§6 bis.9). Les commandes du cas B écrasent la production : elles ont été
+  (§6 bis.10). Les commandes du cas B écrasent la production : elles ont été
   vérifiées sur la base jetable, à un argument près, et c'est écrit noir sur
   blanc. Une procédure qui se prétend vérifiée sans l'être est pire qu'une
   procédure honnêtement annotée.
