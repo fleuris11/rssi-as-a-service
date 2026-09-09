@@ -17,7 +17,12 @@ from apps.tenants.permissions import IsTenantAdmin, IsTenantMember, IsTenantMemb
 
 from . import quota as quota_module
 from . import services
-from .models import BreachFinding, BreachIntelligenceUsage, SecretRevealAudit
+from .models import (
+    BreachFinding,
+    BreachIntelligenceUsage,
+    IdentifierAccessAudit,
+    SecretRevealAudit,
+)
 from .reveal_throttle import RevealIPRateThrottle, RevealUserRateThrottle
 from .serializers import (
     BreachFindingSerializer,
@@ -26,6 +31,7 @@ from .serializers import (
     BreachScanJobSerializer,
     BreachScanTriggerSerializer,
     ExposureFeedSerializer,
+    IdentifierAccessAuditSerializer,
     MonitoredAssetCreateSerializer,
     MonitoredAssetSerializer,
     PreIncidentSummarySerializer,
@@ -50,13 +56,48 @@ def _client_ip(request) -> str:
     return request.META.get("REMOTE_ADDR", "") or ""
 
 
-class BreachFindingListView(generics.ListAPIView):
+class IdentifierAwareMixin:
+    """Sert les adresses selon le rôle, et trace ce qui a été servi en clair.
+
+    Regroupé dans un mixin plutôt que recopié dans chaque vue : la garde de
+    rôle et la trace vont ensemble, et une vue qui n'appliquerait que la
+    première servirait des adresses sans laisser d'empreinte — exactement le
+    reproche que la V2-2 corrige.
+    """
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["viewer_role"] = getattr(self.request.membership, "role", None)
+        return context
+
+    def _tracer_acces(self, findings):
+        services.record_identifier_access(
+            tenant=self.request.tenant,
+            user=self.request.user,
+            context=IdentifierAccessAudit.Context.CONSULTATION,
+            findings=findings,
+            role=getattr(self.request.membership, "role", None),
+            ip_address=_client_ip(self.request),
+            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+        )
+
+
+class BreachFindingListView(IdentifierAwareMixin, generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated, IsTenantMember]
     serializer_class = BreachFindingSerializer
 
     def get_queryset(self):
         status_filter = self.request.query_params.get("status")
         return services.list_findings(self.request.tenant, status=status_filter)
+
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        # Tracé APRÈS la sérialisation, sur la page réellement servie : tracer
+        # le queryset entier compterait des adresses que le client n'a pas
+        # reçues, et la trace cesserait de dire ce qui a été vu.
+        page = self.paginate_queryset(self.filter_queryset(self.get_queryset()))
+        self._tracer_acces(page if page is not None else [])
+        return response
 
 
 class BreachFindingDetailView(APIView):
@@ -68,8 +109,24 @@ class BreachFindingDetailView(APIView):
             raise NotFound("Fuite introuvable.")
         return finding
 
+    def _contexte(self, request):
+        return {"viewer_role": getattr(request.membership, "role", None)}
+
+    def _tracer(self, request, finding):
+        services.record_identifier_access(
+            tenant=request.tenant,
+            user=request.user,
+            context=IdentifierAccessAudit.Context.CONSULTATION,
+            findings=[finding],
+            role=getattr(request.membership, "role", None),
+            ip_address=_client_ip(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        )
+
     def get(self, request, finding_id):
-        return Response(BreachFindingSerializer(self._get_or_404(request, finding_id)).data)
+        finding = self._get_or_404(request, finding_id)
+        self._tracer(request, finding)
+        return Response(BreachFindingSerializer(finding, context=self._contexte(request)).data)
 
     def patch(self, request, finding_id):
         finding = self._get_or_404(request, finding_id)
@@ -78,7 +135,7 @@ class BreachFindingDetailView(APIView):
         finding = services.set_finding_status(
             finding, status=serializer.validated_data["status"], user=request.user
         )
-        return Response(BreachFindingSerializer(finding).data)
+        return Response(BreachFindingSerializer(finding, context=self._contexte(request)).data)
 
 
 class BreachFindingRevealView(APIView):
@@ -250,7 +307,21 @@ class ExposureFeedView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsTenantMember]
 
     def get(self, request):
-        feed = services.build_exposure_feed(request.tenant)
+        role = getattr(request.membership, "role", None)
+        feed = services.build_exposure_feed(request.tenant, role=role)
+        # Le fil sert des adresses en clair comme la liste : même garde, même
+        # trace. Une seule ligne pour toute la page, avec les actifs concernés.
+        services.record_identifier_access(
+            tenant=request.tenant,
+            user=request.user,
+            context=IdentifierAccessAudit.Context.CONSULTATION,
+            findings=services.list_findings(
+                request.tenant, status=BreachFinding.Status.OPEN, include_pre_incident=True
+            ),
+            role=role,
+            ip_address=_client_ip(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        )
         synthesis = services.get_exposure_synthesis(request.tenant)
         feed["synthesis"] = (
             {
@@ -316,6 +387,23 @@ class SecretRevealAuditListView(generics.ListAPIView):
 
     def get_queryset(self):
         return services.list_reveal_audits(self.request.tenant)
+
+
+class IdentifierAccessAuditListView(generics.ListAPIView):
+    """Journal des consultations d'adresses — consultable par l'admin du
+    tenant (ADR-027).
+
+    Même principe que le journal des révélations : une trace que seul
+    l'éditeur peut lire ne prouve rien à celui qui en aurait besoin. C'est le
+    client qui doit pouvoir répondre « voici qui a consulté, et quand » — à un
+    salarié, à un délégué à la protection des données, à un auditeur.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantAdmin]
+    serializer_class = IdentifierAccessAuditSerializer
+
+    def get_queryset(self):
+        return services.list_identifier_access_audits(self.request.tenant)
 
 
 class MonitoredAssetListCreateView(generics.ListAPIView):

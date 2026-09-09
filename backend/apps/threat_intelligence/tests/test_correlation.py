@@ -31,7 +31,6 @@ def _ingest(tenant, asset, endpoint, payload):
         tenant=tenant,
         asset=asset,
         raw_findings=[RawFinding(endpoint=endpoint, payload=payload)],
-        tenant_emails={MEMBER_EMAIL},
     )[0]
 
 
@@ -95,13 +94,40 @@ class TestNoFalsePositives:
     def test_masked_identifiers_are_never_used_as_a_join_key(self, tenant, website_asset):
         """Un identifiant masqué (« j.••••@ex••••.com ») est ambigu par
         construction : plusieurs comptes distincts produisent le même masque.
-        S'en servir pour croiser fabriquerait des liens faux."""
+        S'en servir pour croiser fabriquerait des liens faux.
+
+        Depuis la V2-2, toute fuite NOUVELLE porte un identifiant en clair. Le
+        cas visé ici est donc celui des fuites ingérées AVANT — elles n'ont que
+        leur forme masquée, et doivent rester hors du croisement plutôt que d'y
+        entrer sur une clé ambiguë.
+        """
         first = _ingest(tenant, website_asset, "creds", {"eml": "tiers1@autre.com", "pwd": "a"})
         second = _ingest(tenant, website_asset, "combo", {"usr": "tiers2@autre.com", "pwd": "b"})
 
-        assert first.identifier_plain == ""  # tiers => masqué (ADR-014 §4)
-        assert second.identifier_plain == ""
+        # L'état d'une fuite d'avant la V2-2 : forme masquée seule.
+        for finding in (first, second):
+            finding.identifier_plain = ""
+            finding.identifier_masked = "ti••••@au••••.com"
+            finding.save(update_fields=["identifier_plain", "identifier_masked"])
+
         assert _correlate(tenant, [first, second]) == {}
+
+    def test_two_non_member_addresses_are_now_correlated(self, tenant, website_asset):
+        """Le pendant du test précédent, et l'élargissement voulu par la V2-2.
+
+        Le masquage empêchait de voir la réutilisation la plus fréquente : la
+        même adresse personnelle d'un salarié, présente dans deux fuites
+        distinctes. Elle est désormais visible.
+        """
+        adresse = "salarie.perso@fournisseur-mail.example"
+        first = _ingest(tenant, website_asset, "creds", {"eml": adresse, "pwd": "a"})
+        second = _ingest(tenant, website_asset, "combo", {"usr": adresse, "pwd": "b"})
+
+        signals = _correlate(tenant, [first, second])
+
+        assert first.id in signals and second.id in signals
+        types = {s["signal_type"] for s in signals[first.id]}
+        assert correlation.SIGNAL_REPEATED_EXPOSURE in types
 
     def test_pre_incident_signals_are_not_correlated(self, tenant, website_asset):
         """Radar/dark web décrivent une exposition publique, pas un compte."""
@@ -143,7 +169,6 @@ class TestNoFalsePositives:
             raw_findings=[
                 RawFinding(endpoint="creds", payload={"eml": "x@shared.com", "pwd": "a"})
             ],
-            tenant_emails={"x@shared.com"},
         )
         services.ingest_raw_findings(
             tenant=tenant_b,
@@ -151,7 +176,6 @@ class TestNoFalsePositives:
             raw_findings=[
                 RawFinding(endpoint="combo", payload={"usr": "x@shared.com", "pwd": "b"})
             ],
-            tenant_emails={"x@shared.com"},
         )
 
         feed_a = services.build_exposure_feed(tenant_a)

@@ -102,13 +102,19 @@ def demo_findings_payloads() -> list[tuple[str, dict, int]]:
             {
                 "usr": f"marie.durand@{DEMO_DOMAIN}",
                 "pwd": "Hiver2024!durand",
-                "src": "RedLine Stealer log",
+                # V2-2 : `src` est le SERVICE sur lequel l'identifiant était
+                # enregistré, pas le nom du journal de vol. La valeur
+                # précédente (« RedLine Stealer log ») s'affichait sous le
+                # libellé « Identifiant enregistré sur » et n'avait aucun sens
+                # à l'écran — la démonstration montrait un champ faux.
+                "src": "connexion.expert-comptable.fr",
                 "fle": "passwords.txt",
                 "inf": _d(41),
                 "fnd": _d(38),
                 "mal": "RedLine",
                 "nme": "PC-COMPTA-01",
                 "os": "Windows 11",
+                "hid": "WIN-4A7C2E9B",
             },
             0,
         ),
@@ -117,13 +123,14 @@ def demo_findings_payloads() -> list[tuple[str, dict, int]]:
             {
                 "usr": f"paul.leroy@{DEMO_DOMAIN}",
                 "pwd": "Cabinet2023*",
-                "src": "Vidar Stealer log",
+                "src": "espace-client.mutuelle-pro.fr",
                 "fle": "logins.txt",
                 "inf": _d(96),
                 "fnd": _d(92),
                 "mal": "Vidar",
                 "nme": "PORTABLE-PL",
                 "os": "Windows 10",
+                "hid": "WIN-91D3F0A2",
             },
             0,
         ),
@@ -164,9 +171,9 @@ def demo_findings_payloads() -> list[tuple[str, dict, int]]:
                 "token_type": "aws_access_key",
                 "platform": "AWS",
                 "category": "service-account",
-                "source_type": "stealer",
+                "source_type": "poste infecté par un logiciel voleur",
                 "prefix": "AKIA",
-                "src": "RedLine Stealer log",
+                "src": "poste PORTABLE-PL",
                 "pth": "C:/Users/paul/.aws/credentials",
                 "usr": "svc-sauvegarde",
                 "fnd": _d(27),
@@ -481,7 +488,6 @@ class Command(BaseCommand):
         return assets
 
     def _ensure_findings(self, tenant: Tenant, assets: list[Asset]) -> list[BreachFinding]:
-        tenant_emails = {email for email, _f, _l, _r in DEMO_USERS}
         created: list[BreachFinding] = []
 
         for endpoint, payload, asset_index in demo_findings_payloads():
@@ -492,9 +498,7 @@ class Command(BaseCommand):
             # données de démo fidèles au comportement de production, et ce
             # qui rend cette commande naturellement idempotente.
             created.extend(
-                services.ingest_raw_findings(
-                    tenant=tenant, asset=asset, raw_findings=[raw], tenant_emails=tenant_emails
-                )
+                services.ingest_raw_findings(tenant=tenant, asset=asset, raw_findings=[raw])
             )
 
         self._spread_detection_dates(tenant)

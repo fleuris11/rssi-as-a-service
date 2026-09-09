@@ -63,7 +63,7 @@ class TestUneValeurTropLongueNeCasseRien:
         """Le cas exact de la panne : `mal` (nom du malware) démesuré."""
         charge = {"usr": "a@example.com", "mal": "X" * 400, "src": "fuite", "fnd": "2026-01-01"}
 
-        resultat = normalizer.normalize_finding("stealer", charge, tenant_emails=set())
+        resultat = normalizer.normalize_finding("stealer", charge)
 
         assert len(resultat["finding_type"]) == normalizer.MAX_FINDING_TYPE
         assert resultat["finding_type"].startswith("XXX")
@@ -71,7 +71,7 @@ class TestUneValeurTropLongueNeCasseRien:
     def test_un_identifiant_interminable_est_tronque(self):
         charge = {"eml": ("b" * 300) + "@example.com", "src": "fuite"}
 
-        resultat = normalizer.normalize_finding("creds", charge, tenant_emails=set())
+        resultat = normalizer.normalize_finding("creds", charge)
 
         assert len(resultat["identifier_masked"]) <= normalizer.MAX_IDENTIFIER
 
@@ -80,13 +80,13 @@ class TestUneValeurTropLongueNeCasseRien:
         reste une fuite, et son type reste lisible."""
         charge = {"usr": "a@example.com", "mal": "RedLine Stealer " * 20}
 
-        resultat = normalizer.normalize_finding("stealer", charge, tenant_emails=set())
+        resultat = normalizer.normalize_finding("stealer", charge)
 
         assert resultat["finding_type"].startswith("RedLine Stealer")
 
     def test_une_valeur_courte_reste_intacte(self):
         charge = {"usr": "a@example.com", "mal": "RedLine"}
-        resultat = normalizer.normalize_finding("stealer", charge, tenant_emails=set())
+        resultat = normalizer.normalize_finding("stealer", charge)
         assert resultat["finding_type"] == "RedLine"
 
 

@@ -22,14 +22,16 @@ from apps.billing import api_guards, features
 from apps.monitoring import services as monitoring_services
 from apps.monitoring.models import Alert, Asset
 from apps.tenants import services as tenants_services
+from apps.tenants.models import Membership
 
-from . import client_messages, correlation, exposure, plain_language
+from . import client_messages, correlation, exposure, finding_details, plain_language
 from . import quota as quota_module
 from .models import (
     BreachFinding,
     BreachIntelligenceUsage,
     BreachScanJob,
     ExposureSynthesis,
+    IdentifierAccessAudit,
     MonitoredAsset,
     SecretPurgeRun,
     SecretRevealAudit,
@@ -237,6 +239,90 @@ def tenant_member_emails(tenant) -> set[str]:
     return set(tenants_services.list_members(tenant).values_list("user__email", flat=True))
 
 
+# --- Adresses compromises : restitution encadrée (V2-2, ADR-027) -------------
+#
+# Les adresses ne sont plus masquées : sans savoir QUI est concerné, un RSSI
+# ne peut pas agir — il ne peut ni prévenir la personne, ni savoir si le
+# compte est encore actif, ni juger de la gravité.
+#
+# L'encadrement est **volontairement plus léger** que celui de la révélation
+# d'un secret (ADR-014, cinq conditions cumulatives). Une adresse n'est pas un
+# mot de passe : elle ne donne accès à rien. Exiger une ré-authentification
+# pour lire la liste de ses propres fuites rendrait le produit inutilisable au
+# quotidien — et une garde qu'on contourne parce qu'elle gêne ne protège
+# personne. Restent : un rôle, et une trace.
+
+#: Rôles qui voient les adresses en clair. Le rôle lecteur en est exclu : il
+#: est fait pour rendre compte, pas pour agir, et n'a donc pas besoin de
+#: savoir qui est concerné.
+IDENTIFIER_VISIBLE_ROLES = (Membership.Role.ADMIN, Membership.Role.CONTRIBUTOR)
+
+
+def can_view_identifiers(role: str | None) -> bool:
+    return role in IDENTIFIER_VISIBLE_ROLES
+
+
+def identifier_for_viewer(finding: BreachFinding, *, role: str | None) -> str:
+    """L'adresse telle que ce lecteur a le droit de la voir.
+
+    Le lecteur reçoit la forme masquée plutôt que rien : lui retirer la ligne
+    entière lui cacherait l'existence de la fuite, ce qui n'est pas le sujet.
+    Ce qu'on lui retire, c'est l'identité de la personne.
+    """
+    if can_view_identifiers(role):
+        return finding.identifier_plain or finding.identifier_masked
+    return finding.identifier_masked or ""
+
+
+def record_identifier_access(
+    *,
+    tenant,
+    user,
+    context: str,
+    findings,
+    role: str | None = None,
+    ip_address: str = "",
+    user_agent: str = "",
+) -> IdentifierAccessAudit | None:
+    """Trace une consultation ou un export ayant servi des adresses en clair.
+
+    Ne trace RIEN quand rien n'a été servi en clair — ni pour un lecteur, ni
+    pour une page sans aucune adresse. Un journal qui enregistre des accès qui
+    n'ont pas eu lieu perd sa valeur de preuve : il devient un compteur de
+    pages vues.
+
+    Une ligne par consultation, pas par adresse : sur un actif réel de
+    production (28 450 fuites), l'affichage d'une seule page produirait sinon
+    28 450 lignes d'audit.
+    """
+    if role is not None and not can_view_identifiers(role):
+        return None
+
+    concernees = [f for f in findings if f.identifier_plain]
+    if not concernees:
+        return None
+
+    return IdentifierAccessAudit.all_objects.create(
+        tenant=tenant,
+        user=user if getattr(user, "is_authenticated", False) else None,
+        context=context,
+        asset_ids=sorted({f.asset_id for f in concernees}),
+        identifier_count=len(concernees),
+        ip_address=ip_address or None,
+        user_agent=user_agent[:255],
+    )
+
+
+def list_identifier_access_audits(tenant, limit: int = 100):
+    """Journal des consultations d'adresses, pour l'administrateur du tenant.
+
+    Même principe que le journal des révélations : la trace n'a de valeur que
+    si le client peut la lire. Un audit que seul l'éditeur consulte ne prouve
+    rien à celui qui en aurait besoin.
+    """
+    return IdentifierAccessAudit.all_objects.filter(tenant=tenant).select_related("user")[:limit]
+
+
 # --- Ingestion (partagée scan + webhook) ------------------------------------
 #
 # Une fuite déjà traitée par le client ne doit PAS réapparaître parce qu'un
@@ -342,7 +428,6 @@ def ingest_raw_findings(
     tenant,
     asset: Asset,
     raw_findings: list[RawFinding],
-    tenant_emails: set[str] | None = None,
     report: IngestionReport | None = None,
 ) -> list[BreachFinding]:
     """Normalizes (masking secrets — ADR-014), deduplicates, persists, and
@@ -358,7 +443,6 @@ def ingest_raw_findings(
     retour ne dit pas — notamment les fuites déjà traitées qui viennent
     d'être revues.
     """
-    tenant_emails = tenant_emails if tenant_emails is not None else tenant_member_emails(tenant)
     created: list[BreachFinding] = []
     now = timezone.now()
 
@@ -371,9 +455,7 @@ def ingest_raw_findings(
             )
             continue
 
-        normalized = normalizer.normalize_finding(
-            raw.endpoint, raw.payload, tenant_emails=tenant_emails
-        )
+        normalized = normalizer.normalize_finding(raw.endpoint, raw.payload)
         # Popped immediately, never logged, never passed to create() as-is
         # (BreachFinding has no such field) — encrypted in memory right
         # here, the one hop between the normalizer and the encrypted
@@ -602,7 +684,6 @@ def execute_scan(*, tenant, assets: list[Asset], triggered_by: str) -> dict:
     d'appel réseau dans le cycle requête/réponse HTTP)."""
     provider = get_provider()
     manager = quota_module.QuotaManager()
-    tenant_emails = tenant_member_emails(tenant)
 
     total_created = 0
     total_requests = 0
@@ -629,7 +710,6 @@ def execute_scan(*, tenant, assets: list[Asset], triggered_by: str) -> dict:
                 tenant=tenant,
                 asset=asset,
                 raw_findings=scan_result.findings,
-                tenant_emails=tenant_emails,
                 report=report,
             )
             total_created += len(created)
@@ -831,7 +911,6 @@ def ingest_webhook_payload(payload: list[dict]) -> dict:
             tenant=monitored.tenant,
             asset=monitored.asset,
             raw_findings=findings,
-            tenant_emails=tenant_member_emails(monitored.tenant),
         )
         total_created += len(created)
         _notify_pre_incident_signals(created)
@@ -1067,9 +1146,24 @@ def pre_incident_definition(signal_type: str) -> dict:
 # fuite, ce que ça veut dire et ce qu'il faut faire.
 
 
-def serialize_finding_for_feed(finding: BreachFinding, reuse_signals: list | None = None) -> dict:
+def _signal_pour_lecteur(signal: dict, *, role: str | None) -> dict:
+    """Un signal de réutilisation porte l'adresse concernée : elle doit suivre
+    la même règle de rôle que partout ailleurs.
+
+    Sans cette reprise, l'adresse masquée dans la fuite serait servie en clair
+    dans le signal juste à côté — la garde tiendrait à l'endroit où on la
+    regarde, et nulle part ailleurs.
+    """
+    if can_view_identifiers(role) or "identifier" not in signal:
+        return signal
+    return {**signal, "identifier": ""}
+
+
+def serialize_finding_for_feed(
+    finding: BreachFinding, reuse_signals: list | None = None, *, role: str | None = None
+) -> dict:
     explanation = plain_language.explain(finding)
-    reuse_signals = reuse_signals or []
+    reuse_signals = [_signal_pour_lecteur(s, role=role) for s in (reuse_signals or [])]
     action = explanation["action"]
     if reuse_signals:
         # C'est ici que la révélation prend son sens : une réutilisation
@@ -1082,7 +1176,7 @@ def serialize_finding_for_feed(finding: BreachFinding, reuse_signals: list | Non
         "finding_type": finding.finding_type,
         "severity": finding.severity,
         "severity_label": finding.get_severity_display(),
-        "identifier": finding.identifier_plain or finding.identifier_masked,
+        "identifier": identifier_for_viewer(finding, role=role),
         "secret_masked": finding.secret_masked,
         "has_secret": finding.has_secret,
         "secret_purged_at": finding.secret_purged_at,
@@ -1090,7 +1184,10 @@ def serialize_finding_for_feed(finding: BreachFinding, reuse_signals: list | Non
         "detected_at": finding.detected_at,
         # Vulgarisation déterministe (Tâche 2) : immédiate, sans appel IA.
         "meaning": explanation["meaning"],
+        "impact": explanation["impact"],
         "recommended_action": action,
+        # V2-2 : ce que la source renvoie et que le produit taisait.
+        "details": finding_details.details_for(finding),
         "reuse_signals": reuse_signals,
     }
 
@@ -1101,7 +1198,7 @@ def serialize_finding_for_feed(finding: BreachFinding, reuse_signals: list | Non
 MAX_FINDINGS_PAR_ACTIF = 100
 
 
-def build_exposure_feed(tenant) -> dict:
+def build_exposure_feed(tenant, *, role: str | None = None) -> dict:
     """Fuites ouvertes groupées par actif, chaque groupe portant son score
     d'exposition et ses composantes, groupes triés par score décroissant.
 
@@ -1160,7 +1257,9 @@ def build_exposure_feed(tenant) -> dict:
         # au reste. Le compte total, lui, est conservé et affiché — c'est lui
         # qui porte l'information « il y en a beaucoup ».
         visibles = asset_findings[:MAX_FINDINGS_PAR_ACTIF]
-        serialized = [serialize_finding_for_feed(f, reuse_by_finding.get(f.id)) for f in visibles]
+        serialized = [
+            serialize_finding_for_feed(f, reuse_by_finding.get(f.id), role=role) for f in visibles
+        ]
         groups.append(
             {
                 "asset_id": asset.id,
@@ -1183,7 +1282,9 @@ def build_exposure_feed(tenant) -> dict:
                 # d'une liste tronquée : borner l'affichage ne doit jamais
                 # borner l'analyse.
                 "reuse_signals": [
-                    signal for f in asset_findings for signal in reuse_by_finding.get(f.id, [])
+                    _signal_pour_lecteur(signal, role=role)
+                    for f in asset_findings
+                    for signal in reuse_by_finding.get(f.id, [])
                 ],
             }
         )

@@ -1,10 +1,11 @@
 from rest_framework import serializers
 
-from . import plain_language
+from . import finding_details, plain_language, services
 from .models import (
     BreachFinding,
     BreachIntelligenceUsage,
     BreachScanJob,
+    IdentifierAccessAudit,
     MonitoredAsset,
     SecretRevealAudit,
 )
@@ -13,11 +14,24 @@ from .models import (
 class BreachFindingSerializer(serializers.ModelSerializer):
     asset_id = serializers.IntegerField(source="asset.id", read_only=True)
     asset_value = serializers.CharField(source="asset.value", read_only=True)
-    # Vulgarisation déterministe (Phase 8B) : « ce que ça veut dire » et
-    # « ce qu'il faut faire », calculés côté serveur à partir du module
-    # plain_language — affichés immédiatement, sans appel IA.
+    # Vulgarisation déterministe (Phase 8B, étendue V2-2) : ce que c'est, ce
+    # que ça implique, ce qu'il faut faire — calculés côté serveur à partir du
+    # module plain_language, affichés immédiatement, sans appel IA.
     meaning = serializers.SerializerMethodField()
+    impact = serializers.SerializerMethodField()
     recommended_action = serializers.SerializerMethodField()
+    # V2-2 (ADR-027) : ce que la source renvoie et que le produit taisait —
+    # logiciel malveillant, service concerné, poste infecté… Chaque champ
+    # porte son libellé français et ce qu'il implique.
+    details = serializers.SerializerMethodField()
+    # V2-2 (ADR-027) : l'adresse, selon le rôle du lecteur.
+    #
+    # `identifier_plain` et `identifier_masked` ne sont PLUS exposés
+    # séparément. Ils l'étaient tant que le clair n'existait que pour les
+    # membres du tenant ; maintenant que toute fuite en porte un, les laisser
+    # dans la charge contournerait la garde de rôle — le lecteur aurait reçu
+    # l'adresse dans un champ voisin de celui qu'on lui masque.
+    identifier = serializers.SerializerMethodField()
 
     class Meta:
         model = BreachFinding
@@ -29,8 +43,7 @@ class BreachFindingSerializer(serializers.ModelSerializer):
             "finding_type",
             "severity",
             "status",
-            "identifier_plain",
-            "identifier_masked",
+            "identifier",
             "secret_masked",
             "has_secret",
             "breach_date",
@@ -42,7 +55,9 @@ class BreachFindingSerializer(serializers.ModelSerializer):
             "last_seen_at",
             "treated_at",
             "meaning",
+            "impact",
             "recommended_action",
+            "details",
         ]
         # raw_data et secret_encrypted sont délibérément exclus (ADR-014 :
         # minimisation — le dirigeant a besoin de savoir *quoi* et *où*, pas
@@ -54,8 +69,24 @@ class BreachFindingSerializer(serializers.ModelSerializer):
     def get_meaning(self, finding) -> str:
         return plain_language.explain(finding)["meaning"]
 
+    def get_impact(self, finding) -> str:
+        return plain_language.explain(finding)["impact"]
+
     def get_recommended_action(self, finding) -> str:
         return plain_language.explain(finding)["action"]
+
+    def get_details(self, finding) -> list:
+        return finding_details.details_for(finding)
+
+    def get_identifier(self, finding) -> str:
+        """Sans rôle dans le contexte, on sert la forme MASQUÉE.
+
+        Le défaut sûr est celui qui protège : un sérialiseur instancié sans
+        contexte (un test, un futur appelant, une commande) ne doit pas
+        publier une adresse par omission. Une garde dont l'oubli ouvre
+        l'accès n'est pas une garde.
+        """
+        return services.identifier_for_viewer(finding, role=self.context.get("viewer_role"))
 
 
 class BreachFindingStatusUpdateSerializer(serializers.Serializer):
@@ -138,10 +169,23 @@ class ReuseSignalSerializer(serializers.Serializer):
     signal_type = serializers.CharField()
     label = serializers.CharField()
     explanation = serializers.CharField()
-    identifier = serializers.CharField()
+    identifier = serializers.CharField(allow_blank=True)
     related_finding_ids = serializers.ListField(child=serializers.IntegerField())
     occurrences = serializers.IntegerField(required=False)
     external_service = serializers.CharField(required=False)
+
+
+class FindingDetailSerializer(serializers.Serializer):
+    """Un champ de la charge fournisseur, rendu lisible (V2-2, ADR-027).
+
+    Trois parties, et les trois comptent : le libellé français dit de QUOI il
+    s'agit, la valeur dit CE QUE c'est, et l'implication dit POURQUOI ça
+    compte. « Raccoon » seul n'informe personne.
+    """
+
+    label = serializers.CharField()
+    value = serializers.CharField()
+    implication = serializers.CharField()
 
 
 class ExposureFindingSerializer(serializers.Serializer):
@@ -158,7 +202,9 @@ class ExposureFindingSerializer(serializers.Serializer):
     breach_date = serializers.DateField(allow_null=True)
     detected_at = serializers.DateTimeField()
     meaning = serializers.CharField()
+    impact = serializers.CharField()
     recommended_action = serializers.CharField()
+    details = FindingDetailSerializer(many=True)
     reuse_signals = ReuseSignalSerializer(many=True)
 
 
@@ -216,6 +262,32 @@ class ExposureFeedSerializer(serializers.Serializer):
     # Absent (null) quand aucune synthèse n'a été générée ou que l'IA est
     # indisponible : la page doit être complète sans elle.
     synthesis = ExposureSynthesisSerializer(allow_null=True)
+
+
+class IdentifierAccessAuditSerializer(serializers.ModelSerializer):
+    """Journal des consultations d'adresses (V2-2, ADR-027).
+
+    Ne porte pas les adresses elles-mêmes, seulement leur nombre : un journal
+    d'accès qui recopierait la donnée consultée doublerait l'exposition qu'il
+    est censé encadrer.
+    """
+
+    user_email = serializers.CharField(source="user.email", read_only=True, default="")
+    context_label = serializers.CharField(source="get_context_display", read_only=True)
+
+    class Meta:
+        model = IdentifierAccessAudit
+        fields = [
+            "id",
+            "user_email",
+            "context",
+            "context_label",
+            "asset_ids",
+            "identifier_count",
+            "ip_address",
+            "created_at",
+        ]
+        read_only_fields = fields
 
 
 class SecretRevealAuditAdminSerializer(SecretRevealAuditSerializer):

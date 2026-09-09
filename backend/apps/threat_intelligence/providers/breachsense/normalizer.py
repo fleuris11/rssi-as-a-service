@@ -398,31 +398,41 @@ def _compute_dedup_hash(*, identity_hash: str, secret_fingerprint: str) -> str:
     return hashlib.sha256(f"{identity_hash}|{secret_fingerprint}".encode()).hexdigest()
 
 
-def normalize_finding(endpoint: str, raw: dict, *, tenant_emails: set[str] | None = None) -> dict:
+def normalize_finding(endpoint: str, raw: dict) -> dict:
     """Returns a dict of kwargs ready for ``BreachFinding.all_objects.create``
     (minus ``tenant``/``asset``, which the caller already knows) — plus a
     transient ``secret_plain`` key the caller (``services.ingest_raw_findings``)
     must pop and Fernet-encrypt (or discard) before calling ``create()``;
     ``BreachFinding`` has no such field, it exists only to carry the
     in-memory plaintext one call further without a second normalizer pass."""
-    # Comparaison sur des valeurs normalisées des DEUX côtés (casse ET espaces
-    # de bord) : un payload fournisseur arrivant avec une espace parasite
-    # (« " marie@exemple.fr" ») ne doit pas faire échouer la reconnaissance
-    # d'un membre du tenant — l'identifiant serait alors masqué à tort, et le
-    # tenant perdrait la capacité d'agir directement dessus (ADR-014 §4).
-    tenant_emails = {email.strip().lower() for email in (tenant_emails or set())}
     masked_payload, secret_seen, secret_masked, secret_plain = mask_payload(raw)
 
+    # V2-2 (ADR-027) : l'adresse compromise n'est plus masquee au stockage.
+    #
+    # ADR-014 §4 ne conservait en clair que l'email professionnel d'un membre
+    # du tenant ; toute autre adresse etait reduite a une forme NON REVERSIBLE.
+    # Cette prudence privait le RSSI de la seule information qui permet
+    # d'agir : QUI est concerne. Or les adresses qui comptent le plus sont
+    # justement celles qui ne sont pas membres — un ancien salarie, une adresse
+    # personnelle utilisee au bureau, un prestataire.
+    #
+    # Les DEUX formes sont desormais conservees. Le clair sert aux roles qui
+    # doivent agir (administrateur, contributeur) ; la forme masquee reste
+    # servie au role lecteur. Le choix se fait a la restitution, pas au
+    # stockage : masquer en base revenait a decider une fois pour toutes, sans
+    # retour possible, ce qui se decide legitimement par role.
+    #
+    # La liste des membres du tenant n'entre plus dans ce calcul : elle n'y
+    # servait qu'a decider qui avait droit au clair. Elle reste utilisee la ou
+    # elle garde un sens, la correlation des reutilisations (ADR-017).
     identifier = _extract_identifier(endpoint, raw)
     identifier_plain = ""
     identifier_masked = ""
     if identifier:
         identifier = identifier.strip()
     if identifier:
-        if identifier.lower() in tenant_emails:
-            identifier_plain = identifier
-        else:
-            identifier_masked = mask_identifier(identifier)
+        identifier_plain = identifier
+        identifier_masked = mask_identifier(identifier)
 
     breach_date = _extract_breach_date(endpoint, raw)
     severity = _compute_severity(endpoint, raw)

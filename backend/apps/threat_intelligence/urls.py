@@ -8,6 +8,7 @@ from .views import (
     BreachScanTriggerView,
     ExposureFeedView,
     ExposureSynthesisRefreshView,
+    IdentifierAccessAuditListView,
     MonitoredAssetDetailView,
     MonitoredAssetListCreateView,
     PreIncidentRadarView,
@@ -36,6 +37,11 @@ urlpatterns = [
     ),
     path("pre-incident/", PreIncidentRadarView.as_view(), name="breach-pre-incident"),
     path("audit/reveals/", SecretRevealAuditListView.as_view(), name="breach-reveal-audit-list"),
+    path(
+        "audit/identifiers/",
+        IdentifierAccessAuditListView.as_view(),
+        name="breach-identifier-audit-list",
+    ),
     path("monitored-assets/", MonitoredAssetListCreateView.as_view(), name="monitored-asset-list"),
     path(
         "monitored-assets/<int:asset_id>/",

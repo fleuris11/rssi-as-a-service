@@ -182,6 +182,33 @@ def _counters_from_mapping(mapping: dict) -> dict:
     return counters
 
 
+#: Nombre de fuites reprises dans le contexte envoyé au modèle. Défini ici,
+#: et utilisé à la fois par le constructeur de contexte et par le collecteur
+#: de valeurs sensibles : les deux DOIVENT porter sur exactement le même
+#: ensemble, sinon une adresse pourrait entrer dans le contexte sans figurer
+#: dans la table de pseudonymisation — donc partir en clair.
+AI_CONTEXT_FINDINGS_LIMIT = 20
+
+
+def context_findings(tenant):
+    """Les fuites reprises dans le contexte IA, dans un ordre déterministe.
+
+    ``order_by("-detected_at", "id")`` et non le tri par défaut du modèle :
+    celui-ci ne départage pas les ex æquo, et deux requêtes successives
+    pouvaient donc renvoyer deux lots de vingt différents. Le collecteur et le
+    constructeur de contexte auraient alors travaillé sur des ensembles
+    légèrement distincts — c'est exactement ainsi qu'une adresse échappe à la
+    pseudonymisation.
+    """
+    return list(
+        threat_intelligence_services.list_findings(
+            tenant, status=BreachFinding.Status.OPEN, include_pre_incident=True
+        )
+        .select_related("asset")
+        .order_by("-detected_at", "id")[:AI_CONTEXT_FINDINGS_LIMIT]
+    )
+
+
 def collect_sensitive_values(tenant, mapping: dict | None = None) -> dict:
     """Real value -> stable ``{{PLACEHOLDER}}`` token. Only ever built from
     identifying data (company name, member names/emails, monitored asset
@@ -208,6 +235,19 @@ def collect_sensitive_values(tenant, mapping: dict | None = None) -> dict:
                 _add_value(mapping, counters, hostname, "DOMAIN")
         else:
             _add_value(mapping, counters, asset.value, "DOMAIN")
+
+    # V2-2 (ADR-027) : les adresses compromises ne sont plus masquées au
+    # stockage. Elles entrent donc en clair dans le contexte, ce qui n'était
+    # pas le cas avant — seules celles des MEMBRES y arrivaient, et le
+    # collecteur les couvrait déjà par la boucle ci-dessus.
+    #
+    # Ce sont précisément les autres qui comptent ici : l'adresse personnelle
+    # d'un salarié, celle d'un ancien collaborateur, celle d'un prestataire.
+    # Sans cette boucle, elles partiraient telles quelles vers le modèle — un
+    # démasquage utile au RSSI se serait payé d'une fuite vers un tiers.
+    for finding in context_findings(tenant):
+        if finding.identifier_plain:
+            _add_value(mapping, counters, finding.identifier_plain, "EMAIL")
     return mapping
 
 
@@ -540,10 +580,11 @@ def build_assistant_context(tenant) -> dict:
             for alert in open_alerts
         ],
         # Phase 7 (ADR-013/014) : uniquement les champs déjà non-sensibles
-        # d'un BreachFinding — jamais raw_data, jamais un secret. identifier_
-        # plain (l'email pro d'un membre) passe par la pseudonymisation comme
-        # tout le reste de ce contexte ; identifier_masked/secret_masked sont
-        # déjà des formes masquées non réversibles, sans PII à pseudonymiser.
+        # d'un BreachFinding — jamais raw_data, jamais un secret. Depuis la
+        # V2-2, `identifier_plain` est renseigné pour TOUTE fuite et non plus
+        # seulement pour les membres : il est collecté et pseudonymisé par
+        # `collect_sensitive_values`, sur le même ensemble borné que celui
+        # parcouru ici (`context_findings`).
         "compromissions_ouvertes": [
             {
                 "actif": finding.asset.value,
@@ -552,9 +593,7 @@ def build_assistant_context(tenant) -> dict:
                 "identifiant": finding.identifier_plain or finding.identifier_masked,
                 "secret_expose": finding.has_secret,
             }
-            for finding in threat_intelligence_services.list_findings(
-                tenant, status=BreachFinding.Status.OPEN, include_pre_incident=True
-            ).select_related("asset")[:20]
+            for finding in context_findings(tenant)
         ],
     }
 

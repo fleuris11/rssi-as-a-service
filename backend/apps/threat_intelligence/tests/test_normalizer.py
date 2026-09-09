@@ -225,24 +225,30 @@ class TestNormalizeFindingPerEndpoint:
         assert "SuperSecret123" not in str(result["raw_data"])
 
     def test_creds_identifier_is_eml_field(self):
-        result = normalizer.normalize_finding(
-            "creds", REALISTIC_PAYLOADS["creds"], tenant_emails={"j.dupont@example.com"}
-        )
+        result = normalizer.normalize_finding("creds", REALISTIC_PAYLOADS["creds"])
         assert result["severity"] == "high"
         assert result["identifier_plain"] == "j.dupont@example.com"
         assert "SuperSecret123" not in str(result["raw_data"])
 
-    def test_creds_identifier_masked_for_non_tenant_email(self):
-        result = normalizer.normalize_finding(
-            "creds", REALISTIC_PAYLOADS["creds"], tenant_emails=set()
-        )
-        assert result["identifier_plain"] == ""
+    def test_the_identifier_is_kept_in_both_forms(self):
+        """V2-2 (ADR-027) : l'adresse n'est plus masquée AU STOCKAGE.
+
+        Les deux formes coexistent, et c'est la restitution qui choisit selon
+        le rôle du lecteur. Masquer en base revenait à trancher une fois pour
+        toutes, sans retour possible, ce qui se décide légitimement par rôle.
+
+        L'appartenance au tenant n'entre plus dans ce calcul : une adresse
+        tierce est conservée en clair comme celle d'un membre — c'est
+        justement celle-là que le RSSI a besoin de connaître pour prévenir la
+        personne.
+        """
+        result = normalizer.normalize_finding("creds", REALISTIC_PAYLOADS["creds"])
+
+        assert result["identifier_plain"] == "j.dupont@example.com"
         assert result["identifier_masked"] == "j.••••@ex••••.com"
 
     def test_sessions_uses_user_name_field_and_masks_val_not_cookie_name(self):
-        result = normalizer.normalize_finding(
-            "sessions", REALISTIC_PAYLOADS["sessions"], tenant_emails=set()
-        )
+        result = normalizer.normalize_finding("sessions", REALISTIC_PAYLOADS["sessions"])
         assert result["severity"] == "critical"
         assert result["identifier_masked"] != ""  # user_name extrait, jamais l'email tenant ici
         assert result["breach_date"].isoformat() == "2026-01-15"  # fnd, pas expires

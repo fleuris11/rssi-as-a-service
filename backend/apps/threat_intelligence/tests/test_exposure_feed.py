@@ -132,8 +132,10 @@ class TestExposureFeedAPI:
 
         finding = response.data["assets"][0]["findings"][0]
         # La spécificité produit du cas "sessions" : le cookie contourne AUSSI
-        # la double authentification — c'est ce qui doit être dit.
-        assert "double authentification" in finding["meaning"]
+        # la double authentification — c'est ce qui doit être dit. Depuis la
+        # V2-2 cela relève de « ce que ça implique », servi à côté de « ce que
+        # c'est » ; l'exigence porte sur le fond, pas sur la case.
+        assert "double authentification" in f"{finding['meaning']} {finding['impact']}"
         assert finding["recommended_action"]
 
     def test_includes_pre_incident_findings_in_asset_exposure(

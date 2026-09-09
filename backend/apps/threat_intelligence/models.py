@@ -304,6 +304,55 @@ class SecretPurgeRun(models.Model):
         )
 
 
+class IdentifierAccessAudit(TenantScopedModel):
+    """Trace des consultations d'adresses compromises en clair (V2-2, ADR-027).
+
+    Afficher une adresse email est un traitement de données personnelles. La
+    V2-2 démasque ces adresses parce que le RSSI ne peut pas agir sans savoir
+    QUI est concerné — mais démasquer sans tracer reviendrait à échanger un
+    problème d'utilité contre un problème de conformité.
+
+    L'encadrement est **délibérément plus léger** que celui de la révélation
+    d'un secret (ADR-014) : pas de ré-authentification, pas de limitation de
+    débit, pas de refus par défaut. Une adresse n'est pas un mot de passe —
+    elle ne donne accès à rien. Exiger les cinq conditions de la révélation
+    pour la lire rendrait le produit inutilisable au quotidien, et une garde
+    qu'on contourne parce qu'elle gêne ne protège personne.
+
+    Ce qui est tracé, c'est **l'accès**, pas chaque adresse : une ligne par
+    consultation ou par export, avec les actifs concernés et le nombre
+    d'adresses servies. Une ligne par adresse ferait, sur un actif réel de
+    production, 28 450 lignes d'audit pour un seul affichage de page.
+    """
+
+    class Context(models.TextChoices):
+        CONSULTATION = "consultation", "Consultation à l'écran"
+        EXPORT = "export", "Export de données"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    context = models.CharField(max_length=20, choices=Context.choices)
+    # Actifs concernés par les adresses servies. Stockés en liste plutôt qu'en
+    # relation : c'est une trace, pas un index — elle doit survivre à la
+    # suppression d'un actif, ce qu'une clé étrangère ne ferait pas.
+    asset_ids = models.JSONField(default=list, blank=True)
+    identifier_count = models.PositiveIntegerField(default=0)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["tenant", "-created_at"])]
+
+    def __str__(self):
+        return (
+            f"{self.get_context_display()} — {self.identifier_count} adresse(s) — "
+            f"{self.tenant_id} — {self.user_id}"
+        )
+
+
 class SecretRevealAudit(TenantScopedModel):
     """Audit trail for the privileged secret-reveal endpoint (ADR-014,
     update: reversible encryption + re-authenticated reveal). Every attempt
