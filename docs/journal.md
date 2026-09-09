@@ -4411,3 +4411,203 @@ lui, reste ouvert : rejouer le retour arrière à froid.
 - Les points ouverts de la séance du 6 septembre restent ouverts : temps de
   réponse du flux d'exposition (~4 s sur `ratp.fr`), webhook Breachsense
   jamais déclenché pour de vrai, aucun appel humain à CRRH.
+
+---
+
+## 9 septembre 2026 — V2-1 : ce qu'on retraite sans fin, et ce qu'on surveille sans droit
+
+Deux corrections sans rapport apparent, traitées ensemble parce qu'elles
+partagent une racine : **le produit tenait pour acquis ce qu'il n'avait
+jamais vérifié.** Qu'une fuite remontée deux fois soit la même. Qu'un actif
+déclaré appartienne à celui qui le déclare.
+
+### Partie A — Une fuite traitée revenait, et l'empreinte disait pourquoi
+
+Le constat client : les analyses successives remontent les mêmes lignes, y
+compris celles qu'il vient de traiter. Il ne peut pas avancer.
+
+**Ce que le code faisait vraiment.** Contre-intuitivement, l'ingestion ne
+rouvrait rien : `get_or_create` sur `(tenant, dedup_hash)` sortait sans
+toucher au statut. Le défaut n'était pas dans la décision, il était dans
+l'**empreinte** : deux remontées de la même fuite n'obtenaient pas toujours la
+même. Elles créaient alors une seconde ligne, ouverte, à côté de celle que le
+client avait traitée.
+
+Trois causes, mesurées et non supposées :
+
+1. **Les dates du fournisseur entraient dans l'empreinte** (`fnd`, `inf`,
+   `found`). Or son schéma réel pose que *tous* les champs sont optionnels.
+   Vérifié en rejouant l'ancienne formule sur une même fuite, avec et sans sa
+   date : deux empreintes différentes. Une fuite remontée sans sa date était
+   une fuite neuve.
+2. **La moitié « secret » de l'empreinte était la forme masquée** —
+   `••••••` suivi des **deux derniers caractères**. « Ete2024! » et
+   « Hiver2024! » donnent tous deux `••••••4!` : deux mots de passe distincts,
+   une seule empreinte. Ce défaut-là ne produisait pas des doublons mais
+   l'inverse, et c'est le plus grave des trois : **une compromission réelle et
+   nouvelle était silencieusement avalée par la précédente.** Jamais signalée.
+3. **Les champs absents étaient pris par position**, remplacés par une chaîne
+   vide.
+
+**Réponse à la question posée — l'empreinte actuelle suffit-elle ?** Non. Elle
+distinguait un secret changé *par accident*, dans la mesure où les deux
+derniers caractères différaient. Ce n'est pas une distinction, c'est une
+coïncidence favorable.
+
+**Ce qui remplace.** L'empreinte se scinde en deux moitiés nommées :
+
+    identity_hash      : QUI a fuité et d'où — endpoint + champs non secrets,
+                         dates exclues, champs présents NOMMÉS
+    secret_fingerprint : QUEL secret — sha256 du secret en clair, "" si aucun
+
+et `dedup_hash` devient leur combinaison. La règle demandée tient alors sans
+exception : même compte + même secret → la même fuite, statut intouché ; même
+compte + secret différent → une nouvelle fuite, qui apparaît même si la
+précédente est traitée.
+
+Empreindre le secret en clair ne franchit aucune ligne de l'ADR-014 : le
+produit détient déjà ce secret sous une forme **réversible** (Fernet). Une
+empreinte à sens unique est strictement moins sensible que ce qui est en base
+— et elle survit à la purge du secret, ce qui est exactement ce qu'il faut
+pour que le dédoublonnage continue de fonctionner après.
+
+**Les dates hors de l'identité, est-ce trop large ?** C'est le vrai
+arbitrage. Fusionner deux fuites distinctes serait pire que d'en dupliquer
+une : une compromission non signalée coûte plus qu'une ligne en double. Ce
+qui rend le retrait acceptable, c'est que le secret est désormais une moitié
+à part entière : deux remontées du même compte, même source, ne se
+confondent que si le secret est identique — ce qui est précisément la
+définition de « la même fuite ».
+
+**Migration.** Purement additive : trois colonnes, aucune retirée, aucune
+contrainte touchée, `dedup_hash` conservé tel quel. C'est délibéré — la
+procédure de repli vers `v1.0-production` (§6 bis) distingue le retour du
+code seul du retour avec restauration de base, et une migration qui casserait
+le code d'avant ferait basculer tout retour arrière dans le second cas.
+
+Le remplissage **ne déchiffre rien** : une migration qui dépend d'un secret
+d'environnement échoue le jour où il manque, et elle échoue pendant un
+déploiement. Les fuites existantes reçoivent une empreinte préfixée
+`legacy:`, et `_reconcile_legacy_finding` les raccroche une par une, à leur
+première réobservation, sur exactement le critère que l'ancienne formule
+utilisait. Sans ce raccrochage, la première analyse suivant la mise en
+service recréerait en double **tout** l'historique — dont les fuites que le
+client vient de traiter. Le défaut corrigé, rejoué une dernière fois, à
+grande échelle.
+
+**Le compteur.** Une fuite traitée revue n'entre plus dans la liste, mais
+l'écran le dit : « la dernière analyse a revu N compromissions que vous aviez
+déjà traitées », avec un lien vers l'onglet où elles sont. On masque, on ne
+cache pas. Le compte est exact, pas dérivé d'une heuristique de date : il
+vient d'un rapport passé à l'ingestion.
+
+**Le score.** Vérifié, et c'était déjà le cas : `build_exposure_feed` filtre
+sur `status=OPEN` avant de calculer. Rien à corriger — mais rien ne
+l'empêchait de se perdre au prochain remaniement. C'est maintenant verrouillé
+par deux tests.
+
+### Partie B — On ne surveille en continu que ce qu'on possède
+
+Le point était ouvert depuis le 3 septembre : **CRRH a déclaré `ratp.fr`**.
+Le 4, le rapprochement du pool fournisseur en a montré un autre,
+`afinhab.org`, qui n'était même pas un actif déclaré.
+
+ADR-010 posait « un actif n'est vérifié que s'il est déclaré ». C'était la
+bonne règle contre le mauvais risque : elle empêche la plateforme de sonder
+au hasard, elle ne dit rien de la légitimité du déclarant. **Déclarer n'est
+pas posséder.**
+
+**Ce qui a tranché, c'est la durée.** Une analyse ponctuelle est un geste
+unique, daté, dont le client répond. Une surveillance continue est
+invisible du dehors, occupe un emplacement de la licence et fait partir des
+alertes pendant des mois. Le risque n'est pas technique — aucune des deux ne
+sonde le domaine d'un tiers, ce sont des lectures de bases déjà constituées —
+il est juridique : constituer et notifier un dossier de compromissions sur
+une organisation qui n'a rien demandé.
+
+D'où deux régimes, et non un seul (ADR-026) :
+
+- **surveillance continue → preuve** : DNS TXT, fichier à la racine, ou email
+  à une adresse d'administration prise dans une **liste fermée**. Trois
+  méthodes parce qu'une seule aurait déplacé le blocage vers les clients les
+  moins outillés — ceux qui n'ont pas la main sur leur zone DNS — c'est-à-dire
+  la cible du produit ;
+- **analyse ponctuelle → déclaration sur l'honneur tracée** : qui, quand,
+  quel actif, quelle adresse IP, et le texte exact accepté. La case
+  `ownership_confirmed` existait déjà ; elle n'enregistrait rien. Un booléen
+  ne répond à aucune des trois questions qu'on pose le jour où un tiers
+  demande des comptes.
+
+**L'email dit au tiers comment refuser.** Il nomme l'entreprise demandeuse et
+précise que ne pas transmettre le code suffit à tout empêcher. Sans cette
+porte de sortie, la méthode ne serait qu'une formalité — elle ne vaut que
+parce que le destinataire peut dire non.
+
+**Rien n'est coupé.** Les actifs déclarés avant cette règle continuent d'être
+surveillés ; ils apparaissent dans un onglet « Possession » de la console,
+avec le sous-ensemble urgent en rouge : ceux qui sont *déjà* en surveillance
+continue. L'état est **dérivé** des tables, jamais stocké — un drapeau aurait
+dû être posé par une migration puis maintenu à chaque preuve validée, soit
+deux occasions de mentir.
+
+### Deux défauts trouvés en écrivant les tests
+
+**Le refus remontait en 500.** `OwnershipNotProvenError` venait de
+`monitoring` et traversait le `except ThreatIntelligenceError` de la vue sans
+être vue : un refus de règle métier présenté au client comme une panne, avec
+un message que personne ne lisait. L'erreur est désormais traduite à la
+frontière de l'app, comme l'est déjà le refus du fournisseur.
+
+**Un de mes tests ne prouvait rien.** Le test censé montrer que les champs
+d'identité doivent être nommés passait *aussi* sans les noms — il exerçait une
+collision impossible avec les champs retenus. Découvert en réintroduisant le
+défaut, pas en le relisant. Réécrit sur le cas réel (`eml="collision"` contre
+`src="collision"`), il tombe.
+
+### Vérifications
+
+Chaque garde vérifiée **en réintroduisant son défaut**, une par une, avec
+restauration entre chaque : 8 pour la partie A, 9 pour la partie B, toutes
+tombent quand le défaut revient. C'est la seule preuve qu'un test vert veuille
+dire quelque chose.
+
+Mesure de l'ancienne empreinte, avant correction, pour ne pas travailler sur
+une hypothèse :
+
+    meme fuite, fnd present  : cb663bf8cab1757f
+    meme fuite, fnd absent   : 7236d21387fce529
+    => meme empreinte ? False
+
+Suites : **1139 tests backend verts** (contre 1086 avant cette session), plus
+les 3 échecs WeasyPrint habituels — environnementaux sous Windows, verts en CI
+Linux, vérifiés inchangés. Frontend : **155 tests verts** (contre 145).
+`ruff` et `eslint` propres, construction verte.
+
+Un incident de méthode, noté parce qu'il coûterait du temps à quelqu'un
+d'autre : une première passe complète a fait tomber quatre tests de
+`test_lockout.py`. Aucun rapport avec ces changements — j'avais lancé deux
+exécutions pytest simultanées, qui se partageaient les compteurs Redis du
+verrouillage de compte. Relancés seuls : verts. **Deux suites en parallèle sur
+un même Redis ne mesurent rien.**
+
+### Reste à faire
+
+- **Rien n'a été vérifié sur le serveur.** Un filtre web Fortinet sur le
+  réseau du poste bloque `rssiasservice.online` (page « Web Filter Violation »
+  sur le port 80, ports 22 et 443 filtrés) ; GitHub et le reste d'Internet
+  répondent normalement. La migration 0006 n'a donc **pas** été jouée sur les
+  volumes réels — un actif de production porte 28 450 fuites, et le
+  remplissage les parcourt toutes. À faire depuis un réseau non filtré, avant
+  déploiement.
+- **Le raccrochage des fuites antérieures n'a été exercé que sur des données
+  de test.** C'est le chemin le plus risqué de cette livraison : il s'exécute
+  une fois, sur tout l'historique, et une erreur y produirait exactement le
+  défaut qu'on corrige.
+- La re-vérification périodique de possession n'existe pas : une preuve
+  acquise le reste, un domaine qui change de mains ne serait pas détecté.
+- `ratp.fr` : la décision empêche désormais d'en activer la surveillance
+  continue et l'écran de régularisation le fait apparaître. Elle ne dit pas ce
+  qu'il faut en dire au client — cela reste à faire, humainement.
+- Les deux domaines orphelins côté fournisseur (`afinhab.org`,
+  `crrhuemoa.org` sans `MonitoredAsset`) : problème de rapprochement distinct,
+  toujours ouvert depuis le 4 septembre.
