@@ -1,0 +1,4 @@
+domaine_code,domaine_nom,domaine_ordre,mesure_code,mesure_numero,intitule_officiel,enonce_clair,niveau,poids,effort,impact
+gouvernance,Gouvernance et organisation,1,EX-01,,Intitule officiel de la mesure tel qu il figure dans le referentiel,La question posee au dirigeant en langage clair ?,,1,medium,high
+gouvernance,Gouvernance et organisation,1,EX-02,,Deuxieme mesure du meme domaine,Une autre question claire ?,,1,low,medium
+technique,Mesures techniques,2,EX-03,,Premiere mesure du deuxieme domaine,Encore une question ?,,0.5,high,medium
