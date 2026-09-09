@@ -13,6 +13,11 @@ User = get_user_model()
 class ActionItemSerializer(serializers.ModelSerializer):
     measure = MeasureSerializer(read_only=True)
     domain_name = serializers.CharField(source="measure.domain.name", read_only=True)
+    # V2-4 : un plan consolidé mélange les référentiels. Sans cette colonne,
+    # deux lignes voisines demandant à peu près la même chose seraient
+    # indistinguables — et l'une des deux passerait pour un doublon.
+    referential_name = serializers.CharField(source="measure.referential.name", read_only=True)
+    referential_slug = serializers.CharField(source="measure.referential.slug", read_only=True)
     assignee_email = serializers.SerializerMethodField()
     priority = serializers.SerializerMethodField()
     # Calculé côté serveur : « en retard » se définit une fois, et l'écran ne
@@ -26,6 +31,8 @@ class ActionItemSerializer(serializers.ModelSerializer):
             "assessment",
             "measure",
             "domain_name",
+            "referential_name",
+            "referential_slug",
             "status",
             "assignee",
             "assignee_email",
@@ -45,6 +52,8 @@ class ActionItemSerializer(serializers.ModelSerializer):
             "assessment",
             "measure",
             "domain_name",
+            "referential_name",
+            "referential_slug",
             "assignee_email",
             "priority",
             "is_overdue",

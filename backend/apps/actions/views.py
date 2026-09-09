@@ -22,7 +22,10 @@ class ActionItemListView(generics.ListAPIView):
     """Kanban list — one flat list, each item carries its status; the
     frontend groups them into à faire / en cours / fait columns.
 
-    Optional filters: ``?assessment=<id>`` and ``?status=todo|in_progress|done``.
+    Sans filtre, le plan est consolidé : toutes les évaluations du client,
+    tous référentiels confondus (V2-4). Filtres facultatifs :
+    ``?assessment=<id>``, ``?status=todo|in_progress|done``,
+    ``?referential=<slug>``.
     """
 
     permission_classes = [permissions.IsAuthenticated, IsTenantMember]
@@ -37,10 +40,17 @@ class ActionItemListView(generics.ListAPIView):
             )
             if assessment is None:
                 raise NotFound("Évaluation introuvable.")
+        referential = None
+        slug = self.request.query_params.get("referential")
+        if slug:
+            referential = assessments_services.get_referential(slug=slug)
+            if referential is None:
+                raise NotFound("Référentiel introuvable.")
         return services.list_action_items(
             self.request.tenant,
             assessment=assessment,
             status=self.request.query_params.get("status"),
+            referential=referential,
         )
 
 

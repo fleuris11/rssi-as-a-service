@@ -40,7 +40,10 @@ def generate_action_plan(assessment) -> int:
 
     Returns the number of items actually created.
     """
-    measures = assessments_services.get_referential_measures(assessment.referential)
+    # Le périmètre de l'évaluation, et non le référentiel entier (V2-4) :
+    # quand le diagnostic a porté sur un sous-ensemble de 10 mesures, le plan
+    # d'action ne doit pas en lister 42 dont 32 n'ont jamais été posées.
+    measures = assessments_services.get_assessment_measures(assessment)
     values = assessments_services.get_answer_values(assessment)
 
     created_count = 0
@@ -57,16 +60,60 @@ def generate_action_plan(assessment) -> int:
     return created_count
 
 
-def list_action_items(tenant, *, assessment=None, status=None):
-    """The tenant's action items, quick wins (high impact / low effort) first."""
+def list_action_items(tenant, *, assessment=None, status=None, referential=None):
+    """The tenant's action items, quick wins (high impact / low effort) first.
+
+    ``referential`` filtre le plan sur un seul référentiel ; sans lui, le plan
+    est CONSOLIDÉ — toutes les évaluations du client, tous référentiels
+    confondus. Consolider des actions, contrairement à consolider des scores,
+    ne demande aucune règle d'arbitrage : une action est une chose à faire, et
+    deux référentiels qui demandent la même chose donnent deux lignes qu'on
+    voit côte à côte. Ce que nous ne faisons PAS, faute de table de
+    correspondance : les fusionner (ADR-030).
+    """
     queryset = ActionItem.all_objects.filter(tenant=tenant).select_related(
-        "measure", "measure__domain", "assignee"
+        "measure", "measure__domain", "measure__referential", "assignee"
     )
     if assessment is not None:
         queryset = queryset.filter(assessment=assessment)
     if status is not None:
         queryset = queryset.filter(status=status)
-    return sorted(queryset, key=priority_ratio, reverse=True)
+    if referential is not None:
+        queryset = queryset.filter(measure__referential=referential)
+    items = sorted(queryset, key=priority_ratio, reverse=True)
+    # Le plan affiche le MÊME énoncé que le questionnaire : si le client a
+    # reformulé une mesure, la voir revenir dans sa formulation d'origine sur
+    # l'écran d'à côté lui ferait douter qu'il s'agit de la même.
+    assessments_services.apply_overrides([item.measure for item in items], tenant)
+    return items
+
+
+def plan_by_referential(tenant) -> list[dict]:
+    """Le plan d'action, référentiel par référentiel : ce qui reste à faire
+    de chaque côté quand un client en suit plusieurs."""
+    lignes = (
+        ActionItem.all_objects.filter(tenant=tenant)
+        .values("measure__referential_id", "measure__referential__name")
+        .annotate(
+            total=Count("id"),
+            done=Count("id", filter=Q(status=ActionItem.Status.DONE)),
+            open=Count("id", filter=~Q(status=ActionItem.Status.DONE)),
+        )
+        .order_by("measure__referential__name")
+    )
+    return [
+        {
+            "referential_id": ligne["measure__referential_id"],
+            "referential_name": ligne["measure__referential__name"],
+            "total": ligne["total"],
+            "done": ligne["done"],
+            "open": ligne["open"],
+            "completion_rate": (
+                round(100 * ligne["done"] / ligne["total"], 1) if ligne["total"] else None
+            ),
+        }
+        for ligne in lignes
+    ]
 
 
 def get_action_item(*, tenant, item_id):
@@ -147,6 +194,10 @@ def action_plan_indicators(tenant, *, start, end, today=None) -> dict:
         "completion_rate": (
             round(100 * comptes["done"] / comptes["total"], 1) if comptes["total"] else None
         ),
+        # V2-4 : le détail par référentiel accompagne le total, comme pour le
+        # score (ADR-030). Un « 40 % » qui recouvre 80 % sur l'ANSSI et 10 %
+        # sur ISO ne dit pas la même chose que 40 % partout.
+        "by_referential": plan_by_referential(tenant),
     }
 
 
