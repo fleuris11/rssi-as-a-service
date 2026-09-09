@@ -22,7 +22,7 @@ traçabilité des décisions comptent autant que le code. Le document de référ
 
 ## Architecture — règles non négociables
 1. **Apps Django par domaine** : `accounts`, `tenants`, `assessments`, `actions`, `monitoring`,
-   `ai_assistant`, `notifications`, `platform_admin`. Une app n'importe JAMAIS les modèles d'une
+   `ai_assistant`, `notifications`, `platform_admin`, `access_requests`. Une app n'importe JAMAIS les modèles d'une
    autre app directement : passer par les fonctions de `services.py` de l'app concernée.
 2. **Multi-tenancy** : toute table métier porte `tenant_id`. Utiliser le manager `TenantScopedManager`
    et le middleware de scoping. Toute nouvelle ressource exposée par l'API DOIT avoir un test

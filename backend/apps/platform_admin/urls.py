@@ -8,6 +8,7 @@ from .console_views import (
     ClientMemberDetailView,
     ClientMemberListView,
     ClientMonitoredAssetView,
+    ClientReferentialView,
     ExportView,
     FollowUpBoardView,
     GlobalSearchView,
@@ -23,6 +24,7 @@ from .console_views import (
     ProspectDetailView,
     ProspectListView,
     ProspectNoteView,
+    ReferentialCatalogView,
     SubscriptionDetailView,
     TrashView,
 )
@@ -93,6 +95,11 @@ urlpatterns = [
         name="platform-client-monitored-assets",
     ),
     path(
+        "clients/<uuid:tenant_id>/referentials/",
+        ClientReferentialView.as_view(),
+        name="platform-client-referentials",
+    ),
+    path(
         "clients/<uuid:tenant_id>/actions/",
         ClientActionView.as_view(),
         name="platform-client-actions",
@@ -103,6 +110,8 @@ urlpatterns = [
         name="platform-subscription-action",
     ),
     path("trash/", TrashView.as_view(), name="platform-trash"),
+    # --- Referentiels (V2-4) ------------------------------------------------
+    path("referentials/", ReferentialCatalogView.as_view(), name="platform-referential-list"),
     # --- Catalogue ----------------------------------------------------------
     path("plans/", AdminPlanListView.as_view(), name="platform-plan-list"),
     # Les chemins spécifiques passent AVANT le détail : sans cela,

@@ -51,6 +51,10 @@ class AdminAuditLog(models.Model):
         MONITORED_ASSET_REMOVED = "monitored_asset_removed", "Actif retiré de la surveillance"
         SCAN_TRIGGERED = "scan_triggered", "Analyse déclenchée"
         SECRETS_PURGED = "secrets_purged", "Secrets purgés"
+        # Referentiels et demandes (V2-4)
+        REFERENTIAL_ASSIGNED = "referential_assigned", "Référentiel attribué"
+        REFERENTIAL_REVOKED = "referential_revoked", "Référentiel retiré"
+        ACCESS_REQUEST_HANDLED = "access_request_handled", "Demande d'accès traitée"
         # Prospects
         DEMO_REQUEST_UPDATED = "demo_request_updated", "Demande de démonstration traitée"
         PROSPECT_CREATED = "prospect_created", "Prospect créé"
