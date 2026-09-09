@@ -25,6 +25,7 @@ urlpatterns = [
     # rares, santé. Garde IsAdminUser, jamais les permissions de tenant.
     path("api/v1/platform/", include("apps.platform_admin.urls")),
     path("api/v1/billing/", include("apps.billing.urls")),
+    path("api/v1/reporting/", include("apps.reporting.urls")),
     # Hors du namespace tenant-scopé habituel : pas de JWT/X-Tenant-Id côté
     # Breachsense, authentification HTTP Basic dédiée (ADR-013 §7).
     path(
