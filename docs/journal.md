@@ -4787,3 +4787,204 @@ formule générique.
 - `raw_data` continue de tout stocker, y compris les champs non restitués.
   Réduire le stockage à ce qui est affiché serait une décision de rétention
   distincte, et irréversible.
+
+---
+
+## 9 septembre 2026 (fin) — V2-3 : supprimer une soirée de travail par mois
+
+L'objectif n'était pas d'ajouter des graphiques. Un RSSI qui prépare son
+comité rouvre quatre écrans, recopie des chiffres dans un tableur et
+reconstruit à la main une évolution que le produit possède déjà. Le produit
+avait quatre mesures justes, toutes **instantanées** ; il manquait une
+période, une comparaison et un document.
+
+### La décision la plus structurante est un refus
+
+Pas de « score global de sécurité ». Une moyenne de la maturité et de
+l'exposition monterait quand l'entreprise remplit un questionnaire et
+descendrait quand un fournisseur se fait pirater — deux variations qu'aucune
+action commune n'explique. Un dirigeant qui la voit baisser ne saurait pas
+s'il doit former ses équipes ou changer des mots de passe. Et elle rendrait
+les **deux** mesures injustifiables, puisqu'aucune ne pourrait plus être
+défendue séparément.
+
+L'écran et le rapport le disent au lecteur plutôt que de compter sur son bon
+sens : la moyenne se fabriquerait sinon dans le tableur d'à côté. Un test
+structurel refuse toute clé de la forme `global_score` / `security_score`
+dans la charge servie.
+
+### Le passé se reconstruit, il ne se stocke pas
+
+Deux façons de dater un indicateur. Une table d'instantanés quotidiens, ou un
+calcul depuis les horodatages existants.
+
+La table a été écartée pour une raison de calendrier, pas de technique : elle
+ne produirait aucun historique avant un mois de fonctionnement, or le premier
+comité a lieu avant. Elle ajouterait aussi une source qui peut diverger du
+réel — une tâche qui n'a pas tourné laisse un trou silencieux.
+
+Les données portent déjà leur histoire : `detected_at`, `treated_at`,
+`completed_at`, `score_global`, `checked_at`. « Ouvert au 15 juin » se
+calcule. **L'historique existe donc dès la mise en service**, sur toute la
+profondeur des données.
+
+Deux trous à boucher pour que cette reconstruction soit juste, et tous deux
+trouvés en écrivant les indicateurs, pas en les imaginant :
+
+1. **une fuite ignorée ne datait pas sa clôture.** Seul « traité » posait
+   `treated_at`. Reconstruire l'état de juin aurait compté comme ouvertes des
+   fuites que le client avait fermées. `treated_by` reste réservé à
+   « traité » : ignorer n'est pas traiter, et attribuer ce geste à quelqu'un
+   qui a écarté la ligne serait faux ;
+2. **une action du plan n'avait ni échéance ni date de fin.** « Actions en
+   retard » était demandé et ne pouvait pas exister : sans échéance, rien
+   n'est en retard. Et « terminées ce trimestre » se serait appuyé sur
+   `updated_at`, qui bouge à la moindre correction de note.
+
+Ce qui n'est pas reconstructible est dit : les fuites ignorées **avant** cette
+version n'ont pas de date de clôture et sont comptées closes depuis toujours.
+Le choix minore le passé plutôt que de gonfler le présent — entre deux
+erreurs, celle qui n'inquiète pas à tort.
+
+### Les mesures, dont une qui m'a contredit
+
+Le 06/09, le fil d'exposition s'était effondré sur 28 450 fuites : 3,79 s rien
+qu'à matérialiser les objets, et un `defer()` sur les colonnes larges n'y
+changeait rien. Un tableau de bord qui interroge plusieurs dates referait la
+même faute, multipliée. J'ai donc mesuré avant de choisir, sur un jeu
+reproduisant le volume réel.
+
+    volume                      : 28450 fuites
+    score par objets Django     : 4,56 s
+    score par n-uplets bruts    : 0,85 s      -> x5,4
+
+    colonne chiffree rapatriee  : 0,92 s (5,0 Mo transportes)
+    booleen calcule en base     : 0,72 s      -> x1,3
+
+    serie de 91 jours           : 3 requetes
+    tableau de bord complet     : 35 requetes, 1,77 s
+
+**Mon hypothèse de départ était fausse.** Je pensais que le transport de la
+colonne chiffrée dominait le coût — c'est la donnée la plus volumineuse. La
+mesure dit ×1,3 : réel, mais secondaire. Le gain vient presque entièrement du
+refus de matérialiser des objets (×5,4), exactement ce que le 06/09 avait déjà
+montré et que j'avais oublié en cours de route.
+
+Pire : **la première version du banc ne contenait aucun secret**, et concluait
+donc que rapatrier la colonne ne coûtait rien du tout. Un banc qui ne mesure
+pas la donnée qui coûte donne une réponse fausse avec la même assurance qu'une
+vraie. Corrigé — 75 % des fuites du jeu portent maintenant un secret, la
+proportion relevée en production le 04/09.
+
+### La série quotidienne, et le piège qu'elle contient
+
+« Combien de fuites ouvertes chaque jour ? » se traduit spontanément par une
+boucle sur les jours : 91 requêtes pour un trimestre. On fait autrement — une
+requête pour les détections par jour, une pour les clôtures par jour, un
+compte au début de la période, puis une somme cumulée sur des seaux
+quotidiens. **Trois requêtes**, quel que soit le volume.
+
+C'est d'ailleurs la propriété que le test fixe, et non un temps : un budget de
+temps échoue selon la machine, un budget de requêtes décrit une propriété du
+code.
+
+### Une app sans modèle
+
+`apps/reporting` s'ajoute à la liste de CLAUDE.md, ce qui mérite d'être
+justifié. La restitution traverse le diagnostic, le plan d'action, la
+surveillance et le renseignement : la loger dans l'une des quatre aurait été
+arbitraire et y aurait fait entrer les trois autres.
+
+Elle ne possède **aucun modèle**. Chaque app calcule ses indicateurs sur ses
+propres tables, par son `services.py` ; `reporting` compose. C'est ce qui
+tient les deux contraintes ensemble : la règle d'architecture (une app
+n'atteint jamais les modèles d'une autre) et les agrégats en base (le SQL est
+écrit là où vivent les tables).
+
+### Deux graphiques, et la question qu'ils posent
+
+La consigne interdisait le décoratif : si la question n'est pas formulable, le
+graphique ne se fait pas.
+
+- **Ouvertes jour par jour** → *est-ce que le stock baisse ?* Un chiffre isolé
+  ne peut pas y répondre : 14 fuites ouvertes est une bonne nouvelle si on
+  partait de 40, une mauvaise si on partait de 3. Une seule courbe, sans
+  découpage par gravité — trois courbes répondraient à une question que
+  personne ne pose en comité.
+- **Exposition par actif** → *sur quel actif agir en premier ?* En barres
+  alignées plutôt qu'en graphique : avec trois à dix actifs, une barre
+  n'apporte rien qu'un nombre aligné ne dise déjà.
+
+**Écarté : le graphique de maturité.** Avec un à deux diagnostics par an, une
+courbe à deux points est une décoration. Le chiffre et l'écart suffisent.
+
+### Le document
+
+Écrit pour une direction, pas pour un RSSI : la personne qui le reçoit n'a pas
+le vocabulaire, n'ouvrira pas le produit, et décide quand même. Chaque chiffre
+porte ce qu'il veut dire, l'évolution est écrite en toutes lettres (un PDF n'a
+pas d'infobulle : une flèche verte sans phrase laisse deviner si monter est
+une bonne nouvelle), et le document est autonome — aucune image, aucune police
+téléchargée, il doit s'ouvrir hors ligne dans dix ans.
+
+Faits marquants et reste-à-faire sont **déterministes** : des règles, pas une
+IA. Un document présenté à une direction doit être reproductible, et chaque
+phrase justifiable par un chiffre du tableau.
+
+Construction et rendu sont séparés (`build_html` / `render_pdf`) : le fond du
+rapport est testé sur toute machine, y compris celles où le moteur système
+manque. Une seule assertion touche WeasyPrint.
+
+### La moitié manquante, rattrapée en cours de route
+
+En rédigeant le journal, j'ai écrit que l'échéance n'était saisissable nulle
+part : la colonne et le service existaient, l'API du plan d'action ne les
+exposait pas. « Actions en retard » serait donc resté à zéro pour tout le
+monde — un indicateur qui ne peut jamais être non nul est exactement le
+« graphique décoratif » que la consigne interdit, sous une autre forme.
+
+Corrigé : `due_date` passe par l'API du plan, `is_overdue` est calculé côté
+serveur (l'écran ne refait pas la comparaison de dates dans son coin), et un
+champ de date apparaît sur chaque carte, en rouge quand l'échéance est passée.
+Retirer une échéance est un geste légitime, pas une erreur de saisie : le
+champ accepte le vide.
+
+### Le risque propre à cette version
+
+Introduire un second chemin de calcul sur des données qui en avaient déjà un.
+Si le tableau de bord annonce 14 compromissions ouvertes et que la liste en
+montre 12, le RSSI cesse de croire aux deux — ce serait pire que pas de
+tableau de bord.
+
+Quatre tests de cohérence l'interdisent : le score du tableau égale celui du
+fil d'exposition, le compte égale celui de la liste, la somme par actif égale
+le total, et le dernier point de la série égale le compteur du jour. Le cas
+piège est couvert séparément : `has_secret` vrai avec une colonne vide ne doit
+donner le bonus d'aucun des deux côtés.
+
+L'export tableur reprend exactement les chiffres de l'écran, pour la même
+raison : s'ils divergeaient, le RSSI recommencerait à tout recalculer à la
+main, et cette version n'aurait servi à rien.
+
+### Vérifications
+
+**1253 tests backend verts** (contre 1194), **167 frontend** (contre 159).
+Quatre échecs WeasyPrint, environnementaux sous Windows — les trois habituels
+plus celui du nouveau rapport, même cause, verts en CI Linux. `ruff` et
+`eslint` propres, construction verte.
+
+Les mesures de performance vivent dans un test marqué `slow`, exclu de la
+passe par défaut : il fabrique 28 450 fuites et mesure, il ne garde rien qu'un
+autre test ne garde déjà. `pytest -m slow -s` pour le rejouer.
+
+### Reste à faire
+
+- **Toujours rien vérifié sur le serveur** : le filtre web du réseau bloque
+  encore le domaine. Les migrations de cette version (échéance et date de fin
+  des actions) n'ont pas tourné sur les données réelles.
+- **Le rapport n'est ni planifié ni envoyé.** Il se produit à la demande. Un
+  envoi mensuel automatique est une évidence de produit, mais il suppose de
+  décider à qui, à quelle date, et ce qu'on fait d'une période vide.
+- Le remplissage de `completed_at` approxime par `updated_at` pour les actions
+  déjà terminées. Dit dans la migration, à ne pas oublier si l'on présente un
+  historique antérieur à cette version.
