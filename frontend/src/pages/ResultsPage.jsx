@@ -48,6 +48,7 @@ export default function ResultsPage() {
   const [assessment, setAssessment] = useState(null)
   const [scores, setScores] = useState(null)
   const [history, setHistory] = useState([])
+  const [consolide, setConsolide] = useState(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
@@ -56,9 +57,15 @@ export default function ResultsPage() {
       setLoading(true)
       setNotFound(false)
       try {
-        const historyRes = await assessmentsApi.list()
+        const [historyRes, consolideRes] = await Promise.all([
+          assessmentsApi.list(),
+          // Le consolidé n'existe que si l'entreprise suit plusieurs
+          // référentiels ; l'échec de cet appel ne doit pas emporter la page.
+          assessmentsApi.consolidatedScores().catch(() => null),
+        ])
         const completedHistory = historyRes.data.results.filter((a) => a.status === 'completed')
         setHistory(completedHistory)
+        setConsolide(consolideRes?.data ?? null)
 
         const targetId = assessmentId || completedHistory[0]?.id
         if (!targetId) {
@@ -134,7 +141,8 @@ export default function ResultsPage() {
       <div>
         <h1 className="font-display text-2xl font-semibold text-ink-900">Résultats</h1>
         <p className="mt-1 text-sm text-ink-500">
-          Évaluation terminée le{' '}
+          {assessment.referential_name}
+          {assessment.subset_name ? ` — ${assessment.subset_name}` : ''} · évaluation terminée le{' '}
           {new Date(assessment.completed_at).toLocaleDateString('fr-FR', {
             day: 'numeric',
             month: 'long',
@@ -148,7 +156,8 @@ export default function ResultsPage() {
         <div>
           <p className="text-sm font-medium text-ink-500">Score global de maturité</p>
           <p className="mt-1 font-display text-lg text-ink-700">
-            Calculé sur les {scores.by_domain.length} domaines du référentiel ANSSI.
+            Calculé sur les {scores.by_domain.length} domaines du référentiel{' '}
+            {assessment.referential_name}.
           </p>
         </div>
       </Card>
@@ -205,6 +214,54 @@ export default function ResultsPage() {
         </Card>
       </div>
 
+      {/* Plusieurs référentiels : le consolidé, et surtout le détail qui le
+          compose. La règle de calcul est écrite à côté du chiffre (ADR-030) —
+          une moyenne entre deux cadres qui ne mesurent pas la même chose ne se
+          défend en comité que si l'on peut dire comment elle est faite. */}
+      {consolide && consolide.by_referential.length > 1 && (
+        <Card>
+          <CardHeader
+            title="Vos référentiels"
+            description="Chaque référentiel compte pour un dans le consolidé, quel que soit son nombre de mesures."
+          />
+          <ul className="divide-y divide-ink-100">
+            {consolide.by_referential.map((ligne) => (
+              <li
+                key={ligne.referential_slug}
+                className="flex items-center justify-between gap-4 py-2.5"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-ink-700">
+                    {ligne.referential_name}
+                  </p>
+                  <p className="text-xs text-ink-500">
+                    {ligne.completed_at
+                      ? `Évalué le ${new Date(ligne.completed_at).toLocaleDateString('fr-FR')}`
+                      : 'Pas encore évalué'}
+                    {' · '}
+                    {ligne.measure_count} mesures
+                    {!ligne.granted && ' · accès retiré, consultation conservée'}
+                  </p>
+                </div>
+                <span className="shrink-0 text-sm text-ink-700">{formatScore(ligne.score)}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 flex items-baseline justify-between border-t border-ink-200 pt-3">
+            <span className="text-sm font-medium text-ink-700">Score consolidé</span>
+            <span className="font-display text-lg text-ink-900">
+              {formatScore(consolide.consolidated)}
+            </span>
+          </div>
+          {consolide.unscored_referentials.length > 0 && (
+            <p className="mt-1 text-xs text-ink-500">
+              Non compté(s), faute de diagnostic terminé :{' '}
+              {consolide.unscored_referentials.join(', ')}.
+            </p>
+          )}
+        </Card>
+      )}
+
       {history.length > 1 && (
         <Card padding="p-0">
           <div className="p-6 pb-0">
@@ -214,6 +271,7 @@ export default function ResultsPage() {
             <thead>
               <tr className="border-b border-ink-200 text-left text-ink-500">
                 <th className="px-6 py-2 font-medium">Date</th>
+                <th className="px-6 py-2 font-medium">Référentiel</th>
                 <th className="px-6 py-2 text-right font-medium">Score global</th>
               </tr>
             </thead>
@@ -223,6 +281,9 @@ export default function ResultsPage() {
                   <td className="px-6 py-2.5 text-ink-700">
                     {new Date(item.completed_at).toLocaleDateString('fr-FR')}
                   </td>
+                  {/* Sans cette colonne, deux scores de référentiels
+                      différents se liraient comme une progression. */}
+                  <td className="px-6 py-2.5 text-ink-600">{item.referential_name}</td>
                   <td className="px-6 py-2.5 text-right text-ink-700">
                     {formatScore(item.score_global)}
                   </td>

@@ -1,5 +1,6 @@
 import {
   Activity,
+  BookOpen,
   Building2,
   ClipboardList,
   Gauge,
@@ -23,12 +24,14 @@ import OwnershipReviewPanel from './panels/OwnershipReviewPanel'
 import PlansPanel from './panels/PlansPanel'
 import { AdminsPanel, SettingsPanel, TrashPanel } from './panels/PlatformPanel'
 import ProspectsPanel from './panels/ProspectsPanel'
+import ReferentialsPanel from './panels/ReferentialsPanel'
 
 const TABS = [
   { id: 'capacity', label: 'Ressources', icon: Gauge },
   { id: 'tenants', label: 'Clients', icon: Building2 },
   { id: 'prospects', label: 'Prospects', icon: Users },
   { id: 'plans', label: 'Offres', icon: Tags },
+  { id: 'referentials', label: 'Référentiels', icon: BookOpen },
   { id: 'ownership', label: 'Possession', icon: ShieldQuestion },
   { id: 'admins', label: 'Administrateurs', icon: ShieldCheck },
   { id: 'settings', label: 'Réglages', icon: Settings },
@@ -416,6 +419,7 @@ export default function PlatformAdminPage() {
       {!loading && activeTab === 'plans' && (
         <PlansPanel plans={plans} featureCatalog={config?.features || []} onRefresh={loadCore} />
       )}
+      {!loading && activeTab === 'referentials' && <ReferentialsPanel clients={tenants} />}
           {!loading && activeTab === 'ownership' && <OwnershipReviewPanel />}
   {!loading && activeTab === 'admins' && <AdminsPanel />}
       {!loading && activeTab === 'settings' && <SettingsPanel configuration={config} />}

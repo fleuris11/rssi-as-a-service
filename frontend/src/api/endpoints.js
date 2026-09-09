@@ -79,6 +79,20 @@ export const platformApi = {
   deletePlan: (code) => apiClient.delete(`/api/v1/platform/plans/${code}/delete/`),
   previewPlan: (code) => apiClient.get(`/api/v1/platform/plans/${code}/preview/`),
 
+  // --- Referentiels et demandes (V2-4) ------------------------------------
+  listReferentials: () => apiClient.get('/api/v1/platform/referentials/'),
+  clientReferentials: (id) => apiClient.get(`/api/v1/platform/clients/${id}/referentials/`),
+  assignReferential: (id, slug, note = '') =>
+    apiClient.post(`/api/v1/platform/clients/${id}/referentials/`, { referential: slug, note }),
+  revokeReferential: (id, slug) =>
+    apiClient.delete(`/api/v1/platform/clients/${id}/referentials/`, {
+      data: { referential: slug },
+    }),
+  listAccessRequests: (status) =>
+    apiClient.get('/api/v1/platform/access-requests/', { params: status ? { status } : {} }),
+  handleAccessRequest: (id, granted, response = '') =>
+    apiClient.post(`/api/v1/platform/access-requests/${id}/`, { granted, response }),
+
   listProspects: (params) => apiClient.get('/api/v1/platform/prospects/', { params }),
   createProspect: (payload) => apiClient.post('/api/v1/platform/prospects/', payload),
   updateProspect: (id, payload) => apiClient.patch(`/api/v1/platform/prospects/${id}/`, payload),
@@ -136,15 +150,58 @@ export const tenantsApi = {
 }
 
 export const assessmentsApi = {
-  referential: () => apiClient.get('/api/v1/assessments/referential/'),
-  start: () => apiClient.post('/api/v1/assessments/start/'),
-  current: () => apiClient.get('/api/v1/assessments/current/'),
-  list: () => apiClient.get('/api/v1/assessments/'),
+  // Le catalogue vu par l'entreprise courante : ce qu'elle a, ce qu'elle a eu,
+  // et ce qu'elle pourrait demander (chaque ligne porte `granted`).
+  listReferentials: () => apiClient.get('/api/v1/assessments/referentials/'),
+  // Sans slug : le référentiel par défaut (le premier attribué). Cet appel
+  // existait avant V2-4 et garde exactement le même contrat.
+  referential: (slug, subset) =>
+    apiClient.get(slug ? `/api/v1/assessments/referentials/${slug}/` : '/api/v1/assessments/referential/', {
+      params: subset ? { subset } : {},
+    }),
+  start: (referential, subset) =>
+    apiClient.post('/api/v1/assessments/start/', {
+      ...(referential ? { referential } : {}),
+      ...(subset ? { subset } : {}),
+    }),
+  current: (referential) =>
+    apiClient.get('/api/v1/assessments/current/', {
+      params: referential ? { referential } : {},
+    }),
+  list: (referential) =>
+    apiClient.get('/api/v1/assessments/', { params: referential ? { referential } : {} }),
   detail: (id) => apiClient.get(`/api/v1/assessments/${id}/`),
   submitAnswer: (assessmentId, measureId, value, note = '') =>
     apiClient.put(`/api/v1/assessments/${assessmentId}/answers/${measureId}/`, { value, note }),
   complete: (id) => apiClient.post(`/api/v1/assessments/${id}/complete/`),
   scores: (id) => apiClient.get(`/api/v1/assessments/${id}/scores/`),
+  // Le score par référentiel et, quand il y en a plusieurs, le consolidé —
+  // qui ne voyage jamais sans son détail (ADR-030).
+  consolidatedScores: () => apiClient.get('/api/v1/assessments/scores/consolidated/'),
+
+  listSubsets: (referential) =>
+    apiClient.get('/api/v1/assessments/subsets/', {
+      params: referential ? { referential } : {},
+    }),
+  createSubset: (payload) => apiClient.post('/api/v1/assessments/subsets/', payload),
+
+  // Reformulation d'une mesure pour cette entreprise. Elle vit A COTE du
+  // référentiel : `plain_language` reste l'énoncé d'origine, `statement` est
+  // ce qu'on affiche.
+  listOverrides: () => apiClient.get('/api/v1/assessments/overrides/'),
+  setOverride: (measureId, payload) =>
+    apiClient.put(`/api/v1/assessments/measures/${measureId}/override/`, payload),
+  clearOverride: (measureId) =>
+    apiClient.delete(`/api/v1/assessments/measures/${measureId}/override/`),
+}
+
+// Demandes de l'entreprise a l'exploitant : un référentiel aujourd'hui,
+// d'autres fonctionnalités demain — le mécanisme est générique (V2-4/V2-6).
+export const accessRequestsApi = {
+  list: (status) =>
+    apiClient.get('/api/v1/access-requests/', { params: status ? { status } : {} }),
+  create: (payload) => apiClient.post('/api/v1/access-requests/', payload),
+  cancel: (id) => apiClient.delete(`/api/v1/access-requests/${id}/`),
 }
 
 export const actionsApi = {
