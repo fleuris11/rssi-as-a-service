@@ -229,6 +229,18 @@ def contexte(db, user_factory, tenant_factory, api_client):
         value="https://exemple-gardes.test",
         ownership_confirmed=True,
     )
+    # ADR-026 : la surveillance continue exige une possession PROUVÉE. Sans
+    # cette preuve, la sonde « surveiller un actif » serait refusée pour une
+    # raison étrangère aux gardes d'offre — et le test passerait à vide, en
+    # constatant seulement que le refus n'est pas un refus d'offre.
+    from apps.monitoring.checks import ownership as ownership_checks
+    from apps.monitoring.models import AssetOwnershipProof
+
+    preuve = monitoring_services.start_ownership_proof(
+        asset=asset, method=AssetOwnershipProof.Method.DNS_TXT, user=user
+    )
+    with patch.object(ownership_checks, "verify_dns_txt", return_value=(True, "vérifié")):
+        monitoring_services.verify_ownership_proof(preuve)
     return {
         "client": api_client,
         "entetes": _auth(api_client, user, tenant),

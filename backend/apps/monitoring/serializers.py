@@ -3,7 +3,8 @@ from urllib.parse import urlparse
 
 from rest_framework import serializers
 
-from .models import Alert, Asset, CheckResult
+from . import services
+from .models import Alert, Asset, AssetOwnershipProof, CheckResult
 
 DOMAIN_RE = re.compile(
     r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
@@ -12,10 +13,68 @@ DOMAIN_RE = re.compile(
 
 
 class AssetSerializer(serializers.ModelSerializer):
+    # ADR-026 : `ownership_confirmed` ne dit que « quelqu'un a coché une
+    # case ». `ownership_state` dit ce qui est réellement établi — prouvé,
+    # déclaré sur l'honneur, ou à régulariser. L'écran a besoin des deux :
+    # l'un est un engagement, l'autre un fait.
+    ownership_state = serializers.SerializerMethodField()
+
     class Meta:
         model = Asset
-        fields = ["id", "type", "value", "is_active", "ownership_confirmed", "created_at"]
+        fields = [
+            "id",
+            "type",
+            "value",
+            "is_active",
+            "ownership_confirmed",
+            "ownership_state",
+            "created_at",
+        ]
         read_only_fields = fields
+
+    def get_ownership_state(self, asset) -> str:
+        return services.ownership_state(asset)
+
+
+class AssetOwnershipProofSerializer(serializers.ModelSerializer):
+    method_label = serializers.CharField(source="get_method_display", read_only=True)
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    # Ce que le client doit publier, calculé côté serveur : l'écran, l'email
+    # et le support disent ainsi exactement la même chose.
+    instructions = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AssetOwnershipProof
+        fields = [
+            "id",
+            "method",
+            "method_label",
+            "status",
+            "status_label",
+            "email_recipient",
+            "instructions",
+            "created_at",
+            "verified_at",
+            "last_attempt_at",
+            "last_error",
+        ]
+        read_only_fields = fields
+
+    def get_instructions(self, proof) -> dict:
+        return services.ownership_instructions(proof)
+
+
+class OwnershipProofStartSerializer(serializers.Serializer):
+    method = serializers.ChoiceField(choices=AssetOwnershipProof.Method.choices)
+    # Partie locale seulement (« admin »), jamais une adresse libre : la
+    # méthode ne vaut que si l'adresse n'est pas choisie par le demandeur.
+    email_recipient = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+
+class OwnershipProofVerifySerializer(serializers.Serializer):
+    # Le code reçu par email. Ignoré pour les deux autres méthodes, où la
+    # preuve se lit sur le domaine lui-même.
+    code = serializers.CharField(required=False, allow_blank=True, max_length=64)
 
 
 class AssetCreateSerializer(serializers.Serializer):

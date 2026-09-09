@@ -130,9 +130,44 @@ class TestBreachFindingAPI:
 
 
 class TestMonitoredAssetAPI:
-    def test_register_asset_for_realtime_monitoring(
-        self, api_client, tenant, tenant_owner, website_asset, fake_provider, settings
+    def test_register_without_proven_ownership_is_a_clean_refusal_not_a_500(
+        self, api_client, tenant, tenant_owner, website_asset, settings
     ):
+        """ADR-026. Le refus était d'abord remonté en 500 : l'erreur venait de
+        ``monitoring`` et traversait le ``except ThreatIntelligenceError`` de
+        la vue sans être vue. Un refus de règle métier présenté au client
+        comme une panne du produit — et un message que personne ne lisait.
+        """
+        settings.BREACHSENSE_WEBHOOK_CALLBACK_URL = "https://api.example.com/webhook"
+        headers = _auth(api_client, tenant_owner, tenant)
+
+        response = api_client.post(
+            reverse("monitored-asset-list"),
+            {"asset_id": website_asset.id},
+            format="json",
+            **headers,
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        # Le message dit comment en sortir, et rappelle ce qui reste possible.
+        assert "prouver la possession" in response.data["detail"]
+        assert "ponctuelle" in response.data["detail"]
+        assert MonitoredAsset.all_objects.count() == 0
+
+    def test_register_asset_for_realtime_monitoring(
+        self,
+        api_client,
+        tenant,
+        tenant_owner,
+        website_asset,
+        fake_provider,
+        settings,
+        prouver_possession,
+    ):
+        # ADR-026 : la surveillance continue exige une possession
+        # PROUVEE. Sans cette ligne, le test echoue sur la garde —
+        # ce qui est precisement ce qu'elle doit faire.
+        prouver_possession(website_asset)
         settings.BREACHSENSE_WEBHOOK_CALLBACK_URL = "https://api.example.com/webhook"
         headers = _auth(api_client, tenant_owner, tenant)
 
@@ -148,8 +183,19 @@ class TestMonitoredAssetAPI:
         assert MonitoredAsset.all_objects.filter(asset=website_asset).exists()
 
     def test_register_returns_400_when_pool_full(
-        self, api_client, tenant, tenant_owner, website_asset, fake_provider, settings
+        self,
+        api_client,
+        tenant,
+        tenant_owner,
+        website_asset,
+        fake_provider,
+        settings,
+        prouver_possession,
     ):
+        # ADR-026 : la surveillance continue exige une possession
+        # PROUVEE. Sans cette ligne, le test echoue sur la garde —
+        # ce qui est precisement ce qu'elle doit faire.
+        prouver_possession(website_asset)
         settings.BREACHSENSE_WEBHOOK_CALLBACK_URL = "https://api.example.com/webhook"
         settings.BREACHSENSE_MONITORED_ASSET_POOL_SIZE = 0
         headers = _auth(api_client, tenant_owner, tenant)
@@ -172,8 +218,19 @@ class TestMonitoredAssetAPI:
         assert not any(c.isdigit() for c in detail)
 
     def test_unregister_asset(
-        self, api_client, tenant, tenant_owner, website_asset, fake_provider, settings
+        self,
+        api_client,
+        tenant,
+        tenant_owner,
+        website_asset,
+        fake_provider,
+        settings,
+        prouver_possession,
     ):
+        # ADR-026 : la surveillance continue exige une possession
+        # PROUVEE. Sans cette ligne, le test echoue sur la garde —
+        # ce qui est precisement ce qu'elle doit faire.
+        prouver_possession(website_asset)
         settings.BREACHSENSE_WEBHOOK_CALLBACK_URL = "https://api.example.com/webhook"
         headers = _auth(api_client, tenant_owner, tenant)
         with patch("apps.threat_intelligence.services.get_provider", return_value=fake_provider):
