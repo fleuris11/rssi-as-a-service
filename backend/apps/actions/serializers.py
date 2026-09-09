@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.assessments.serializers import MeasureSerializer
@@ -14,6 +15,9 @@ class ActionItemSerializer(serializers.ModelSerializer):
     domain_name = serializers.CharField(source="measure.domain.name", read_only=True)
     assignee_email = serializers.SerializerMethodField()
     priority = serializers.SerializerMethodField()
+    # Calculé côté serveur : « en retard » se définit une fois, et l'écran ne
+    # refait pas la comparaison de dates dans son coin.
+    is_overdue = serializers.SerializerMethodField()
 
     class Meta:
         model = ActionItem
@@ -27,6 +31,12 @@ class ActionItemSerializer(serializers.ModelSerializer):
             "assignee_email",
             "note",
             "priority",
+            # V2-3 (ADR-028) : sans échéance, aucune action ne peut être « en
+            # retard » — l'indicateur du comité resterait à zéro pour tout le
+            # monde, et serait donc décoratif.
+            "due_date",
+            "is_overdue",
+            "completed_at",
             "created_at",
             "updated_at",
         ]
@@ -37,6 +47,8 @@ class ActionItemSerializer(serializers.ModelSerializer):
             "domain_name",
             "assignee_email",
             "priority",
+            "is_overdue",
+            "completed_at",
             "created_at",
             "updated_at",
         ]
@@ -47,9 +59,17 @@ class ActionItemSerializer(serializers.ModelSerializer):
     def get_priority(self, item):
         return round(priority_ratio(item), 2)
 
+    def get_is_overdue(self, item) -> bool:
+        if item.due_date is None or item.status == ActionItem.Status.DONE:
+            return False
+        return item.due_date < timezone.localdate()
+
 
 class ActionItemUpdateSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=ActionItem.Status.choices, required=False)
+    # `allow_null` : retirer une échéance est un geste légitime, pas une
+    # erreur de saisie.
+    due_date = serializers.DateField(required=False, allow_null=True)
     assignee = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(), required=False, allow_null=True
     )

@@ -253,6 +253,60 @@ def compute_scores(assessment: Assessment, *, measure_values: dict | None = None
     }
 
 
+# --- Indicateurs pour le comité (V2-3, ADR-028) -----------------------------
+
+
+def maturity_indicators(tenant, *, start, end) -> dict:
+    """Maturité : le score du dernier diagnostic terminé, et la progression.
+
+    Lit les instantanés ``score_global`` posés à la clôture de chaque
+    diagnostic — jamais un recalcul. C'était déjà le choix du modèle
+    (« deliberately not recomputed later ») et c'est ce qui rend la
+    comparaison honnête : un score de juin recalculé avec le référentiel de
+    septembre ne serait plus le score de juin.
+
+    Ne renvoie AUCUNE fusion avec l'exposition. Maturité et exposition
+    mesurent deux choses sans rapport — l'organisation d'un côté, ce qui
+    circule de l'autre — et les additionner rendrait les deux injustifiables
+    (ADR-028).
+    """
+    termines = (
+        Assessment.all_objects.filter(
+            tenant=tenant,
+            status=Assessment.Status.COMPLETED,
+            completed_at__isnull=False,
+            score_global__isnull=False,
+        )
+        .order_by("-completed_at")
+        .values("id", "completed_at", "score_global")
+    )
+
+    courant = termines.filter(completed_at__lte=end).first()
+    precedent = (
+        termines.filter(completed_at__lt=courant["completed_at"]).first() if courant else None
+    )
+
+    historique = [
+        {"date": ligne["completed_at"], "score": ligne["score_global"]}
+        for ligne in termines.filter(completed_at__gte=start, completed_at__lte=end)
+    ]
+    historique.reverse()
+
+    return {
+        "score": courant["score_global"] if courant else None,
+        "measured_at": courant["completed_at"] if courant else None,
+        "previous_score": precedent["score_global"] if precedent else None,
+        "previous_measured_at": precedent["completed_at"] if precedent else None,
+        "delta": (
+            round(courant["score_global"] - precedent["score_global"], 1)
+            if courant and precedent
+            else None
+        ),
+        "completed_in_period": len(historique),
+        "history": historique,
+    }
+
+
 def complete_assessment(assessment: Assessment) -> Assessment:
     if assessment.status == Assessment.Status.COMPLETED:
         raise AssessmentAlreadyCompletedError("Cette évaluation est déjà terminée.")

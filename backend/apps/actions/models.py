@@ -33,6 +33,16 @@ class ActionItem(TenantScopedModel):
         related_name="+",
     )
     note = models.TextField(blank=True)
+    # V2-3 (ADR-028). « Actions en retard » était demandé au tableau de bord et
+    # n'existait pas : sans échéance, rien n'est en retard. Nullable, et une
+    # action sans échéance n'est JAMAIS comptée en retard — le tableau de bord
+    # affiche à côté combien n'en ont pas, sinon « 2 actions en retard » sur
+    # quarante sans date se lirait comme une bonne nouvelle.
+    due_date = models.DateField(null=True, blank=True)
+    # Distincte d'``updated_at``, qui bouge à la moindre modification : sans
+    # elle, « actions terminées ce trimestre » compterait une action terminée
+    # l'an dernier dont on vient de corriger la note.
+    completed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

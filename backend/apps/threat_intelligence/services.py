@@ -15,6 +15,8 @@ from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
+from django.db.models import Avg, Count, F, Q
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from apps.accounts import services as accounts_services
@@ -973,9 +975,20 @@ def get_finding(*, tenant, finding_id):
 
 def set_finding_status(finding: BreachFinding, *, status: str, user=None) -> BreachFinding:
     finding.status = status
+    # V2-3 : la date de clôture est posée pour « traité » ET pour « ignoré ».
+    #
+    # Elle ne l'était que pour « traité », ce qui suffisait tant que personne
+    # ne regardait l'historique : une fuite ignorée était close dans la liste
+    # et sans date en base. Dès qu'on reconstruit « combien de fuites étaient
+    # ouvertes en juin ? », cette absence fait compter comme ouvertes des
+    # fuites que le client avait fermées.
+    #
+    # `treated_by` reste réservé à « traité » : ignorer n'est pas traiter, et
+    # attribuer un traitement à quelqu'un qui a écarté la ligne serait faux.
+    if status in _CLOSED_FINDING_STATUSES:
+        finding.treated_at = timezone.now()
     if status == BreachFinding.Status.TREATED:
         finding.treated_by = user
-        finding.treated_at = timezone.now()
     finding.save(update_fields=["status", "treated_by", "treated_at"])
     # Traiter une fuite change le score et donc la lecture d'ensemble.
     mark_synthesis_stale(finding.tenant)
@@ -986,6 +999,154 @@ def count_critical_open_findings(tenant) -> int:
     return BreachFinding.all_objects.filter(
         tenant=tenant, status=BreachFinding.Status.OPEN, severity=BreachFinding.Severity.CRITICAL
     ).count()
+
+
+# --- Indicateurs pour le comité (V2-3, ADR-028) -----------------------------
+#
+# Tout ce qui suit est calculé EN BASE. La règle vient d'une mesure, pas d'un
+# principe : le 06/09/2026, matérialiser 28 450 instances Django coûtait
+# 3,79 s, et un `defer()` sur les colonnes larges n'y changeait rien — le coût
+# est celui des objets, pas des données. Un tableau de bord qui les
+# matérialiserait à plusieurs dates serait inutilisable sur le seul client qui
+# en a vraiment besoin.
+#
+# La série temporelle est le point le plus délicat. Compter les fuites
+# ouvertes jour par jour demanderait une requête par jour. On fait autrement :
+# UNE requête pour les détections par jour, UNE pour les clôtures par jour, et
+# le compte d'ouvertes au début de la période. Le reste est une somme
+# cumulée en mémoire, sur des seaux quotidiens — quelques dizaines de lignes,
+# quelle que soit la taille du tenant.
+
+
+def _open_at(tenant, moment):
+    """Fuites ouvertes à un instant donné.
+
+    « Ouverte à D » se lit : détectée avant D, et pas encore close à D. Une
+    fuite close SANS date de clôture est comptée comme close depuis toujours —
+    ce sont les fuites ignorées avant la V2-3, dont la date n'a jamais été
+    enregistrée. Le choix minore légèrement le passé plutôt que de gonfler le
+    présent : entre deux erreurs, celle qui n'inquiète pas à tort.
+    """
+    return BreachFinding.all_objects.filter(tenant=tenant, detected_at__lte=moment).filter(
+        Q(status=BreachFinding.Status.OPEN) | Q(treated_at__gt=moment)
+    )
+
+
+def _seaux_quotidiens(queryset, champ, debut, fin):
+    """``{date: compte}`` pour un champ de date, en UNE requête."""
+    lignes = (
+        queryset.filter(**{f"{champ}__gte": debut, f"{champ}__lte": fin})
+        .annotate(jour=TruncDate(champ))
+        .values("jour")
+        .annotate(n=Count("id"))
+    )
+    return {ligne["jour"]: ligne["n"] for ligne in lignes}
+
+
+def exposure_score_at(tenant, moment) -> int:
+    """Score d'exposition tel qu'il était à un instant donné.
+
+    Passe par ``values_list`` et ``exposure.score_from_rows`` : la formule est
+    la même que celle du fil d'exposition, sans matérialiser d'objets.
+    """
+    lignes = exposure.annotate_revealable(_open_at(tenant, moment)).values_list(
+        *exposure.SCORE_ROW_FIELDS
+    )
+    return exposure.score_from_rows(lignes, now=moment)
+
+
+def breach_indicators(tenant, *, start, end, previous_start=None) -> dict:
+    """Fuites : état à la fin de la période, mouvements pendant, et série.
+
+    ``previous_start`` sert la comparaison à la période précédente : le point
+    de comparaison est l'état à ``start``, c'est-à-dire la fin de la période
+    d'avant.
+    """
+    ouvertes = _open_at(tenant, end)
+    par_gravite = {
+        ligne["severity"]: ligne["n"]
+        for ligne in ouvertes.values("severity").annotate(n=Count("id"))
+    }
+
+    du_tenant = BreachFinding.all_objects.filter(tenant=tenant)
+    nouvelles = du_tenant.filter(detected_at__gte=start, detected_at__lte=end).count()
+    closes = du_tenant.filter(treated_at__gte=start, treated_at__lte=end)
+    traitees = closes.filter(status=BreachFinding.Status.TREATED).count()
+    ignorees = closes.filter(status=BreachFinding.Status.IGNORED).count()
+
+    # Délai moyen de traitement, calculé par la base : une soustraction de
+    # deux colonnes et une moyenne, jamais une boucle Python sur des milliers
+    # de lignes.
+    delai = closes.aggregate(moyen=Avg(F("treated_at") - F("detected_at")))["moyen"]
+
+    return {
+        "open_total": ouvertes.count(),
+        "open_by_severity": {
+            "critical": par_gravite.get(BreachFinding.Severity.CRITICAL, 0),
+            "high": par_gravite.get(BreachFinding.Severity.HIGH, 0),
+            "attention": par_gravite.get(BreachFinding.Severity.ATTENTION, 0),
+        },
+        "open_at_period_start": _open_at(tenant, start).count(),
+        "new_in_period": nouvelles,
+        "treated_in_period": traitees,
+        "ignored_in_period": ignorees,
+        "closed_in_period": traitees + ignorees,
+        "average_treatment_days": round(delai.total_seconds() / 86400, 1) if delai else None,
+        "exposure_score": exposure_score_at(tenant, end),
+        "exposure_score_at_period_start": exposure_score_at(tenant, start),
+        "series": open_findings_series(tenant, start=start, end=end),
+    }
+
+
+def open_findings_series(tenant, *, start, end) -> list[dict]:
+    """Nombre de fuites ouvertes, jour par jour, en TROIS requêtes au total.
+
+    Un compte par jour demanderait une requête par jour. On part du compte à
+    l'ouverture de la période, puis on applique les détections et les clôtures
+    quotidiennes : la base agrège, Python ne fait qu'additionner des seaux.
+    """
+    du_tenant = BreachFinding.all_objects.filter(tenant=tenant)
+    detections = _seaux_quotidiens(du_tenant, "detected_at", start, end)
+    clotures = _seaux_quotidiens(du_tenant, "treated_at", start, end)
+
+    courant = _open_at(tenant, start).count()
+    serie = []
+    jour = start.date()
+    dernier = end.date()
+    while jour <= dernier:
+        courant += detections.get(jour, 0) - clotures.get(jour, 0)
+        serie.append({"date": jour, "open": max(0, courant)})
+        jour += timedelta(days=1)
+    return serie
+
+
+def exposure_by_asset(tenant, *, at) -> list[dict]:
+    """Score d'exposition par actif, à un instant donné.
+
+    Un seul passage sur les fuites ouvertes : on regroupe en mémoire des
+    n-uplets, pas des objets. Trié par score décroissant — ce qu'un comité
+    regarde en premier.
+    """
+    lignes = exposure.annotate_revealable(_open_at(tenant, at)).values_list(
+        "asset_id", "asset__value", *exposure.SCORE_ROW_FIELDS
+    )
+
+    par_actif: dict[int, dict] = {}
+    for asset_id, asset_value, *reste in lignes:
+        entree = par_actif.setdefault(asset_id, {"asset_value": asset_value, "rows": []})
+        entree["rows"].append(tuple(reste))
+
+    resultat = [
+        {
+            "asset_id": asset_id,
+            "asset_value": entree["asset_value"],
+            "findings_count": len(entree["rows"]),
+            "score": exposure.score_from_rows(entree["rows"], now=at),
+        }
+        for asset_id, entree in par_actif.items()
+    ]
+    resultat.sort(key=lambda ligne: (-ligne["score"], -ligne["findings_count"]))
+    return resultat
 
 
 # --- Radar pré-incident (Phase 8A) ------------------------------------------

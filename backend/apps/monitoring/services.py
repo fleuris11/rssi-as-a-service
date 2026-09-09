@@ -14,7 +14,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import transaction
-from django.db.models import Max, Q
+from django.db.models import Count, Max, Q
 from django.utils import timezone
 
 from . import ownership_messages
@@ -676,6 +676,75 @@ def get_asset_dashboard(asset: Asset) -> dict:
 
 def get_tenant_dashboard(tenant) -> list[dict]:
     return [get_asset_dashboard(asset) for asset in list_assets(tenant)]
+
+
+# --- Indicateurs pour le comité (V2-3, ADR-028) -----------------------------
+
+
+def monitoring_indicators(tenant, *, start, end) -> dict:
+    """Surveillance : disponibilité sur la période, et certificats à échéance.
+
+    La disponibilité est agrégée EN BASE — deux compteurs sur la table des
+    contrôles, jamais une boucle sur les résultats. Un actif contrôlé toutes
+    les cinq minutes produit 8 640 lignes par mois : les charger pour en
+    compter une proportion serait exactement la faute que le fil d'exposition
+    a déjà coûtée.
+    """
+    controles = CheckResult.all_objects.filter(
+        tenant=tenant,
+        check_type=CheckResult.CheckType.HTTP_UPTIME,
+        checked_at__gte=start,
+        checked_at__lte=end,
+    )
+    comptes = controles.aggregate(
+        total=Count("id"),
+        ok=Count("id", filter=Q(status=CheckResult.Status.OK)),
+    )
+    disponibilite = round(100 * comptes["ok"] / comptes["total"], 2) if comptes["total"] else None
+
+    actifs = Asset.all_objects.filter(tenant=tenant)
+    alertes = Alert.all_objects.filter(tenant=tenant)
+
+    return {
+        "assets_total": actifs.count(),
+        "assets_active": actifs.filter(is_active=True).count(),
+        "uptime_percentage": disponibilite,
+        "checks_in_period": comptes["total"],
+        "failed_checks_in_period": comptes["total"] - comptes["ok"],
+        "open_alerts": alertes.filter(is_open=True).count(),
+        "alerts_opened_in_period": alertes.filter(opened_at__gte=start, opened_at__lte=end).count(),
+        "alerts_resolved_in_period": alertes.filter(
+            resolved_at__gte=start, resolved_at__lte=end
+        ).count(),
+        "certificates": expiring_certificates(tenant),
+    }
+
+
+def expiring_certificates(tenant, *, within_days: int = 60) -> list[dict]:
+    """Certificats dont l'échéance approche, du plus urgent au moins urgent.
+
+    Lit le dernier contrôle TLS de chaque actif : un tenant a quelques actifs,
+    pas des milliers, et l'information vit dans le JSON de détail — il n'y a
+    rien à agréger en base ici.
+    """
+    proches = []
+    for asset in Asset.all_objects.filter(tenant=tenant, type=Asset.Type.WEBSITE, is_active=True):
+        dernier = get_latest_check(asset, CheckResult.CheckType.SSL_CERTIFICATE)
+        if dernier is None:
+            continue
+        jours = (dernier.details or {}).get("days_left")
+        if jours is None or jours > within_days:
+            continue
+        proches.append(
+            {
+                "asset_id": asset.id,
+                "asset_value": asset.value,
+                "days_left": jours,
+                "expires_at": (dernier.details or {}).get("expires_at"),
+            }
+        )
+    proches.sort(key=lambda ligne: ligne["days_left"])
+    return proches
 
 
 # --- Worker health -----------------------------------------------------------

@@ -5,6 +5,9 @@ so it consistently uses ``all_objects`` with an explicit ``tenant=`` filter
 rather than the request-scoped manager.
 """
 
+from django.db.models import Count, Q
+from django.utils import timezone
+
 from apps.assessments import services as assessments_services
 from apps.tenants import services as tenants_services
 
@@ -74,10 +77,77 @@ def get_action_item(*, tenant, item_id):
     )
 
 
+def set_due_date(item: ActionItem, due_date) -> ActionItem:
+    """Échéance d'une action. ``None`` la retire."""
+    item.due_date = due_date
+    item.save(update_fields=["due_date", "updated_at"])
+    return item
+
+
 def update_status(item: ActionItem, status: str) -> ActionItem:
     item.status = status
-    item.save(update_fields=["status", "updated_at"])
+    # V2-3 : la date de fin est posée au passage à « fait », et RETIRÉE si
+    # l'action rouvre. Sans le second cas, une action rouverte resterait
+    # comptée comme terminée dans le trimestre où elle l'avait été — un
+    # tableau de bord qui ne sait pas revenir en arrière ment une fois sur
+    # deux.
+    item.completed_at = timezone.now() if status == ActionItem.Status.DONE else None
+    item.save(update_fields=["status", "completed_at", "updated_at"])
     return item
+
+
+# --- Indicateurs pour le comité (V2-3, ADR-028) -----------------------------
+
+
+def action_plan_indicators(tenant, *, start, end, today=None) -> dict:
+    """Plan d'action : ce qui reste, ce qui a avancé, ce qui traîne.
+
+    Tout en base : cinq agrégats, aucune instance matérialisée. Le plan d'un
+    tenant compte quelques dizaines d'actions et non des milliers, mais la
+    règle vaut quand même — un tableau de bord qui charge des objets « parce
+    qu'il n'y en a pas beaucoup » finit par en charger beaucoup.
+    """
+    today = today or timezone.localdate()
+    du_tenant = ActionItem.all_objects.filter(tenant=tenant)
+
+    comptes = du_tenant.aggregate(
+        total=Count("id"),
+        done=Count("id", filter=Q(status=ActionItem.Status.DONE)),
+        in_progress=Count("id", filter=Q(status=ActionItem.Status.IN_PROGRESS)),
+        todo=Count("id", filter=Q(status=ActionItem.Status.TODO)),
+        # « En retard » ne concerne QUE ce qui a une échéance dépassée et
+        # n'est pas fait. Une action sans échéance n'est pas en retard : elle
+        # est sans échéance, ce qui se dit à côté.
+        overdue=Count(
+            "id",
+            filter=Q(due_date__lt=today) & ~Q(status=ActionItem.Status.DONE),
+        ),
+        without_due_date=Count(
+            "id", filter=Q(due_date__isnull=True) & ~Q(status=ActionItem.Status.DONE)
+        ),
+    )
+
+    mouvements = du_tenant.aggregate(
+        completed_in_period=Count("id", filter=Q(completed_at__gte=start, completed_at__lte=end)),
+        created_in_period=Count("id", filter=Q(created_at__gte=start, created_at__lte=end)),
+    )
+
+    ouvertes = comptes["todo"] + comptes["in_progress"]
+    return {
+        "total": comptes["total"],
+        "open": ouvertes,
+        "todo": comptes["todo"],
+        "in_progress": comptes["in_progress"],
+        "done": comptes["done"],
+        "overdue": comptes["overdue"],
+        "without_due_date": comptes["without_due_date"],
+        "completed_in_period": mouvements["completed_in_period"],
+        "created_in_period": mouvements["created_in_period"],
+        # Ce que le comité regarde : la part du plan effectivement close.
+        "completion_rate": (
+            round(100 * comptes["done"] / comptes["total"], 1) if comptes["total"] else None
+        ),
+    }
 
 
 def assign_action_item(item: ActionItem, user) -> ActionItem:

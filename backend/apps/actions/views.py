@@ -68,6 +68,8 @@ class ActionItemDetailView(APIView):
                 return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         if "note" in data:
             services.set_note(item, data["note"])
+        if "due_date" in data:
+            services.set_due_date(item, data["due_date"])
 
         item.refresh_from_db()
         return Response(ActionItemSerializer(item).data)
