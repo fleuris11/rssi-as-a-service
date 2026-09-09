@@ -20,6 +20,9 @@ export const billingApi = {
 // Back-office plateforme (is_staff). Espace distinct de l'espace client.
 export const platformApi = {
   capacity: () => apiClient.get('/api/v1/platform/capacity/'),
+  // Actifs dont la possession n'est pas etablie (ADR-026) : ceux declares
+  // avant la V2-1, a regulariser sans etre coupes.
+  ownershipReview: () => apiClient.get('/api/v1/platform/ownership-review/'),
   listTenants: () => apiClient.get('/api/v1/platform/tenants/'),
   tenantDetail: (id) => apiClient.get(`/api/v1/platform/tenants/${id}/`),
   updateTenant: (id, payload) => apiClient.patch(`/api/v1/platform/tenants/${id}/`, payload),
@@ -179,6 +182,16 @@ export const monitoringApi = {
     }),
   dashboard: () => apiClient.get('/api/v1/monitoring/dashboard/'),
   openAlerts: () => apiClient.get('/api/v1/monitoring/alerts/'),
+  // Possession d'un domaine (ADR-026) : l'etat, l'ouverture d'une preuve,
+  // et sa verification.
+  ownership: (assetId) => apiClient.get(`/api/v1/monitoring/assets/${assetId}/ownership/`),
+  startOwnershipProof: (assetId, payload) =>
+    apiClient.post(`/api/v1/monitoring/assets/${assetId}/ownership/`, payload),
+  verifyOwnershipProof: (assetId, proofId, payload) =>
+    apiClient.post(
+      `/api/v1/monitoring/assets/${assetId}/ownership/${proofId}/verify/`,
+      payload
+    ),
 }
 
 export const threatIntelligenceApi = {

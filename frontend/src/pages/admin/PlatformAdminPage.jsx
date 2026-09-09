@@ -5,6 +5,7 @@ import {
   Gauge,
   Settings,
   ShieldCheck,
+  ShieldQuestion,
   Tags,
   Trash2,
   Users,
@@ -18,6 +19,7 @@ import { SkeletonCard } from '../../components/ui/Skeleton'
 import Tabs from '../../components/ui/Tabs'
 import { useToast } from '../../components/ui/Toast'
 import ClientsPanel from './panels/ClientsPanel'
+import OwnershipReviewPanel from './panels/OwnershipReviewPanel'
 import PlansPanel from './panels/PlansPanel'
 import { AdminsPanel, SettingsPanel, TrashPanel } from './panels/PlatformPanel'
 import ProspectsPanel from './panels/ProspectsPanel'
@@ -27,6 +29,7 @@ const TABS = [
   { id: 'tenants', label: 'Clients', icon: Building2 },
   { id: 'prospects', label: 'Prospects', icon: Users },
   { id: 'plans', label: 'Offres', icon: Tags },
+  { id: 'ownership', label: 'Possession', icon: ShieldQuestion },
   { id: 'admins', label: 'Administrateurs', icon: ShieldCheck },
   { id: 'settings', label: 'Réglages', icon: Settings },
   { id: 'trash', label: 'Corbeille', icon: Trash2 },
@@ -413,7 +416,8 @@ export default function PlatformAdminPage() {
       {!loading && activeTab === 'plans' && (
         <PlansPanel plans={plans} featureCatalog={config?.features || []} onRefresh={loadCore} />
       )}
-      {!loading && activeTab === 'admins' && <AdminsPanel />}
+          {!loading && activeTab === 'ownership' && <OwnershipReviewPanel />}
+  {!loading && activeTab === 'admins' && <AdminsPanel />}
       {!loading && activeTab === 'settings' && <SettingsPanel configuration={config} />}
       {!loading && activeTab === 'trash' && <TrashPanel onRefresh={loadCore} />}
       {!loading && activeTab === 'health' && (health ? <HealthPanel health={health} /> : <SkeletonCard />)}

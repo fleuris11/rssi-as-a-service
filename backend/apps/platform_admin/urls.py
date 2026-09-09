@@ -36,6 +36,7 @@ from .views import (
     AdminSubscriptionActionView,
     AdminTenantDetailView,
     AdminTenantListView,
+    OwnershipReviewView,
     PlatformCapacityView,
     PlatformConfigurationView,
     PlatformHealthView,
@@ -44,6 +45,12 @@ from .views import (
 urlpatterns = [
     # --- Ressources rares ---------------------------------------------------
     path("capacity/", PlatformCapacityView.as_view(), name="platform-capacity"),
+    # --- Possession des actifs (ADR-026) ------------------------------------
+    path(
+        "ownership-review/",
+        OwnershipReviewView.as_view(),
+        name="platform-ownership-review",
+    ),
     # --- Clients ------------------------------------------------------------
     path("tenants/", AdminTenantListView.as_view(), name="platform-tenant-list"),
     path("clients/", ClientCreateView.as_view(), name="platform-client-create"),
