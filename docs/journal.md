@@ -4611,3 +4611,179 @@ un même Redis ne mesurent rien.**
 - Les deux domaines orphelins côté fournisseur (`afinhab.org`,
   `crrhuemoa.org` sans `MonitoredAsset`) : problème de rapprochement distinct,
   toujours ouvert depuis le 4 septembre.
+
+---
+
+## 9 septembre 2026 (suite) — V2-2 : le produit stockait tout et ne montrait rien
+
+Une session de restitution, pas d'ajout. Rien de ce qui est affiché
+aujourd'hui n'a été collecté aujourd'hui : tout était déjà en base.
+
+### L'inventaire, d'abord
+
+La consigne demandait la liste de ce qui est ignoré. Elle a été produite par
+un script qui croise les schémas des neuf points d'entrée avec une cassette
+enregistrée en production, plutôt que par une lecture à l'œil. Résultat :
+
+    TOTAL de champs documentes et aujourd'hui ignores : 42
+
+Répartition : 8 pour `stealer`, 9 pour `nhi`, 8 pour `docs`, 7 pour
+`sessions`, 5 pour `darkweb`, 2 pour `combo`, 2 pour `creds`, 1 pour `radar`,
+0 pour `asm`. Et ce compte est optimiste : plusieurs champs marqués « retenus »
+ne servaient qu'au dédoublonnage (`src`, `dom`, `doc_id`, `platform`…) et
+n'étaient pas affichés davantage.
+
+**Tous étaient en base.** Dans `raw_data`, la charge du fournisseur déjà
+masquée, conservée depuis la première migration et délibérément exclue du
+sérialiseur au nom de la minimisation (ADR-014). L'intention était bonne et le
+résultat exactement inverse : la donnée la plus utile au client était stockée
+sans jamais lui être montrée, pendant que le stockage, lui, ne minimisait
+rien.
+
+Conséquence de conception : **ne rien stocker de nouveau**. Un module lit
+`raw_data` et en tire une liste de champs présentables. Les 28 450 fuites de
+l'actif le plus chargé deviennent complètes sans migration ni nouveau scan.
+
+### Liste blanche, et pourquoi pas l'inverse
+
+Exposer `raw_data` aurait été une ligne de code. Rejeté : tout ce que la
+source ajouterait demain sortirait sans décision, y compris ce qu'elle ne
+devrait pas transmettre. La liste blanche déclare, endpoint par endpoint, ce
+qui sort — et c'est ce qui rend **structurelle** l'interdiction de servir un
+lien vers un document volé : `url_main_post` et `url_for_breach` existent dans
+la charge, ne sont dans aucune liste, ne peuvent donc pas sortir. Pas une
+règle de vigilance : une impossibilité.
+
+Trois champs par ligne affichée, et les trois comptent : le libellé dit de
+quoi il s'agit, la valeur dit ce que c'est, l'implication dit pourquoi ça
+compte. « Raccoon » n'informe personne. « C'est un logiciel qui recopie les
+mots de passe enregistrés dans le navigateur » fait décider.
+
+**Ce qui a été volontairement écarté** : `iip`, `ip`, `mac` — l'adresse réseau
+et l'adresse matérielle du poste infecté. Données personnelles, valeur
+d'action nulle : on ne fait rien d'une adresse IP domestique, et les afficher
+aurait élargi la surface de données personnelles au moment précis où l'on
+démasque les adresses email. Écarté aussi `atr`, dont la sémantique n'est pas
+confirmée par le fournisseur — inventer un libellé pour un champ qu'on ne
+comprend pas est pire que de le taire, parce que le dirigeant croirait savoir.
+
+### Démasquer les adresses : protéger la bonne donnée
+
+L'ADR-014 §4 ne gardait en clair que l'adresse d'un membre de l'espace. Toute
+autre devenait `j.••••@ex••••.com`, forme non réversible. C'était protéger la
+mauvaise donnée : les adresses qui comptent sont justement celles qui
+n'appartiennent à aucun membre — un ancien salarié, une adresse personnelle
+utilisée au bureau, un prestataire. Sans elles, un RSSI ne peut ni prévenir la
+personne, ni vérifier si le compte est actif, ni juger de la gravité.
+
+Ce qui **ne bouge pas** : mots de passe et cookies de session restent
+chiffrés, masqués, et soumis aux cinq conditions de la révélation. La
+différence n'est pas de degré mais de nature — une adresse ne donne accès à
+rien, un mot de passe ouvre un compte.
+
+L'encadrement des adresses est donc plus léger, et assumé comme tel : un rôle
+(administrateur et contributeur oui, lecteur non), une trace (qui, quand,
+quels actifs), un journal que le client peut lire lui-même, une mention dans
+la politique de confidentialité. Exiger une ré-authentification pour lire la
+liste de ses propres fuites rendrait le produit inutilisable — et une garde
+qu'on contourne parce qu'elle gêne ne protège personne.
+
+Les deux formes restent en base. **Le choix se fait à la restitution, pas au
+stockage** : masquer en base revenait à trancher une fois pour toutes, sans
+retour possible, ce qui se décide légitimement par rôle.
+
+### Deux effets de bord, dont un sérieux
+
+**La pseudonymisation.** C'est le point qui aurait coûté cher. Ces adresses
+entrent dans le contexte envoyé au modèle — et le collecteur de valeurs
+sensibles ne ramassait que les adresses des **membres**. C'était suffisant
+tant que les autres étaient masquées avant stockage ; ça ne l'était plus une
+heure après le changement. Une adresse de tiers serait partie en clair chez le
+fournisseur d'IA.
+
+Le collecteur couvre maintenant les identifiants des fuites. Et le lot de
+vingt fuites qui entre dans le contexte est désormais défini par **une seule
+fonction**, avec un tri déterministe : deux requêtes renvoyant deux lots
+différents auraient laissé passer une adresse, et c'est exactement ainsi que
+ce genre de garde cède. Deux tests le tiennent : l'adresse ne fuit pas, et
+elle arrive quand même sous forme de jeton — une adresse simplement supprimée
+passerait le premier test en privant l'assistant de sa matière.
+
+**La corrélation** s'élargit d'elle-même. L'ADR-017 refusait les identifiants
+masqués comme clé de croisement, donc ne croisait en pratique que les membres.
+Elle couvre maintenant toutes les adresses : la réutilisation entre le compte
+personnel d'un salarié et son accès professionnel est précisément le cas que
+l'ADR-017 voulait rendre visible, et c'était celui que le masquage empêchait
+de voir. Un test l'atteste, un autre garantit qu'une fuite d'avant la V2-2,
+qui n'a que sa forme masquée, reste hors du croisement.
+
+### Le balayage : deux listes, pas une
+
+Le nom du fournisseur était déjà interdit — mais balayé **uniquement sur les
+constantes de message d'erreur**. Rien ne regardait le chemin normal : liste
+des fuites, fil d'exposition, vulgarisation, libellés des champs. La plus
+grande surface, la moins gardée.
+
+Le balayage porte désormais sur la charge réellement servie : chaque chaîne de
+chaque réponse est parcourue récursivement, avec son chemin (« racine.assets
+[0].findings[2].details[1].implication ») pour que l'échec désigne la ligne à
+corriger. Les emails aussi.
+
+Deux listes, et c'est le point de conception : la liste d'origine est large
+(« pool », « http », les chiffres) et convient aux messages d'erreur ;
+l'appliquer à tout aurait échoué à la première adresse de site contenant
+« http ». Une seconde liste, étroite, ne contient que les noms de
+fournisseurs, et s'applique partout. **Une garde qu'on désactive parce qu'elle
+crie trop ne garde rien.**
+
+### Ce que les tests ont trouvé
+
+Deux défauts, tous deux dans mon propre travail :
+
+1. **Une implication trop pauvre.** Le test qui exige que chaque champ dise ce
+   qu'il implique a fait tomber `asm.dom` : « L'adresse internet
+   inventoriée. » — 31 caractères qui constatent sans rien apprendre. Dix
+   implications réécrites dans la foulée, toutes du même genre : elles
+   décrivaient le champ au lieu de dire ce qu'il change.
+2. **Une assertion trop laxiste.** Mon test sur la traduction du type MIME
+   passait *aussi* sans la traduction, à cause d'un `or` qui rendait la
+   condition vraie dans les deux cas. Découvert en neutralisant la garde, pas
+   en relisant le test.
+
+### Vérifications
+
+Dix gardes vérifiées **en les neutralisant**, une par une, avec restauration
+entre chaque : nom du fournisseur servi au client, URL de document ajoutée à
+la liste blanche, garde de rôle levée, champ brut réexposé, consultation non
+tracée, trace posée à tort, signal de réutilisation non repris, adresses
+tierces non pseudonymisées, type de fuite privé de son implication, type MIME
+servi brut. Les dix tombent.
+
+Suites : **1194 tests backend verts** (contre 1139 en début de session), plus
+les 3 échecs WeasyPrint habituels, environnementaux sous Windows. **159 tests
+frontend** (contre 155). `ruff` et `eslint` propres, construction verte.
+
+Jeu de démonstration mis à jour : `src` valait « RedLine Stealer log » et
+s'affichait sous le libellé « Identifiant enregistré sur » — la démonstration
+montrait un champ faux. Remplacé par de vrais services, et complété d'un
+identifiant de machine. Le glossaire couvre RedLine et Vidar, les deux
+logiciels du jeu de démonstration : un client verra donc l'explication, pas la
+formule générique.
+
+### Reste à faire
+
+- **Rien n'a été vérifié sur le serveur**, pour la même raison qu'en début de
+  journée : le filtre web du réseau bloque toujours le domaine. Les migrations
+  0007 et 0008 n'ont donc pas été jouées sur les volumes réels.
+- **Le remplissage de `identifier_plain` n'a été exercé que sur des données de
+  test.** Il relit `raw_data` sur toutes les fuites sans clair — sur un actif
+  à 28 450 fuites, c'est la partie la plus longue de la livraison.
+- **Aucun export client de compromissions n'existe.** Le journal des accès
+  distingue déjà consultation et export ; la seconde branche est en place et
+  jamais exercée. À rebrancher le jour où un export existe — c'est le genre de
+  garde qui s'oublie précisément parce qu'elle attend.
+- Le glossaire des logiciels malveillants couvre huit familles. Au-delà, la
+  formule générique s'applique ; elle est correcte mais moins parlante.
+- `raw_data` continue de tout stocker, y compris les champs non restitués.
+  Réduire le stockage à ce qui est affiché serait une décision de rétention
+  distincte, et irréversible.
