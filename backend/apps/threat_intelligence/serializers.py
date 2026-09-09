@@ -35,6 +35,11 @@ class BreachFindingSerializer(serializers.ModelSerializer):
             "has_secret",
             "breach_date",
             "detected_at",
+            # V2-1 : une fuite traitée que les analyses suivantes revoient
+            # garde sa date de détection. C'est celle-ci qui répond à « le
+            # fournisseur la remonte-t-il toujours ? » — question légitime,
+            # à laquelle taire la réponse serait cacher plutôt que masquer.
+            "last_seen_at",
             "treated_at",
             "meaning",
             "recommended_action",

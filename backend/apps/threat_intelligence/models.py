@@ -86,13 +86,41 @@ class BreachFinding(TenantScopedModel):
 
     breach_date = models.DateField(null=True, blank=True)
     detected_at = models.DateTimeField(auto_now_add=True)
+    # V2-1 : dernière fois que le fournisseur a REMONTÉ cette même fuite.
+    # Distinct de ``detected_at``, qui ne bouge jamais : une fuite traitée que
+    # trois scans successifs revoient reste détectée le premier jour, et c'est
+    # ce que doit dire son historique de traitement. Ce que ``last_seen_at``
+    # ajoute, c'est de quoi répondre honnêtement à « elle est toujours là ? »
+    # sans rouvrir ce que le client a déjà traité.
+    last_seen_at = models.DateTimeField(null=True, blank=True)
 
     # Payload déjà masqué au moment de la normalisation (ADR-014 §2) — champs
     # non-sensibles uniquement (endpoint d'origine, métadonnées).
     raw_data = models.JSONField(default=dict, blank=True)
 
-    # Dédoublonnage (scan répété, webhook redélivré) — voir services.py.
+    # Dédoublonnage (scan répété, webhook redélivré) — voir
+    # providers/breachsense/normalizer.py pour le calcul, services.py pour
+    # la façon dont il est consulté.
+    #
+    # ``dedup_hash`` reste la clé d'unicité (contrainte inchangée). Les deux
+    # colonnes qui l'accompagnent ne sont pas redondantes : elles portent les
+    # DEUX moitiés dont il est la combinaison, et c'est en les interrogeant
+    # séparément qu'on peut répondre à « même compte, autre mot de passe ».
     dedup_hash = models.CharField(max_length=64)
+    # Identité de la fuite, SECRET EXCLU. Vide pour les fuites ingérées avant
+    # la V2-1 dont l'endpoint d'origine n'est plus reconstituable (endpoint
+    # inconnu retombé sur "webhook") — voir la migration 0006.
+    identity_hash = models.CharField(max_length=64, blank=True, db_index=True)
+    # Empreinte à sens unique du secret ; "" quand la fuite n'en porte pas.
+    # Préfixée de ``legacy:`` pour les fuites antérieures à la V2-1, dont le
+    # secret en clair n'a jamais été empreint : elles se raccrochent alors sur
+    # leur forme masquée, une fois, à leur première réobservation.
+    #
+    # N'est JAMAIS purgée avec le secret (Phase 8C) : une empreinte n'est pas
+    # une valeur récupérable, et la purger casserait le dédoublonnage des
+    # fuites les plus anciennes — exactement celles qu'un client a déjà
+    # traitées et ne veut plus revoir.
+    secret_fingerprint = models.CharField(max_length=71, blank=True)
 
     alert = models.ForeignKey(
         "monitoring.Alert", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
@@ -113,6 +141,10 @@ class BreachFinding(TenantScopedModel):
         indexes = [
             models.Index(fields=["tenant", "status", "-detected_at"]),
             models.Index(fields=["asset", "-detected_at"]),
+            # Sert le raccrochage des fuites antérieures à la V2-1 : à chaque
+            # ingestion, une recherche par identité quand la clé complète ne
+            # trouve rien.
+            models.Index(fields=["tenant", "identity_hash"], name="ti_finding_tenant_identity_idx"),
         ]
 
     def __str__(self):

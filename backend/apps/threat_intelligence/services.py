@@ -8,12 +8,13 @@ filter, since Celery tasks have no ambient request context.
 
 import hashlib
 import logging
+from dataclasses import dataclass, field
 from datetime import timedelta
-from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from django.conf import settings
 from django.core.cache import cache
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.accounts import services as accounts_services
@@ -69,6 +70,16 @@ class PoolFullError(ThreatIntelligenceError):
 
 class AssetAlreadyMonitoredError(ThreatIntelligenceError):
     pass
+
+
+class OwnershipNotProvenError(ThreatIntelligenceError):
+    """La possession du domaine n'est pas prouvée (ADR-026).
+
+    Traduite depuis ``monitoring`` plutôt que laissée telle quelle : une vue
+    de ce module attrape ``ThreatIntelligenceError``, et une erreur venue
+    d'une autre app la traversait donc jusqu'en 500 — un refus de règle
+    métier présenté au client comme une panne du produit.
+    """
 
 
 class WebhookNotConfiguredError(ThreatIntelligenceError):
@@ -216,9 +227,10 @@ def list_reveal_audits_all_tenants(limit: int = 100):
 
 
 def derive_scan_domain(asset: Asset) -> str:
-    if asset.type == Asset.Type.WEBSITE:
-        return urlparse(asset.value).hostname or asset.value
-    return asset.value
+    """Délègue : le domaine d'un actif est une notion de ``monitoring``, qui
+    possède le modèle. En avoir deux définitions, c'est s'exposer à ce
+    qu'elles divergent le jour où un troisième type d'actif apparaît."""
+    return monitoring_services.asset_domain(asset)
 
 
 def tenant_member_emails(tenant) -> set[str]:
@@ -226,19 +238,129 @@ def tenant_member_emails(tenant) -> set[str]:
 
 
 # --- Ingestion (partagée scan + webhook) ------------------------------------
+#
+# Une fuite déjà traitée par le client ne doit PAS réapparaître parce qu'un
+# nouveau scan la remonte. C'est le défaut que la V2-1 corrige : le client ne
+# pouvait pas progresser, il retraitait les mêmes lignes à chaque analyse.
+#
+# La règle tient en une phrase : **on met à jour la date de dernière
+# observation, on ne touche jamais au statut**. Ni réouverture, ni nouvelle
+# entrée, ni alerte rouverte. Le statut appartient au client ; le fournisseur
+# n'a pas à le lui reprendre.
+
+# Préfixe des empreintes de secret des fuites ingérées AVANT la V2-1 : leur
+# secret en clair n'a jamais été empreint, seule sa forme masquée est en base.
+# Elles se raccrochent sur cette forme masquée, une fois, à leur première
+# réobservation (voir ``_reconcile_legacy_finding``).
+LEGACY_FINGERPRINT_PREFIX = "legacy:"
+
+
+@dataclass
+class IngestionReport:
+    """Ce qu'une ingestion a fait — au-delà de ce qu'elle a créé.
+
+    Passé par l'appelant qui en a besoin plutôt que renvoyé : une vingtaine
+    d'appelants (scan, webhook, jeu de démonstration, tests) attendent une
+    liste de fuites créées, et changer ce contrat pour transporter un
+    compteur les casserait tous sans rien leur apporter.
+
+    ``seen_again_treated`` porte les fuites que le client avait déjà
+    **traitées ou ignorées** et que ce scan a revues : c'est ce qui alimente
+    le compteur discret de l'écran. On masque, on ne cache pas — une fuite
+    silencieusement retenue serait un mensonge par omission, la même faute
+    que la liste tronquée sans son total.
+    """
+
+    created: list[int] = field(default_factory=list)
+    seen_again: list[int] = field(default_factory=list)
+    seen_again_treated: list[int] = field(default_factory=list)
+
+    def note_created(self, finding: BreachFinding) -> None:
+        self.created.append(finding.id)
+
+    def note_seen_again(self, finding: BreachFinding) -> None:
+        self.seen_again.append(finding.id)
+        if finding.status in _CLOSED_FINDING_STATUSES:
+            self.seen_again_treated.append(finding.id)
+
+
+_CLOSED_FINDING_STATUSES = (BreachFinding.Status.TREATED, BreachFinding.Status.IGNORED)
+
+# Nombre d'identifiants de fuites déjà traitées transportés dans le résultat
+# d'un scan. Le compte, lui, n'est jamais borné.
+MAX_REPORTED_TREATED_IDS = 50
+
+
+def _reconcile_legacy_finding(*, tenant, normalized: dict) -> BreachFinding | None:
+    """Retrouve une fuite ingérée avant la V2-1 que la clé actuelle ne peut
+    pas atteindre, et la met à jour pour qu'elle le soit désormais.
+
+    Ces fuites ont été empreintes avec l'ancienne formule, dont la moitié
+    « secret » était la forme MASQUÉE. On les rejoint donc exactement comme
+    l'ancienne formule les distinguait : à identité égale, forme masquée
+    égale. Le raccrochage a lieu une seule fois par fuite — après quoi elle
+    porte la clé actuelle et repasse par le chemin normal.
+
+    Sans cette étape, la toute première analyse suivant la mise en service de
+    la V2-1 recréerait en double **toutes** les fuites existantes, dont celles
+    que le client venait de traiter : le défaut que cette version corrige,
+    rejoué une dernière fois, sur l'intégralité de l'historique.
+    """
+    identity_hash = normalized["identity_hash"]
+    if not identity_hash:
+        # Endpoint d'origine non reconstituable pour les fuites d'avant la
+        # V2-1 (voir migration 0006). Rien à quoi se raccrocher : la fuite
+        # sera recréée une fois, et portera dès lors la clé actuelle.
+        return None
+
+    legacy = BreachFinding.all_objects.filter(
+        tenant=tenant,
+        identity_hash=identity_hash,
+        secret_fingerprint__startswith=LEGACY_FINGERPRINT_PREFIX,
+        secret_masked=normalized["secret_masked"],
+    ).first()
+    if legacy is None:
+        return None
+
+    legacy.secret_fingerprint = normalized["secret_fingerprint"]
+    legacy.dedup_hash = normalized["dedup_hash"]
+    legacy.save(update_fields=["secret_fingerprint", "dedup_hash"])
+    return legacy
+
+
+def _find_existing_finding(*, tenant, normalized: dict) -> BreachFinding | None:
+    existing = BreachFinding.all_objects.filter(
+        tenant=tenant, dedup_hash=normalized["dedup_hash"]
+    ).first()
+    if existing is not None:
+        return existing
+    return _reconcile_legacy_finding(tenant=tenant, normalized=normalized)
 
 
 def ingest_raw_findings(
-    *, tenant, asset: Asset, raw_findings: list[RawFinding], tenant_emails: set[str] | None = None
+    *,
+    tenant,
+    asset: Asset,
+    raw_findings: list[RawFinding],
+    tenant_emails: set[str] | None = None,
+    report: IngestionReport | None = None,
 ) -> list[BreachFinding]:
     """Normalizes (masking secrets — ADR-014), deduplicates, persists, and
     opens/escalates the corresponding monitoring alert for every non-test
     raw finding. Used identically by the query scan path and the webhook
     path — the single place downstream of a provider that any finding
     passes through, so both are held to the same masking/dedup/alerting
-    discipline."""
+    discipline.
+
+    Renvoie les fuites **créées**. Une fuite déjà connue voit seulement sa
+    date de dernière observation avancer : son statut, son alerte et sa date
+    de détection ne bougent pas. Passer un ``report`` donne accès à ce que ce
+    retour ne dit pas — notamment les fuites déjà traitées qui viennent
+    d'être revues.
+    """
     tenant_emails = tenant_emails if tenant_emails is not None else tenant_member_emails(tenant)
     created: list[BreachFinding] = []
+    now = timezone.now()
 
     for raw in raw_findings:
         if raw.is_test:
@@ -258,15 +380,44 @@ def ingest_raw_findings(
         # column (ADR-014 update).
         secret_plain = normalized.pop("secret_plain", "")
         normalized["secret_encrypted"] = encrypt_secret(secret_plain) if secret_plain else b""
-        finding, was_created = BreachFinding.all_objects.get_or_create(
-            tenant=tenant,
-            dedup_hash=normalized["dedup_hash"],
-            defaults={"asset": asset, **normalized},
-        )
-        if not was_created:
+
+        existing = _find_existing_finding(tenant=tenant, normalized=normalized)
+        if existing is not None:
+            # Déjà connue. On avance la date de dernière observation, et RIEN
+            # d'autre : ni le statut, ni l'alerte, ni la date de détection.
+            # C'est ici, et seulement ici, que se joue « une fuite traitée ne
+            # réapparaît pas ».
+            existing.last_seen_at = now
+            existing.save(update_fields=["last_seen_at"])
+            if report is not None:
+                report.note_seen_again(existing)
+            continue
+
+        try:
+            # `atomic` autour de l'insertion : sans lui, l'IntegrityError
+            # rattrapée ci-dessous laisserait la transaction courante marquée
+            # comme rompue, et toutes les fuites suivantes du lot échoueraient
+            # sur une erreur sans rapport.
+            with transaction.atomic():
+                finding = BreachFinding.all_objects.create(
+                    tenant=tenant, asset=asset, last_seen_at=now, **normalized
+                )
+        except IntegrityError:
+            # Deux ingestions concurrentes sur la même fuite (webhook redélivré
+            # pendant un scan) : la contrainte d'unicité a tranché, on relit ce
+            # que l'autre vient d'écrire plutôt que de faire échouer le lot.
+            existing = BreachFinding.all_objects.filter(
+                tenant=tenant, dedup_hash=normalized["dedup_hash"]
+            ).first()
+            if existing is None:
+                raise
+            if report is not None:
+                report.note_seen_again(existing)
             continue
 
         created.append(finding)
+        if report is not None:
+            report.note_created(finding)
         alert_severity = _FINDING_SEVERITY_TO_ALERT_SEVERITY[finding.severity]
         alert = monitoring_services.open_or_update_alert(
             asset=asset,
@@ -456,6 +607,9 @@ def execute_scan(*, tenant, assets: list[Asset], triggered_by: str) -> dict:
     total_created = 0
     total_requests = 0
     assets_en_echec: list[str] = []
+    # Un seul rapport pour tout le lot : le compteur affiché parle de
+    # « ce scan », pas de tel ou tel actif.
+    report = IngestionReport()
 
     # Chaque actif est isolé. Un client peut en déclarer plusieurs, et le
     # 06/09/2026 un seul d'entre eux a fait échouer l'analyse ENTIÈRE d'un
@@ -476,6 +630,7 @@ def execute_scan(*, tenant, assets: list[Asset], triggered_by: str) -> dict:
                 asset=asset,
                 raw_findings=scan_result.findings,
                 tenant_emails=tenant_emails,
+                report=report,
             )
             total_created += len(created)
         except Exception:  # noqa: BLE001 - un actif ne fait pas tomber les autres
@@ -514,6 +669,16 @@ def execute_scan(*, tenant, assets: list[Asset], triggered_by: str) -> dict:
         "findings_created": total_created,
         "requests_consumed": total_requests,
         "assets_en_echec": assets_en_echec,
+        # Ce que l'écran doit pouvoir dire sans mentir : « ce scan a revu N
+        # fuites que vous aviez déjà traitées ». Elles ne sont pas
+        # réapparues dans la liste — mais les taire complètement laisserait
+        # croire que le fournisseur ne les remonte plus.
+        "already_treated_seen": len(report.seen_again_treated),
+        # Bornée : sur un actif réel de production, un scan revoit des
+        # dizaines de milliers de fuites. Le COMPTE ci-dessus est exact ;
+        # cette liste ne sert qu'à pointer vers quelques-unes.
+        "already_treated_ids": report.seen_again_treated[:MAX_REPORTED_TREATED_IDS],
+        "findings_seen_again": len(report.seen_again),
     }
 
 
@@ -551,6 +716,22 @@ def list_monitored_assets(tenant):
 def register_monitored_asset(*, tenant, asset: Asset) -> MonitoredAsset:
     if asset.tenant_id != tenant.id:
         raise ThreatIntelligenceError("Cet actif n'appartient pas à cette entreprise.")
+    # ADR-026 : la surveillance continue exige une PREUVE de possession, pas
+    # une déclaration. Placée avant toute autre garde, et avant tout appel au
+    # fournisseur : un domaine dont on ne sait pas s'il appartient au client
+    # ne doit pas consommer un emplacement de la licence, ni faire l'objet
+    # d'une requête sortante à son sujet.
+    #
+    # La garde appelle `monitoring` par son services.py — c'est lui qui
+    # possède l'actif et la preuve ; le sens de dépendance
+    # (threat_intelligence -> monitoring) reste celui de l'ADR-013.
+    try:
+        monitoring_services.ensure_ownership_proven(asset)
+    except monitoring_services.OwnershipNotProvenError as exc:
+        # Traduite dans le vocabulaire de ce module, comme l'est déjà le refus
+        # du fournisseur : c'est la frontière de l'app, c'est ici que les
+        # erreurs étrangères prennent une forme que ses vues savent traiter.
+        raise OwnershipNotProvenError(str(exc)) from exc
     if MonitoredAsset.all_objects.filter(asset=asset, is_active=True).exists():
         raise AssetAlreadyMonitoredError(client_messages.ASSET_ALREADY_MONITORED)
     if not settings.BREACHSENSE_WEBHOOK_CALLBACK_URL:
