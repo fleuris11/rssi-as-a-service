@@ -84,6 +84,11 @@ export const RETENTION = [
     note: 'Qui a consulté quoi, quand, depuis quelle adresse. Ne contient jamais le mot de passe.',
   },
   {
+    data: 'Journal des consultations d’adresses compromises',
+    duration: '365 jours',
+    note: "Qui a consulté, quand, et sur quels actifs. Ne contient pas les adresses elles-mêmes — seulement leur nombre.",
+  },
+  {
     data: 'Résultats de surveillance et alertes',
     duration: "Durée de l'abonnement",
     note: 'Conservés pour permettre le suivi de la progression dans le temps.',
@@ -115,8 +120,12 @@ export const SECURITY_MEASURES = [
     body: "Consulter la valeur d'un mot de passe fuité exige d'être administrateur de l'espace et de re-prouver son identité à ce moment précis. Chaque tentative, acceptée ou refusée, est enregistrée avec son auteur, sa date et son adresse.",
   },
   {
+    title: 'Adresses compromises : affichées, encadrées, tracées',
+    body: "Les adresses email retrouvées dans une fuite sont affichées en clair aux rôles administrateur et contributeur : sans savoir qui est concerné, il est impossible de prévenir la personne. Le rôle lecteur n'en voit qu'une forme masquée. Chaque consultation est enregistrée avec son auteur, sa date et les actifs concernés. Les mots de passe et les jetons de session, eux, restent masqués et soumis à une procédure de révélation distincte, plus stricte.",
+  },
+  {
     title: 'Pseudonymisation avant tout traitement externe',
-    body: "Aucune donnée identifiante n'est transmise en clair à un service d'analyse tiers : noms, adresses et domaines sont remplacés par des identifiants neutres avant l'envoi.",
+    body: "Aucune donnée identifiante n'est transmise en clair à un service d'analyse tiers : noms, adresses et domaines sont remplacés par des identifiants neutres avant l'envoi. Cela vaut aussi pour les adresses retrouvées dans les fuites, y compris celles qui n'appartiennent à aucun membre de l'espace.",
   },
   {
     title: 'Authentification',

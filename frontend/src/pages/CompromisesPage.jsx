@@ -74,6 +74,50 @@ function usePolling(fetchJob) {
   )
 }
 
+/**
+ * Ce que la source renvoie, et que le produit taisait (V2-2, ADR-027).
+ *
+ * Rien n'est mis en forme ici : le libellé, la valeur et l'implication
+ * viennent du serveur. Traduire côté écran aurait garanti qu'un jour les
+ * textes divergent entre la liste, le fil d'exposition et l'email — c'est
+ * exactement ce qui était arrivé à la grille tarifaire.
+ *
+ * Replié par défaut : sept lignes de détail sur chaque carte noieraient
+ * « ce qu'il faut faire », qui reste l'information principale.
+ */
+function DetailsFuite({ details }) {
+  const [ouvert, setOuvert] = useState(false)
+  if (!details?.length) return null
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOuvert((v) => !v)}
+        aria-expanded={ouvert}
+        className="text-sm font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700"
+      >
+        {ouvert ? 'Masquer le détail' : `Ce que l’on sait de plus (${details.length})`}
+      </button>
+      {ouvert && (
+        <dl className="mt-2 space-y-2 rounded-md bg-ink-50 px-3 py-2">
+          {details.map((detail) => (
+            <div key={detail.label}>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+                {detail.label}
+              </dt>
+              <dd className="text-sm text-ink-800">{detail.value}</dd>
+              {/* La valeur seule informe ; l'implication permet de décider.
+                  « Raccoon » ne dit rien à un dirigeant. */}
+              <dd className="text-xs text-ink-500">{detail.implication}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  )
+}
+
 function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal }) {
   return (
     <Card>
@@ -104,8 +148,12 @@ function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal })
             </div>
             <p className="mt-0.5 text-xs text-ink-500">
               {SOURCE_LABELS[finding.source_endpoint] || finding.source_endpoint}
-              {finding.identifier_plain && ` — ${finding.identifier_plain}`}
-              {!finding.identifier_plain && finding.identifier_masked && ` — ${finding.identifier_masked}`}
+              {/* V2-2 (ADR-027) : UN seul champ. C'est le serveur qui décide
+                  ce qu'il contient selon le rôle du lecteur — le client ne
+                  reçoit plus les deux formes et n'a donc rien à arbitrer.
+                  L'arbitrage côté écran, c'est une garde qui saute au premier
+                  composant qui oublie de la refaire. */}
+              {finding.identifier && ` — ${finding.identifier}`}
               {finding.breach_date && ` — fuite du ${new Date(finding.breach_date).toLocaleDateString('fr-FR')}`}
             </p>
           </div>
@@ -147,6 +195,13 @@ function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal })
         </div>
       </div>
       <p className="mt-3 rounded-md bg-ink-50 px-3 py-2 text-sm text-ink-700">{finding.meaning}</p>
+      {finding.impact && (
+        <p className="mt-2 rounded-md bg-ink-50 px-3 py-2 text-sm text-ink-700">
+          <span className="font-semibold">Ce que ça implique : </span>
+          {finding.impact}
+        </p>
+      )}
+      <DetailsFuite details={finding.details} />
       <p className="mt-2 rounded-md bg-accent-100/50 px-3 py-2 text-sm text-accent-900">
         <span className="font-semibold">À faire : </span>
         {finding.recommended_action}

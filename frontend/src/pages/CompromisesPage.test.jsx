@@ -39,16 +39,20 @@ vi.mock('../context/EntitlementsContext', () => ({
 
 const { threatIntelligenceApi, monitoringApi } = await import('../api/endpoints')
 
-const fuite = (id, severity, asset) => ({
+const fuite = (id, severity, asset, extra = {}) => ({
   id,
   severity,
   status: 'open',
   asset_value: asset,
   source_endpoint: 'stealer',
   meaning: 'Explication.',
+  impact: 'Le compte est utilisable immédiatement.',
   recommended_action: 'Action.',
   has_secret: false,
   breach_date: '2026-07-03',
+  identifier: 'marie@exemple.fr',
+  details: [],
+  ...extra,
 })
 
 function servir(findings, statut = {}) {
@@ -156,6 +160,71 @@ describe('CompromisesPage', () => {
 
     expect(await screen.findByRole('button', { name: 'Surveiller' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Prouver la possession' })).not.toBeInTheDocument()
+  })
+
+  // V2-2 (ADR-027) : ce que la source renvoie et que le produit taisait.
+  it('restitue les champs de la source avec leur libellé et ce qu’ils impliquent', async () => {
+    servir([
+      fuite(1, 'critical', 'a.example', {
+        details: [
+          {
+            label: 'Logiciel malveillant identifié',
+            value: 'Raccoon',
+            implication: 'C’est un logiciel qui recopie les mots de passe du navigateur.',
+          },
+          {
+            label: 'Poste infecté',
+            value: 'Windows 10 Home',
+            implication: 'Le poste doit être nettoyé avant tout accès sensible.',
+          },
+        ],
+      }),
+    ])
+    render(<CompromisesPage />)
+
+    // Replié par défaut : le détail ne doit pas noyer « ce qu'il faut faire ».
+    const bascule = await screen.findByRole('button', { name: /Ce que l’on sait de plus \(2\)/ })
+    expect(screen.queryByText('Raccoon')).not.toBeInTheDocument()
+
+    await userEvent.click(bascule)
+
+    expect(screen.getByText('Logiciel malveillant identifié')).toBeInTheDocument()
+    expect(screen.getByText('Raccoon')).toBeInTheDocument()
+    // La valeur seule n'informe pas : « Raccoon » ne dit rien à un dirigeant.
+    expect(
+      screen.getByText('C’est un logiciel qui recopie les mots de passe du navigateur.')
+    ).toBeInTheDocument()
+  })
+
+  it('n’affiche jamais le nom technique du champ à la place du libellé', async () => {
+    servir([
+      fuite(1, 'critical', 'a.example', {
+        details: [{ label: 'Détecté le', value: '4 septembre 2026', implication: 'Une date.' }],
+      }),
+    ])
+    render(<CompromisesPage />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /Ce que l’on sait de plus/ }))
+
+    expect(screen.getByText('Détecté le')).toBeInTheDocument()
+    expect(screen.queryByText('fnd')).not.toBeInTheDocument()
+  })
+
+  it('affiche ce que la fuite implique, pas seulement ce qu’elle est', async () => {
+    servir([fuite(1, 'critical', 'a.example')])
+    render(<CompromisesPage />)
+
+    expect(await screen.findByText('Le compte est utilisable immédiatement.')).toBeInTheDocument()
+    expect(screen.getByText('Explication.')).toBeInTheDocument()
+  })
+
+  it('sert l’adresse telle que le serveur la donne, sans arbitrer côté écran', async () => {
+    // Le serveur décide selon le rôle (ADR-027). Un arbitrage ici serait une
+    // garde qui saute au premier composant qui oublie de la refaire.
+    servir([fuite(1, 'critical', 'a.example', { identifier: 'ma••••@ex••••.fr' })])
+    render(<CompromisesPage />)
+
+    expect(await screen.findByText(/ma••••@ex••••\.fr/)).toBeInTheDocument()
   })
 
   it('regroupe par gravité et met le compte dans le séparateur', async () => {
