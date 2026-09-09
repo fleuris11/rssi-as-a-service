@@ -4988,3 +4988,186 @@ autre test ne garde déjà. `pytest -m slow -s` pour le rejouer.
 - Le remplissage de `completed_at` approxime par `updated_at` pour les actions
   déjà terminées. Dit dans la migration, à ne pas oublier si l'on présente un
   historique antérieur à cette version.
+
+---
+
+## 9 septembre 2026 (suite) — V2-4 : le diagnostic ne connaissait qu'un référentiel
+
+### Ce qui existait, et ce qui n'existait pas
+
+Le modèle portait `Referential`, `Domain`, `Measure` : trois entités qui
+ressemblaient à un catalogue. En les relisant, quatre hypothèses ANSSI étaient
+gravées dans le schéma, pas seulement dans les données.
+
+`Measure.number` était un **entier unique sur toute la base**. L'ANSSI numérote
+de 1 à 42 ; ISO 27001 nomme ses contrôles `A.5.1`, le NIST `PR.AA-01`. Ni l'un
+ni l'autre n'entre dans un `PositiveSmallIntegerField`, et l'unicité globale
+interdisait même à deux référentiels d'avoir chacun une mesure n°1.
+
+Le **poids d'une mesure vivait dans le code** : `{standard: 1.0, renforcé: 0.5}`,
+les deux niveaux du guide d'hygiène. Un référentiel sans niveaux n'avait aucune
+place où exister.
+
+`get_active_referential()` renvoyait **« le » référentiel actif**, le même pour
+tous. Il n'y avait pas d'idée d'attribution. Et « l'évaluation en cours » était
+unique **par client**, pas par référentiel : deux diagnostics de front étaient
+impossibles.
+
+Rien de tout cela n'était un défaut à l'époque. C'était une hypothèse juste,
+devenue fausse.
+
+### Les décisions, et celle qu'il fallait ne pas prendre en silence
+
+Deux ADR. [ADR-029](adr/029-referentiels-multiples-et-attribution.md) pour le
+modèle : code en chaîne unique **par** référentiel, poids porté par la donnée,
+attribution par client, sous-ensembles et surcharges d'énoncé.
+[ADR-030](adr/030-consolidation-multi-referentiels.md) pour la question que la
+fiche demandait explicitement de ne pas trancher en silence : que vaut le score
+d'un client qui suit deux référentiels ?
+
+La règle retenue : **moyenne non pondérée des scores par référentiel** — chacun
+compte pour un. Une moyenne pondérée par le nombre de mesures aurait laissé les
+93 contrôles de l'annexe A d'ISO décider de 69 % du chiffre face aux 42 mesures
+de l'ANSSI, sans que personne l'ait choisi. Une déduplication des exigences qui
+se recouvrent aurait été plus juste, mais elle demande une table de
+correspondance entre référentiels que nous n'avons pas et qu'inventer
+reviendrait à décider nous-mêmes que telle mesure de l'ANSSI et tel contrôle
+d'ISO sont la même exigence — ce que ni l'un ni l'autre n'affirme.
+
+La règle est arbitraire. Elle est surtout **explicable en une phrase**, ce qui
+est le seul critère qui tienne devant un comité. Le consolidé ne circule donc
+jamais seul : le détail par référentiel, le nom de la méthode et la liste des
+référentiels non encore évalués voyagent avec lui, dans l'API comme à l'écran.
+
+Corollaire qu'on aurait pu manquer : la progression du comité n'est calculée
+que si **chaque** référentiel du consolidé courant a un diagnostic antérieur.
+Sinon, un client qui évalue ISO pour la première fois verrait bouger une
+« progression » qui n'a eu lieu nulle part — le chiffre aurait varié parce que
+l'ensemble comparé a changé.
+
+Le **plan d'action**, lui, se consolide sans arbitrage : un score est une
+opinion sur un ensemble, une action est une chose à faire. Deux référentiels
+qui demandent la même chose donnent deux lignes, côte à côte, chacune portant
+son référentiel. Les fusionner demanderait la table qu'on a refusé d'inventer.
+
+### Le contenu qu'on n'a pas le droit d'embarquer
+
+ISO 27001 et les CIS Controls sont sous droits. Le dépôt n'embarque que
+l'ANSSI (Licence Ouverte / Etalab). Le produit fournit donc la **structure
+d'accueil** : le modèle, un format d'import documenté et stable
+([docs/format_import_referentiel.md](format_import_referentiel.md)), un gabarit
+de tableur vide, et une commande `import_referential` qui lit du JSON ou du CSV.
+C'est l'exploitant ou le client, détenteur de la licence, qui importe le
+contenu, en déclarant sa mention de droits — affichée ensuite avec le
+référentiel, dans le produit et dans la console.
+
+`Referential.kind` porte cette distinction (`open` / `licensed` / `custom`), et
+la console l'affiche en évidence : c'est la question qu'on se pose au moment
+d'attribuer ISO à un client.
+
+### La surcharge vit à côté, jamais à la place
+
+Reformuler une mesure pour un client se fait dans une table séparée. La
+surcharge est appliquée **en mémoire, à la lecture**, sur un attribut privé —
+pas dans `Measure.plain_language`. Écrire dans le champ lui-même aurait
+fonctionné jusqu'au jour où une instance ainsi modifiée serait sauvegardée par
+mégarde, corrompant le référentiel pour tous les autres clients. Un test tient
+la garantie dans les deux sens : le voisin lit l'énoncé d'origine, et retirer
+la surcharge le fait réapparaître intact.
+
+Ce qui n'est **pas** surchargeable : l'intitulé officiel. C'est la citation du
+référentiel ; le réécrire ferait dire à l'ANSSI ce qu'elle ne dit pas.
+
+### La demande d'accès : un mécanisme, pas une fonctionnalité
+
+Le point 10 de la fiche demandait un mécanisme générique, réutilisable en V2-6.
+`AccessRequest` porte donc un `subject_type` et un `subject_key`, et un registre
+déclaré en code dit pour chaque type comment le décrire, comment savoir s'il est
+déjà détenu, et ce qu'« accorder » veut dire.
+
+Deux sujets aujourd'hui. `referential` : accorder attribue immédiatement.
+`feature` : accorder **n'attribue rien**, et c'est délibéré — changer l'offre
+d'un client est un acte commercial avec des conséquences de facturation, pas la
+conséquence silencieuse d'un clic. La console le dit alors explicitement au lieu
+de laisser croire que c'est réglé. Les tests portent sur les deux sujets, pas
+seulement sur les référentiels : un test qui ne connaîtrait que le cas de V2-4
+laisserait passer un couplage.
+
+### Ce qu'une entreprise reçoit à l'inscription
+
+Conséquence qu'on pouvait manquer : après V2-4, un client ne voit que ce qui
+lui est attribué — y compris un client **créé après** le déploiement. Sans
+rien de plus, une inscription aurait débouché sur « aucun référentiel ne vous
+est attribué », alors que personne n'avait décidé ça.
+
+`create_tenant_with_owner` attribue donc d'office les référentiels **libres de
+droits** — l'ANSSI, aujourd'hui — et eux seuls. Un contenu sous licence ne
+s'attribue pas tout seul : c'est l'exploitant qui sait ce qu'il a le droit de
+servir, et à qui. Deux tests le tiennent, et ils appellent le service
+directement plutôt que la fixture d'entreprise, qui attribue tout le catalogue
+pour préserver le monde d'avant et masquerait précisément ce qu'on vérifie.
+
+### La migration, répétée sur une copie de base réelle
+
+C'était le vrai risque de cette version : des diagnostics en cours et terminés,
+avec leurs réponses et leurs plans d'action, sur un schéma qu'on change sous
+eux.
+
+Écrite à la main plutôt qu'auto-générée. Expand/contract sur `code` et
+`referential` — on ajoute le champ permissif, on le remplit, on le resserre ;
+jamais un `NOT NULL` posé sur une table pleine. Aucune suppression : `number`
+perd son unicité globale mais garde sa valeur, `level` s'élargit sans se vider.
+
+Et surtout, une rétro-création des attributions. **Avant** cette migration, tout
+client voyait le référentiel actif ; **après**, il ne voit que ce qui lui est
+attribué. Sans cette étape, tous les clients existants auraient perdu leur
+diagnostic au déploiement — y compris les deux qui en ont un en cours.
+
+Répétée sur une copie restaurée de la base de développement (42 mesures,
+3 diagnostics dont un terminé, 42 réponses, 9 clients) : rien perdu, 9
+attributions créées, aucun score démenti. `manage.py check_referential_migration`
+vérifie tout cela après coup et sort en erreur au premier constat bloquant — il
+recalcule notamment chaque score déjà figé et le compare à ce qui a été présenté
+au client.
+
+Ce que cette répétition **ne** prouve pas : elle n'a pas tourné sur la base de
+production, à laquelle je n'ai pas accès depuis ce poste (le filtre réseau du
+06/09 vaut toujours). La commande est faite pour être lancée là-bas, après
+`migrate`, avant de rendre la main.
+
+### Vérifications
+
+**1348 tests backend verts** (contre 1253) : 22 sur l'importateur, 52 sur les
+référentiels multiples, 21 sur les demandes d'accès. **172 frontend** (contre
+167), dont 5 nouveaux sur l'écran de diagnostic. Les quatre échecs WeasyPrint
+habituels, environnementaux sous Windows. `ruff` et `eslint` propres.
+
+Le test qui compte le plus : `test_le_score_anssi_est_celui_d_avant_v2_4`. Il
+recalcule le score attendu à partir des poids et vérifie que le remplacement de
+la table de niveaux figée par un poids en base ne déplace pas le chiffre d'un
+dixième.
+
+### Un défaut trouvé en écrivant les tests de l'écran
+
+Le premier test de `DiagnosticPage` restait bloqué sur son squelette de
+chargement. Cause : l'effet de chargement dépendait de `showToast`, dont le
+fournisseur rend une nouvelle fonction à chaque rendu — l'effet se relançait en
+boucle. La page « marchait » parce que le rechargement était assez rapide pour
+que l'œil ne le voie pas. Corrigé par une référence stable ; le défaut serait
+resté invisible tant qu'on ne regarde que la page finie.
+
+### Reste à faire
+
+- **La migration n'a pas tourné sur la production.** Rien de cette version n'a
+  été vérifié sur le serveur, pour la même raison qu'en V2-1 à V2-3.
+- **Aucune interface de composition de sous-ensemble dans la console.** La
+  composition passe par l'API. Un exploitant qui veut préparer « ANSSI — les 10
+  essentielles » pour un client doit appeler l'endpoint ; l'écran viendra.
+- **Aucune interface de reformulation non plus.** L'API est là, testée, exposée
+  aux administrateurs d'entreprise ; l'écran manque.
+- **Aucune notification** au client quand sa demande est traitée : la réponse
+  l'attend dans son espace, elle ne va pas le chercher. Même dette que le
+  rapport de comité, qui ne s'envoie pas non plus.
+- Pas de table de correspondance entre référentiels. C'est ce qui interdit de
+  dédoublonner un plan d'action consolidé, et c'est dit dans ADR-030 plutôt que
+  contourné.
