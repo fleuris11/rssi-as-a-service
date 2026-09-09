@@ -1,4 +1,4 @@
-import { Zap } from 'lucide-react'
+import { CalendarClock, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { actionsApi, tenantsApi } from '../api/endpoints'
@@ -82,6 +82,29 @@ function ActionCard({ item, members, updatingId, onUpdate }) {
             </option>
           ))}
         </select>
+      </div>
+
+      {/* V2-3 (ADR-028) : sans échéance, aucune action ne peut être « en
+          retard », et l'indicateur du comité resterait à zéro pour tout le
+          monde. Le champ est facultatif — une action sans date n'est pas en
+          faute, elle est sans date, ce que le rapport dit séparément. */}
+      <div className="flex items-center gap-2">
+        <CalendarClock
+          className={`size-4 shrink-0 ${item.is_overdue ? 'text-critical-strong' : 'text-ink-400'}`}
+          aria-hidden="true"
+        />
+        <input
+          type="date"
+          aria-label="Échéance"
+          value={item.due_date ?? ''}
+          disabled={updatingId === item.id}
+          onChange={(e) => onUpdate(item.id, { due_date: e.target.value || null })}
+          className={`transition-smooth min-w-0 flex-1 rounded-md border px-2 py-1 text-xs focus-visible:outline-2 focus-visible:outline-brand-600 ${
+            item.is_overdue
+              ? 'border-critical-strong text-critical-strong'
+              : 'border-ink-200 text-ink-700'
+          }`}
+        />
       </div>
 
       <div className="flex gap-2 pt-0.5">

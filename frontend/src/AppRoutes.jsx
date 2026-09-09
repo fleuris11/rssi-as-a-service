@@ -9,6 +9,7 @@ import PlatformAdminPage from './pages/admin/PlatformAdminPage'
 import AssistantPage from './pages/AssistantPage'
 import CompromisesPage from './pages/CompromisesPage'
 import DashboardPage from './pages/DashboardPage'
+import ReportingPage from './pages/ReportingPage'
 import DiagnosticPage from './pages/DiagnosticPage'
 import DocumentsPage from './pages/DocumentsPage'
 import ExposurePage from './pages/ExposurePage'
@@ -39,6 +40,7 @@ export default function AppRoutes() {
           <Route path="/plan-action" element={<ActionPlanPage />} />
           <Route path="/surveillance" element={<SurveillancePage />} />
           <Route path="/exposition" element={<ExposurePage />} />
+          <Route path="/rapports" element={<ReportingPage />} />
           <Route path="/compromissions" element={<CompromisesPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/assistant" element={<AssistantPage />} />

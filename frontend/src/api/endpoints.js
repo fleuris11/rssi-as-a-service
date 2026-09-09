@@ -232,6 +232,19 @@ export const threatIntelligenceApi = {
   adminStatus: () => apiClient.get('/api/v1/threat-intelligence/admin/status/'),
 }
 
+// Restitution de comité (ADR-028). La période est résolue par le SERVEUR :
+// une clé (`quarter`) ou deux dates. Le frontend n'en calcule aucune — deux
+// implémentations du même trimestre finiraient par diverger, et l'écart se
+// verrait le jour où le PDF ne dirait pas la même chose que la page.
+export const reportingApi = {
+  dashboard: (params) => apiClient.get('/api/v1/reporting/dashboard/', { params }),
+  report: (params) => apiClient.get('/api/v1/reporting/report/', { params }),
+  reportPdf: (params) =>
+    apiClient.get('/api/v1/reporting/report.pdf', { params, responseType: 'blob' }),
+  exportCsv: (params) =>
+    apiClient.get('/api/v1/reporting/export.csv', { params, responseType: 'blob' }),
+}
+
 export const notificationsApi = {
   getPreferences: () => apiClient.get('/api/v1/notifications/preferences/'),
   updatePreferences: (payload) =>

@@ -4,6 +4,7 @@ import {
   Crosshair,
   KanbanSquare,
   LayoutDashboard,
+  FileBarChart,
   MessageSquareText,
   Radar,
   ScrollText,
@@ -23,6 +24,9 @@ export const NAV_ITEMS = [
   // avérées (la chemise de résultats) — d'où cet ordre.
   { to: '/exposition', label: 'Exposition', icon: Crosshair },
   { to: '/compromissions', label: 'Compromissions', icon: ShieldAlert },
+  // V2-3 : la page qu'on ouvre pour PRÉPARER un comité, distincte du
+  // tableau de bord qu'on ouvre pour savoir où on en est aujourd'hui.
+  { to: '/rapports', label: 'Rapports', icon: FileBarChart },
   { to: '/documents', label: 'Documents', icon: ScrollText },
   { to: '/assistant', label: 'Assistant', icon: MessageSquareText },
 ]
