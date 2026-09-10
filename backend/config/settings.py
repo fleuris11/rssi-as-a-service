@@ -203,6 +203,16 @@ CELERY_TASK_ROUTES = {
     # Le CTI est un sous-domaine de la surveillance (ADR-013), pas de l'IA —
     # partage la file "monitoring", pas "ai".
     "apps.threat_intelligence.tasks.*": {"queue": "monitoring"},
+    # La veille réglementaire est une collecte périodique passive : même
+    # nature que les checks d'actifs, donc même file. Le résumé par IA, lui,
+    # est déclenché à la main depuis la console et n'est pas une tâche.
+    #
+    # Une app absente de ce dictionnaire tombe dans CELERY_TASK_DEFAULT_QUEUE
+    # ("default"), qu'AUCUN worker ne consomme : la tâche s'empile alors dans
+    # Redis sans jamais s'exécuter, en silence et sans test rouge. C'est
+    # arrivé à cette app (V2-7) ; `config/tests/test_files_celery.py`
+    # l'interdit désormais pour toute app à venir.
+    "apps.regulatory_watch.tasks.*": {"queue": "monitoring"},
 }
 # Un worker tué en cours de tâche doit la relivrer plutôt que la perdre —
 # les tasks sont conçues pour être idempotentes (voir apps.monitoring.tasks

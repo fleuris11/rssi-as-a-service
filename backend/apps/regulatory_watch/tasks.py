@@ -1,8 +1,18 @@
 """Taches Celery de la veille (V2-7).
 
-Orchestration seulement : la logique vit dans ``services.py``. File
-``monitoring`` — la veille est une collecte periodique passive, pas une
+Orchestration seulement : la logique vit dans ``services.py``.
+
+File ``monitoring`` — la veille est une collecte periodique passive, pas une
 operation d'IA (le resume, lui, est declenche a la main depuis la console).
+La file n'est PAS declaree ici : elle vient de ``CELERY_TASK_ROUTES``
+(``config/settings.py``), seul endroit qui route les taches du projet.
+
+Cette docstring a affirme cette file pendant toute la V2-7 alors qu'aucune
+route ne l'etablissait : la tache partait dans ``default``, que le worker ne
+consomme pas, et le passage hebdomadaire ne s'executait jamais. Une phrase
+qui decrit une intention se lit comme un constat — d'ou le test
+``config/tests/test_files_celery.py``, qui verifie la file reellement
+resolue plutot que ce qu'on en ecrit.
 """
 
 import logging
