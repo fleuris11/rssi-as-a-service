@@ -5518,3 +5518,146 @@ Windows. `ruff` et `eslint` propres, construction verte.
 - **Rien vérifié en production**, comme depuis V2-1. Quatre migrations cette
   fois, toutes additives : deux tables, deux colonnes de quota, l'élargissement
   du suivi des demandes et l'ouverture des offres.
+
+---
+
+## 10 septembre 2026 (fin) — V2-7 : suivre les textes officiels, sans les réécrire
+
+### Le cadrage d'abord, et il a servi
+
+La fiche imposait de lister les sources avant d'écrire une ligne. J'ai fait
+mieux que les lister : je les ai **vérifiées**, une par une, contre le réseau.
+Trois surprises, qui auraient toutes été des bugs découverts en production.
+
+**L'ANSSI ne publie aucun flux.** `cyber.gouv.fr/publications/feed` répond 404,
+et la page des publications n'expose ni `link rel=alternate` ni lien « flux ».
+La source la plus importante du produit — le référentiel embarqué en vient — a
+donc dû être dégradée en détection de changement de page.
+
+**Le flux EUR-Lex fonctionne et est inutilisable.** Vérifié : RSS 2.0 valide,
+120 entrées. Sur ces 120, l'écrasante majorité sont des décharges budgétaires
+du Parlement européen. Le suivre non filtré aurait noyé la file en une semaine
+et fait abandonner l'écran. La source est livrée **inactive**, avec pour note
+de la brancher sur un flux de recherche ciblée — que je ne peux pas choisir à
+la place de l'exploitant.
+
+**Les flux de l'ENISA sont morts** : les adresses annoncées répondent 404, la
+page qui les recense répond 403. Dégradée en page, plutôt que d'inscrire une
+adresse qui ne répond pas et de croire surveiller.
+
+Et une exclusion qui compte : **le CERT-FR**, dont le flux marche
+parfaitement (40 avis le jour du test). Écarté quand même — il publie des avis
+de vulnérabilité, « Multiples vulnérabilités dans les produits Ivanti ». C'est
+opérationnel, pas normatif : aucun ne deviendra une mesure de référentiel, et
+la file en serait noyée. Une liste de sources sans ses exclusions se relit
+mal : on ne sait pas si un manque est un oubli ou une décision. Elles sont donc
+écrites, avec leur motif, dans `sources.py`.
+
+### La règle, et les six façons de la casser
+
+[ADR-034](adr/034-veille-reglementaire.md) : **la veille produit une
+suggestion, jamais une modification**. Rien n'entre dans un référentiel sans
+qu'un humain l'ait lu, décidé et rédigé.
+
+La fiche demandait de le vérifier. Je l'ai attaqué par les six chemins où la
+règle pouvait céder : la collecte écrit-elle dans `assessments` (non) ; retenir
+une suggestion crée-t-il une mesure (non) ; peut-on trier sans relecteur (non) ;
+intégrer sans relecteur (non) ; poser « intégrée » à la main (non, ni par le
+service, ni par l'API) ; intégrer avec un contenu vide (non).
+
+Ce dernier point n'est pas une validation de formulaire, c'est une règle de
+fond : l'intitulé et l'énoncé sont **saisis**, jamais repris du titre de la
+publication. Une exigence rédigée par copie d'un titre de communiqué est
+illisible pour un dirigeant, et fausse le score. Le seul champ que la machine
+remplit, c'est le lien vers la source.
+
+L'app est séparée pour cette raison précise : un module rangé dans
+`assessments` aurait eu la main sur ses modèles. Ici la veille passe par
+`assessments.services.add_measure` comme n'importe quelle autre app, et cette
+fonction est la seule porte.
+
+### Deux défauts trouvés contre les vrais flux
+
+Les tests unitaires ne les auraient jamais montrés, parce qu'un flux de test
+est un flux idéal.
+
+**Le flux Atom du NIST ne se parsait pas** : « not well-formed, line 1,
+column 1 ». Cause : une marque d'ordre des octets en tête, et un en-tête HTTP
+sans charset — `requests` devine alors ISO-8859-1 pour un document UTF-8, et le
+texte décodé est illisible par le parseur XML. Correction : on analyse les
+**octets**, ce qui laisse ElementTree honorer la déclaration `<?xml
+encoding="utf-8"?>` et absorber le BOM. Le flux de test reproduit désormais le
+BOM et l'encodage menteur.
+
+**Le flux de la CNIL publie des entités doublement échappées** :
+`&amp;amp;nbsp;`. Une passe de déséchappement laissait « &nbsp; » en clair dans
+l'extrait conservé — celui qui est censé être la référence. Deux passes, et on
+s'arrête là : en déséchapper indéfiniment finirait par transformer du texte
+légitime.
+
+### Une page sans flux dit ce qu'elle sait, et rien de plus
+
+Pour l'ANSSI et l'ENISA, on relève l'empreinte du texte de la page. On sait
+alors **que** ça a changé, pas **quoi** — et la file l'écrit tel quel plutôt
+que de laisser croire à une publication identifiée.
+
+Deux précautions apprises en l'écrivant : le balisage et les espaces sont
+normalisés avant l'empreinte, sinon un identifiant de session ferait « changer »
+la page à chaque passage ; et le **premier passage ne signale rien**, il relève
+l'empreinte. Annoncer « cette page a changé » alors qu'on ne l'a jamais lue
+serait faux, et remplirait la file au déploiement.
+
+### L'IA résume, et le prompt le lui interdit de conclure
+
+Facultatif, déclenché à la main, jamais à la collecte : on ne paie pas un
+résumé pour une publication que personne n'ouvrira. Le prompt interdit de dire
+si la publication doit être intégrée, et d'ajouter le moindre fait absent du
+texte. Le texte source reste conservé, à côté, et l'écran présente le résumé
+comme « à vérifier contre le texte source ».
+
+Point technique : c'est le seul appel IA du produit **sans tenant**. Le texte
+est public — il n'y a rien à pseudonymiser, ADR-005 protégeant des données de
+client dont il n'y a pas ici. L'usage est enregistré sur la suggestion plutôt
+que dans `AIUsageLog`, qui est scopé par tenant : y ranger un appel de
+plateforme l'attribuerait à un client qui ne l'a pas demandé.
+
+### La promesse est du code
+
+« Nous suivons les publications officielles […] Cette veille n'est ni
+exhaustive ni instantanée. » La phrase est une constante servie par l'API et
+affichée dans la console, et un test interdit les deux mots qu'on ne tiendrait
+pas. Une formule honnête est déjà plus que ce que font la plupart des
+concurrents ; une formule fausse se retourne au premier client qui découvre une
+exigence ailleurs.
+
+### L'état des sources, aussi visible que la file
+
+Une source qui échoue en silence est pire qu'une source absente : on croit
+surveiller. Le compteur d'échecs et la dernière réussite remontent en tête
+d'écran. Et une source **jamais configurée** (EUR-Lex) est distinguée d'une
+source **en panne** — sinon elle serait comptée comme un incident pendant des
+mois.
+
+### Vérifications
+
+**1510 tests backend verts** (contre 1465), dont 45 sur la veille. **184
+frontend**, inchangés — l'écran de veille est en console et n'a pas de test de
+composant. Les quatre échecs WeasyPrint habituels, environnementaux sous
+Windows. `ruff` et `eslint` propres, construction verte.
+
+### Reste à faire
+
+- **Le flux EUR-Lex reste à brancher.** La source est livrée inactive, avec sa
+  note. Choisir la requête (NIS 2, DORA, IA, cyber-résilience) est une décision
+  éditoriale, pas technique.
+- **Aucune notification** : l'exploitant voit la file en ouvrant la console.
+  Même dette que le rapport de comité (V2-3), les demandes (V2-4) et les
+  comptes désignés (V2-6). Elle commence à peser : quatre fonctionnalités
+  attendent le même mécanisme d'envoi.
+- **Pas de diff sur les pages sans flux** : on signale le changement, pas ce
+  qui a changé. Faisable — garder le texte précédent et calculer l'écart — mais
+  ce n'était pas demandé, et l'extrait conservé permet déjà de s'y retrouver.
+- **Les adresses des sources ont été vérifiées le 10/09/2026.** Elles
+  vieilliront : c'est précisément pourquoi l'état des sources est affiché, et
+  pourquoi elles se corrigent depuis la console sans redéploiement.
+- **Rien vérifié en production**, comme depuis V2-1.

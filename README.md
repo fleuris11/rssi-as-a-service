@@ -10,6 +10,7 @@ une bibliothèque documentaire (politique de sécurité, charte, procédure et r
 plan de continuité, sensibilisation, rapport de comité), la surveillance continue des
 actifs déclarés (disponibilité, TLS, en-têtes, SPF/DMARC), la détection de fuites de données,
 la surveillance de comptes désignés (dirigeants, comptes sensibles),
+une veille sur les publications officielles qui font évoluer les référentiels,
 et une assistance par IA.
 
 ## Ce qui le distingue
