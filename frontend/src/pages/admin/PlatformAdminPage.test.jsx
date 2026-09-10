@@ -16,6 +16,9 @@ vi.mock('../../api/endpoints', () => ({
     listPlans: vi.fn(),
     configuration: vi.fn(),
     audit: vi.fn(),
+    // V2-7 : le catalogue de référentiels est chargé avec le reste — il sert
+    // au formulaire d'intégration de la veille.
+    listReferentials: vi.fn(),
     listDemoRequests: vi.fn(),
     updateDemoRequest: vi.fn(),
     convertDemoRequest: vi.fn(),
@@ -106,6 +109,7 @@ function mockOk() {
   platformApi.listPlans.mockResolvedValue({ data: [] })
   platformApi.configuration.mockResolvedValue({ data: { sections: [] } })
   platformApi.audit.mockResolvedValue({ data: { entries: [] } })
+  platformApi.listReferentials.mockResolvedValue({ data: [] })
   platformApi.listDemoRequests.mockResolvedValue({ data: { requests: [], open_count: 0 } })
   platformApi.health.mockResolvedValue({ data: { checks: [], scheduled: [], volumes: {} } })
   platformApi.clientDetail.mockResolvedValue({

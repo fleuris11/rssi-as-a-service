@@ -645,6 +645,57 @@ def render_document_pdf(document: GeneratedDocument) -> bytes:
     return weasyprint.HTML(string=full_html).write_pdf()
 
 
+# --- Cas d'usage 5 : résumé d'une publication publique (V2-7) ---------------
+
+#: Le résumé de veille est un appel de PLATEFORME : il n'y a pas de tenant, et
+#: donc ni pseudonymisation (le texte est déjà public) ni quota client. Il
+#: garde malgré tout le même point d'appel unique à l'API — la règle CLAUDE.md
+#: est « aucun appel direct ailleurs dans le code », pas « aucun appel sans
+#: tenant ».
+REGULATORY_SUMMARY_MODEL = "claude-haiku-4-5"
+REGULATORY_SUMMARY_MAX_TOKENS = 500
+
+
+def summarize_public_document(*, title: str, publisher: str, excerpt: str) -> tuple[str, dict]:
+    """Résume un texte PUBLIC. Renvoie ``(texte, usage)``.
+
+    Aucune pseudonymisation : le contenu vient d'une publication officielle et
+    ne contient, par construction, aucune donnée d'un client. C'est le seul
+    appel du produit dans ce cas, et c'est pour cela qu'il est ici plutôt que
+    de passer par ``call_claude`` — dont le contrat impose un tenant, un quota
+    et un journal d'usage par client.
+
+    L'usage est renvoyé à l'appelant plutôt qu'écrit dans ``AIUsageLog`` :
+    cette table est scopée par tenant, et y ranger un appel de plateforme
+    l'attribuerait à un client qui ne l'a pas demandé.
+    """
+    client = _get_client()
+    started = time.monotonic()
+    response = client.messages.create(
+        model=REGULATORY_SUMMARY_MODEL,
+        max_tokens=REGULATORY_SUMMARY_MAX_TOKENS,
+        system=prompts.REGULATORY_SUMMARY_SYSTEM_PROMPT,
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f"Publication de : {publisher}\nTitre : {title}\n\nTexte source :\n{excerpt}"
+                ),
+            }
+        ],
+    )
+    duration_ms = int((time.monotonic() - started) * 1000)
+    texte = "".join(
+        block.text for block in response.content if getattr(block, "type", None) == "text"
+    )
+    return texte.strip(), {
+        "model": REGULATORY_SUMMARY_MODEL,
+        "tokens_input": response.usage.input_tokens,
+        "tokens_output": response.usage.output_tokens,
+        "duration_ms": duration_ms,
+    }
+
+
 # --- Cas d'usage 2 : assistant contextuel (US-4.2) --------------------------
 
 

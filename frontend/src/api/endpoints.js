@@ -88,6 +88,21 @@ export const platformApi = {
     apiClient.delete(`/api/v1/platform/clients/${id}/referentials/`, {
       data: { referential: slug },
     }),
+  // --- Veille reglementaire (V2-7) ----------------------------------------
+  // Console UNIQUEMENT : la veille alimente le catalogue partage, et une
+  // suggestion non triee n'a rien a faire dans un espace client.
+  watchQueue: (params = {}) => apiClient.get('/api/v1/platform/watch/', { params }),
+  watchSources: () => apiClient.get('/api/v1/platform/watch/sources/'),
+  updateWatchSource: (slug, payload) =>
+    apiClient.patch(`/api/v1/platform/watch/sources/${slug}/`, payload),
+  pollWatchSource: (slug) => apiClient.post(`/api/v1/platform/watch/sources/${slug}/poll/`),
+  reviewWatchUpdate: (id, payload) =>
+    apiClient.post(`/api/v1/platform/watch/updates/${id}/review/`, payload),
+  integrateWatchUpdate: (id, payload) =>
+    apiClient.post(`/api/v1/platform/watch/updates/${id}/integrate/`, payload),
+  summarizeWatchUpdate: (id) =>
+    apiClient.post(`/api/v1/platform/watch/updates/${id}/summary/`),
+
   listAccessRequests: (status) =>
     apiClient.get('/api/v1/platform/access-requests/', { params: status ? { status } : {} }),
   // V2-6 : une ETAPE de suivi (contacted / proposal / granted / declined),

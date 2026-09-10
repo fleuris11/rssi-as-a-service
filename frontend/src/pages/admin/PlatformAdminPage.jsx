@@ -5,6 +5,7 @@ import {
   Inbox,
   ClipboardList,
   Gauge,
+  Newspaper,
   Settings,
   ShieldCheck,
   ShieldQuestion,
@@ -27,6 +28,7 @@ import { AdminsPanel, SettingsPanel, TrashPanel } from './panels/PlatformPanel'
 import ProspectsPanel from './panels/ProspectsPanel'
 import ReferentialsPanel from './panels/ReferentialsPanel'
 import RequestsPanel from './panels/RequestsPanel'
+import WatchPanel from './panels/WatchPanel'
 
 const TABS = [
   { id: 'capacity', label: 'Ressources', icon: Gauge },
@@ -35,6 +37,7 @@ const TABS = [
   { id: 'plans', label: 'Offres', icon: Tags },
   { id: 'referentials', label: 'Référentiels', icon: BookOpen },
   { id: 'requests', label: 'Demandes', icon: Inbox },
+  { id: 'watch', label: 'Veille', icon: Newspaper },
   { id: 'ownership', label: 'Possession', icon: ShieldQuestion },
   { id: 'admins', label: 'Administrateurs', icon: ShieldCheck },
   { id: 'settings', label: 'Réglages', icon: Settings },
@@ -310,6 +313,10 @@ export default function PlatformAdminPage() {
   const [capacity, setCapacity] = useState(null)
   const [tenants, setTenants] = useState([])
   const [plans, setPlans] = useState([])
+  // Le catalogue de référentiels sert au formulaire d'intégration de la
+  // veille : on ne peut pas rattacher une mesure à un référentiel dont on
+  // n'a pas la liste.
+  const [referentials, setReferentials] = useState([])
   const [health, setHealth] = useState(null)
   const [config, setConfig] = useState(null)
   const [audit, setAudit] = useState(null)
@@ -322,18 +329,21 @@ export default function PlatformAdminPage() {
   // chargée SÉPARÉMENT, sans bloquer le reste. L'exploitant ouvre cette page
   // d'abord pour voir ses ressources rares, pas pour attendre un ping.
   const loadCore = useCallback(async () => {
-    const [capacityRes, tenantsRes, plansRes, configRes, auditRes] = await Promise.all([
+    const [capacityRes, tenantsRes, plansRes, configRes, auditRes, referentialsRes] =
+      await Promise.all([
       platformApi.capacity(),
       platformApi.listTenants(),
       platformApi.listPlans(),
       platformApi.configuration(),
       platformApi.audit(),
+      platformApi.listReferentials(),
     ])
     setCapacity(capacityRes.data)
     setTenants(tenantsRes.data)
     setPlans(plansRes.data)
     setConfig(configRes.data)
     setAudit(auditRes.data)
+    setReferentials(referentialsRes.data)
   }, [])
 
   const loadHealth = useCallback(async () => {
@@ -424,6 +434,7 @@ export default function PlatformAdminPage() {
       )}
       {!loading && activeTab === 'referentials' && <ReferentialsPanel clients={tenants} />}
       {!loading && activeTab === 'requests' && <RequestsPanel />}
+      {!loading && activeTab === 'watch' && <WatchPanel referentiels={referentials} />}
           {!loading && activeTab === 'ownership' && <OwnershipReviewPanel />}
   {!loading && activeTab === 'admins' && <AdminsPanel />}
       {!loading && activeTab === 'settings' && <SettingsPanel configuration={config} />}
