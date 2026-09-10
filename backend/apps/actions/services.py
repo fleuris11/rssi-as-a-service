@@ -22,6 +22,12 @@ class InvalidAssigneeError(ActionsError):
     pass
 
 
+# Ré-exporté pour que les autres apps (composition documentaire, V2-5)
+# puissent dire « ce qui reste à faire » sans connaître les valeurs internes
+# du statut — même parti pris que ``GAP_VALUES`` côté assessments.
+OPEN_STATUSES = frozenset({ActionItem.Status.TODO, ActionItem.Status.IN_PROGRESS})
+
+
 # Priority = impact / effort ("ratio", cadrage M3): a high-impact, low-effort
 # gap (a quick win) ranks highest; a low-impact, high-effort one ranks lowest.
 IMPACT_RANK = {"low": 1, "medium": 2, "high": 3}

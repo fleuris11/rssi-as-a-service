@@ -57,9 +57,19 @@ class TestAISettings:
 
 
 class TestAIDisabledReturns403Everywhere:
-    """US-4.3: ai_enabled=false makes every AI function return 403 — the
-    settings endpoint itself is deliberately exempt (see TestAISettings),
-    it must stay reachable to re-enable AI."""
+    """US-4.3 : ``ai_enabled=false`` coupe ce qui APPELLE l'IA.
+
+    L'endpoint de réglages est délibérément exempté (voir TestAISettings) : il
+    doit rester joignable pour réactiver l'IA.
+
+    V2-5 (ADR-032) a resserré cette liste, et c'est un changement de
+    comportement assumé. La bibliothèque documentaire n'est plus une
+    fonctionnalité d'IA : six documents sur sept sont composés à partir des
+    données du client, sans aucun appel. L'interrupteur ne doit pas les
+    reprendre — pas plus qu'il ne doit empêcher de relire la charte générée la
+    veille. Ce que couvre encore la garde est vérifié ci-dessous ; ce qui reste
+    ouvert l'est par TestBibliothequeSansIA.
+    """
 
     @pytest.fixture(autouse=True)
     def _disable_ai(self, tenant):
@@ -71,8 +81,6 @@ class TestAIDisabledReturns403Everywhere:
         [
             ("get", "ai-preview-charter", {}),
             ("get", "ai-preview-assistant", {}),
-            ("get", "ai-document-list", {}),
-            ("post", "ai-document-list", {}),
             ("get", "ai-conversation-list", {}),
             ("post", "ai-conversation-list", {}),
         ],
@@ -81,6 +89,39 @@ class TestAIDisabledReturns403Everywhere:
         headers = _auth(api_client, tenant_owner, tenant)
         response = getattr(api_client, method)(reverse(url_name, kwargs=url_kwargs), **headers)
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_la_charte_reste_refusee(self, api_client, tenant, tenant_owner):
+        """Le seul document rédigé par l'IA : lui reste bien coupé."""
+        headers = _auth(api_client, tenant_owner, tenant)
+
+        response = api_client.post(
+            reverse("ai-document-list"), {"type": "it_charter"}, format="json", **headers
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+class TestBibliothequeSansIA:
+    """Ce que l'interrupteur d'IA ne doit PAS emporter (V2-5, ADR-032)."""
+
+    @pytest.fixture(autouse=True)
+    def _disable_ai(self, tenant):
+        tenant.ai_enabled = False
+        tenant.save(update_fields=["ai_enabled"])
+
+    @pytest.mark.parametrize("url_name", ["ai-document-list", "ai-document-catalog"])
+    def test_la_bibliotheque_reste_lisible(self, api_client, tenant, tenant_owner, url_name):
+        headers = _auth(api_client, tenant_owner, tenant)
+        assert api_client.get(reverse(url_name), **headers).status_code == status.HTTP_200_OK
+
+    def test_un_document_compose_reste_generable(self, api_client, tenant, tenant_owner):
+        headers = _auth(api_client, tenant_owner, tenant)
+
+        response = api_client.post(
+            reverse("ai-document-list"), {"type": "incident_procedure"}, format="json", **headers
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
 
 
 class TestQuotaExceeded:

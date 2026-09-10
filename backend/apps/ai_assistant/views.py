@@ -71,8 +71,27 @@ def _get_document_or_404(request, document_id):
     return document
 
 
+class DocumentCatalogView(APIView):
+    """Les sept documents que la plateforme sait produire, l'etat de chacun
+    pour ce client, et ce qui manque pour qu'il soit personnalise.
+
+    Pas de garde ``IsAIEnabled`` : six documents sur sept ne font aucun appel
+    d'IA, et un client qui a coupe l'IA doit continuer a voir sa bibliotheque.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
+
+    def get(self, request):
+        return Response(services.document_catalog(request.tenant))
+
+
 class GeneratedDocumentListCreateView(generics.ListAPIView):
-    permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader, IsAIEnabled]
+    # ``IsAIEnabled`` retire en V2-5 : la bibliotheque n'est plus une
+    # fonctionnalite d'IA. Couper l'IA (US-4.3) doit desactiver ce qui appelle
+    # l'IA, pas reprendre au client les documents qu'il a produits ni ceux
+    # qu'aucune IA ne redige. La garde est descendue la ou elle a un sens :
+    # dans ``create_document_job``, pour la seule charte.
+    permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader]
     throttle_classes = [TenantAIRateThrottle]
     serializer_class = GeneratedDocumentSerializer
 
@@ -80,43 +99,55 @@ class GeneratedDocumentListCreateView(generics.ListAPIView):
         return services.list_documents(self.request.tenant)
 
     def post(self, request, *args, **kwargs):
-        # Garde d'offre AVANT le quota d'IA, comme la garde
-        # `realtime_monitoring` place `ensure_feature` avant
-        # `ensure_monitored_asset_quota` : « ce n'est pas dans votre offre » et
-        # « vous avez épuisé votre quota » sont deux refus différents, et
-        # annoncer le second à quelqu'un qui n'a pas la fonctionnalité serait
-        # trompeur.
-        #
-        # Le seul type de document est la charte informatique
-        # (`DocumentType.IT_CHARTER`) : garder la vue revient donc à garder la
-        # génération de charte. Le jour où un second type apparaîtra, la garde
-        # devra se déplacer sur le type demandé — d'où le test qui épingle ce
-        # lien plutôt que de le supposer.
-        api_guards.ensure_feature(request.tenant, features.CHARTER_GENERATION)
-
         serializer = GeneratedDocumentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        try:
-            document, job = services.create_document_job(
-                tenant=request.tenant,
-                user=request.user,
-                document_type=serializer.validated_data["type"],
-            )
-        except services.QuotaExceededError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        document_type = serializer.validated_data["type"]
 
-        generate_document_task.delay(job.id)
+        # La garde d'offre porte sur le TYPE demandé, plus sur la vue. Elle le
+        # supposait tant qu'il n'existait qu'un document ; sept types plus
+        # tard, garder la vue reviendrait à vendre le registre des incidents
+        # sous le nom de « génération de charte ».
+        if not services.documents_registry.is_composed(document_type):
+            # Garde d'offre AVANT le quota d'IA, comme la garde
+            # `realtime_monitoring` place `ensure_feature` avant
+            # `ensure_monitored_asset_quota` : « ce n'est pas dans votre
+            # offre » et « vous avez épuisé votre quota » sont deux refus
+            # différents, et annoncer le second à quelqu'un qui n'a pas la
+            # fonctionnalité serait trompeur.
+            api_guards.ensure_feature(request.tenant, features.CHARTER_GENERATION)
+            try:
+                document, job = services.create_document_job(
+                    tenant=request.tenant, user=request.user, document_type=document_type
+                )
+            except services.AIDisabledError as exc:
+                # L'interrupteur d'IA (US-4.3) refuse la RÉDACTION, et elle
+                # seule : la vue n'est plus gardée, la règle est ici.
+                return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+            except services.QuotaExceededError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+            generate_document_task.delay(job.id)
+            return Response(
+                {
+                    "document": GeneratedDocumentSerializer(document).data,
+                    "job": AIJobSerializer(job).data,
+                },
+                status=status.HTTP_202_ACCEPTED,
+            )
+
+        # Document composé : aucun appel réseau, aucun coût, aucune latence à
+        # masquer. Il est prêt dans la réponse, sans job à interroger.
+        document = services.compose_document(
+            tenant=request.tenant, user=request.user, document_type=document_type
+        )
         return Response(
-            {
-                "document": GeneratedDocumentSerializer(document).data,
-                "job": AIJobSerializer(job).data,
-            },
-            status=status.HTTP_202_ACCEPTED,
+            {"document": GeneratedDocumentSerializer(document).data, "job": None},
+            status=status.HTTP_201_CREATED,
         )
 
 
 class GeneratedDocumentDetailView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader, IsAIEnabled]
+    permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader]
     throttle_classes = [TenantAIRateThrottle]
 
     def get(self, request, document_id):
@@ -138,7 +169,7 @@ class GeneratedDocumentDetailView(APIView):
 
 
 class GeneratedDocumentValidateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader, IsAIEnabled]
+    permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader]
     throttle_classes = [TenantAIRateThrottle]
 
     def post(self, request, document_id):
@@ -148,9 +179,10 @@ class GeneratedDocumentValidateView(APIView):
 
 
 class GeneratedDocumentExportView(APIView):
-    """Markdown export (US-4.1)."""
+    """Markdown export (US-4.1). Jamais gardé : le contenu appartient au
+    client et doit rester récupérable en toutes circonstances."""
 
-    permission_classes = [permissions.IsAuthenticated, IsTenantMember, IsAIEnabled]
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
     throttle_classes = [TenantAIRateThrottle]
 
     def get(self, request, document_id):
@@ -167,7 +199,7 @@ class GeneratedDocumentExportView(APIView):
 class GeneratedDocumentExportPdfView(APIView):
     """PDF export (US-4.1, ADR-012)."""
 
-    permission_classes = [permissions.IsAuthenticated, IsTenantMember, IsAIEnabled]
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
     throttle_classes = [TenantAIRateThrottle]
 
     def get(self, request, document_id):
@@ -182,6 +214,33 @@ class GeneratedDocumentExportPdfView(APIView):
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = (
             f'attachment; filename="{document.type}-v{document.version}.pdf"'
+        )
+        return response
+
+
+class GeneratedDocumentExportDocxView(APIView):
+    """Export éditable (V2-5).
+
+    Gardé comme le PDF, et pour la même raison : ce qui est vendu est un
+    FORMAT de rendu, jamais l'accès aux données — l'export Markdown voisin
+    reste ouvert et contient exactement le même texte.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
+    throttle_classes = [TenantAIRateThrottle]
+
+    def get(self, request, document_id):
+        api_guards.ensure_feature(request.tenant, features.PDF_EXPORT)
+
+        document = _get_document_or_404(request, document_id)
+        response = HttpResponse(
+            services.render_document_docx(document),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ),
+        )
+        response["Content-Disposition"] = (
+            f'attachment; filename="{document.type}-v{document.version}.docx"'
         )
         return response
 

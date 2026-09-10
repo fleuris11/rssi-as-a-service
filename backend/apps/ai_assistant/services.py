@@ -39,6 +39,9 @@ from apps.threat_intelligence import services as threat_intelligence_services
 from apps.threat_intelligence.models import BreachFinding
 
 from . import prompts
+from .documents import context as documents_context
+from .documents import editable as documents_editable
+from .documents import registry as documents_registry
 from .models import (
     AIJob,
     AIUsageLog,
@@ -425,7 +428,10 @@ def build_charter_context(tenant) -> dict:
     if assessment is not None:
         scores = assessments_services.compute_scores(assessment)
         global_score = scores["global"]
-        measures = assessments_services.get_referential_measures(assessment.referential)
+        # Le périmètre de CETTE évaluation, et non le référentiel entier
+        # (V2-4) : un diagnostic mené sur un sous-ensemble de mesures ne doit
+        # pas faire chercher des écarts sur des mesures jamais posées.
+        measures = assessments_services.get_assessment_measures(assessment)
         values = assessments_services.get_answer_values(assessment)
         for measure in measures:
             if values.get(measure.id) in assessments_services.GAP_VALUES:
@@ -436,6 +442,13 @@ def build_charter_context(tenant) -> dict:
         "effectif": tenant.headcount,
         "score_global": global_score,
         "ecarts_identifies": gaps,
+        # V2-5 : la charte parlait de « vos outils » sans savoir lesquels. Les
+        # actifs déclarés lui permettent de nommer les services réellement
+        # utilisés — pseudonymisés avant l'appel comme tout le reste.
+        "actifs_declares": [
+            {"type": asset.get_type_display(), "valeur": asset.value}
+            for asset in monitoring_services.list_assets(tenant)
+        ],
     }
 
 
@@ -486,11 +499,14 @@ def _next_document_version(tenant, document_type: str) -> int:
 
 
 def create_document_job(*, tenant, user, document_type: str) -> tuple[GeneratedDocument, AIJob]:
+    """Document RÉDIGÉ par l'IA : on crée la ligne et le job, la tâche Celery
+    fait le reste. Seule la charte informatique passe par ici."""
     ensure_ai_enabled(tenant)
     ensure_quota_available(tenant)
     document = GeneratedDocument.all_objects.create(
         tenant=tenant,
         type=document_type,
+        source=GeneratedDocument.Source.AI,
         version=_next_document_version(tenant, document_type),
         status=GeneratedDocument.Status.GENERATING,
         created_by=user,
@@ -503,6 +519,71 @@ def create_document_job(*, tenant, user, document_type: str) -> tuple[GeneratedD
         created_by=user,
     )
     return document, job
+
+
+# --- Bibliothèque documentaire (V2-5, ADR-032) ------------------------------
+
+
+def document_catalog(tenant) -> list[dict]:
+    """Ce que la plateforme sait produire pour CE client, et à quelles
+    conditions ce sera personnalisé. Sert l'écran des documents : le client
+    doit voir les sept documents, y compris ceux qu'il n'a pas encore générés.
+    """
+    derniers = {}
+    for document in list_documents(tenant):
+        derniers.setdefault(document.type, document)
+
+    catalogue = []
+    for spec in documents_registry.all_specs():
+        dernier = derniers.get(spec.type)
+        catalogue.append(
+            {
+                "type": spec.type,
+                "label": spec.label,
+                "purpose": spec.purpose,
+                "source": spec.source,
+                "latest_version": dernier.version if dernier else None,
+                "latest_status": dernier.status if dernier else None,
+                "latest_id": dernier.id if dernier else None,
+                **documents_registry.readiness(tenant, spec),
+            }
+        )
+    return catalogue
+
+
+def compose_document(*, tenant, user, document_type: str) -> GeneratedDocument:
+    """Document COMPOSÉ : assemblé ici et maintenant, sans IA, sans job.
+
+    Synchrone à dessein. Il n'y a aucun appel réseau, aucun coût et aucune
+    latence à masquer : passer par Celery n'apporterait qu'un état
+    « en cours » que le client devrait interroger pour rien.
+    """
+    spec = documents_registry.get(document_type)
+    if spec is None or spec.build is None:
+        raise AIError("Ce document ne peut pas être composé.")
+
+    document = GeneratedDocument.all_objects.create(
+        tenant=tenant,
+        type=document_type,
+        source=GeneratedDocument.Source.COMPOSED,
+        version=_next_document_version(tenant, document_type),
+        status=GeneratedDocument.Status.GENERATING,
+        created_by=user,
+    )
+    try:
+        contenu = spec.build(tenant, documents_context.full(tenant), document)
+    except Exception:
+        # La ligne existe déjà : la laisser en « génération en cours » pour
+        # toujours serait le pire des états. On la marque en échec, elle
+        # reste visible, et le client peut relancer.
+        document.status = GeneratedDocument.Status.FAILED
+        document.save(update_fields=["status", "updated_at"])
+        raise
+
+    document.content_markdown = contenu
+    document.status = GeneratedDocument.Status.DRAFT
+    document.save(update_fields=["content_markdown", "status", "updated_at"])
+    return document
 
 
 def update_document_content(
@@ -540,6 +621,12 @@ h2 {
 }
 code { background: #f1f5f9; padding: 0.1em 0.3em; border-radius: 3px; }
 """
+
+
+def render_document_docx(document: GeneratedDocument) -> bytes:
+    """Export éditable (V2-5). Le Markdown reste exporté à côté : il garantit
+    au client de récupérer son contenu même sans traitement de texte."""
+    return documents_editable.render_docx(document)
 
 
 def render_document_pdf(document: GeneratedDocument) -> bytes:
