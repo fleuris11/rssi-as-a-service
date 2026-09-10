@@ -19,10 +19,35 @@ class AccessRequest(TenantScopedModel):
     """
 
     class Status(models.TextChoices):
-        PENDING = "pending", "En attente"
+        """Le suivi d'une demande, du dépôt à sa conclusion (V2-6).
+
+        V2-4 n'avait que trois états : en attente, accordée, refusée. C'était
+        suffisant pour un référentiel qu'on attribue d'un clic ; ça ne l'est
+        plus pour une fonctionnalité, dont l'ouverture passe par une
+        conversation commerciale. Un client qui a demandé il y a dix jours et
+        lit toujours « en attente » ne sait pas si quelqu'un l'a vu.
+
+        Les trois premiers états sont OUVERTS (``OPEN_STATUSES``) : la
+        demande vit toujours. Une nouvelle demande sur le même sujet est
+        refusée tant qu'elle l'est — sans quoi relancer remplirait la console
+        de doublons.
+
+        La valeur ``pending`` est conservée telle quelle malgré son libellé
+        « Nouvelle » : la renommer aurait demandé une migration de données
+        pour un gain d'esthétique, et aurait cassé la contrainte partielle qui
+        s'y réfère.
+        """
+
+        PENDING = "pending", "Nouvelle"
+        CONTACTED = "contacted", "Client contacté"
+        PROPOSAL = "proposal", "Proposition envoyée"
         GRANTED = "granted", "Accordée"
         DECLINED = "declined", "Refusée"
         CANCELLED = "cancelled", "Annulée par le client"
+
+    #: Une demande en cours de traitement. Sert à la fois à la contrainte
+    #: d'unicité et à ce que le client voit comme « en cours ».
+    OPEN_STATUSES = ("pending", "contacted", "proposal")
 
     subject_type = models.CharField(max_length=40)
     subject_key = models.CharField(max_length=100)
@@ -47,14 +72,20 @@ class AccessRequest(TenantScopedModel):
 
     class Meta:
         constraints = [
-            # Une seule demande EN ATTENTE par sujet et par client : renvoyer
+            # Une seule demande OUVERTE par sujet et par client : renvoyer
             # trois fois le formulaire ne doit pas remplir la console de trois
-            # lignes identiques. Les demandes traitées, elles, s'accumulent —
+            # lignes identiques. Les demandes conclues, elles, s'accumulent —
             # c'est l'historique.
+            #
+            # V2-6 : la condition couvre les trois états ouverts, et non le
+            # seul « pending ». Sans cela, une demande passée en « client
+            # contacté » aurait laissé le client en redéposer une deuxième,
+            # et le commercial aurait travaillé deux lignes pour une seule
+            # conversation.
             models.UniqueConstraint(
                 fields=["tenant", "subject_type", "subject_key"],
-                condition=models.Q(status="pending"),
-                name="unique_pending_access_request",
+                condition=models.Q(status__in=["pending", "contacted", "proposal"]),
+                name="unique_open_access_request",
             ),
         ]
         ordering = ["-created_at"]
@@ -64,5 +95,13 @@ class AccessRequest(TenantScopedModel):
         return f"{self.tenant_id} — {self.subject_type}:{self.subject_key} ({self.status})"
 
     @property
+    def is_open(self) -> bool:
+        """La demande vit toujours : elle attend, ou elle est en cours de
+        traitement commercial."""
+        return self.status in self.OPEN_STATUSES
+
+    @property
     def is_pending(self) -> bool:
+        """Conservé : ``is_open`` a remplacé cet usage partout, mais le nom
+        reste lisible là où l'on veut vraiment dire « pas encore regardée »."""
         return self.status == self.Status.PENDING

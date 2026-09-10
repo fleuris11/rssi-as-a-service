@@ -1,4 +1,4 @@
-import { BookOpen, Check, Inbox, X } from 'lucide-react'
+import { BookOpen } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { platformApi } from '../../../api/endpoints'
 import Badge from '../../../components/ui/Badge'
@@ -15,12 +15,12 @@ function dateCourte(valeur) {
 }
 
 /**
- * Le catalogue de référentiels, et la file des demandes des clients (V2-4).
+ * Le catalogue de référentiels et leur attribution par client (V2-4).
  *
- * Les deux vivent sur le même écran parce qu'on y répond dans le même geste :
- * une demande arrive, on l'accorde, l'attribution est faite. Séparer les deux
- * aurait obligé l'exploitant à retrouver le client dans un autre onglet pour
- * finir ce qu'il vient de commencer.
+ * La file des demandes vivait ici en V2-4, quand un référentiel était la
+ * seule chose qu'un client pouvait demander. V2-6 l'a sortie dans son propre
+ * onglet : elle porte désormais aussi les demandes de fonctionnalités, et
+ * c'est devenu un suivi commercial plutôt qu'un simple « accorder / refuser ».
  *
  * `kind` est affiché en évidence : c'est la question qui se pose avant
  * d'attribuer ISO 27001 ou le NIST — avons-nous le droit d'en servir le
@@ -29,18 +29,13 @@ function dateCourte(valeur) {
 export default function ReferentialsPanel({ clients = [] }) {
   const { showToast } = useToast()
   const [catalogue, setCatalogue] = useState(null)
-  const [demandes, setDemandes] = useState(null)
   const [clientChoisi, setClientChoisi] = useState('')
   const [attributions, setAttributions] = useState(null)
   const [enCours, setEnCours] = useState(null)
 
   const chargerCatalogue = useCallback(async () => {
-    const [refs, files] = await Promise.all([
-      platformApi.listReferentials(),
-      platformApi.listAccessRequests(),
-    ])
-    setCatalogue(refs.data)
-    setDemandes(files.data)
+    const response = await platformApi.listReferentials()
+    setCatalogue(response.data)
   }, [])
 
   const chargerAttributions = useCallback(async (tenantId) => {
@@ -94,105 +89,10 @@ export default function ReferentialsPanel({ clients = [] }) {
     }
   }
 
-  async function repondre(demande, accorde) {
-    setEnCours(`demande-${demande.id}`)
-    try {
-      const response = await platformApi.handleAccessRequest(demande.id, accorde)
-      await chargerCatalogue()
-      if (clientChoisi) await chargerAttributions(clientChoisi)
-      showToast({
-        type: 'success',
-        message: response.data.granted_automatically
-          ? 'Demande accordée et référentiel attribué.'
-          : accorde
-            ? 'Demande accordée. L’attribution reste à faire sur la fiche du client.'
-            : 'Demande refusée. Le client en est informé dans son espace.',
-      })
-    } catch (err) {
-      showToast({
-        type: 'error',
-        message: err.response?.data?.detail || 'Impossible de traiter la demande.',
-      })
-    } finally {
-      setEnCours(null)
-    }
-  }
-
-  if (!catalogue || !demandes) return <SkeletonCard />
-
-  const enAttente = demandes.results.filter((d) => d.status === 'pending')
-  const traitees = demandes.results.filter((d) => d.status !== 'pending').slice(0, 10)
+  if (!catalogue) return <SkeletonCard />
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader
-          title="Demandes des clients"
-          description="Qui demande quoi, quand, et pourquoi. Accorder un référentiel l’attribue immédiatement."
-          action={
-            enAttente.length > 0 ? (
-              <Badge variant="warning">{enAttente.length} en attente</Badge>
-            ) : null
-          }
-        />
-        {enAttente.length === 0 ? (
-          <EmptyState
-            tone="positive"
-            icon={Inbox}
-            title="Aucune demande en attente"
-            description="Les demandes déposées par les clients depuis leur espace arrivent ici."
-          />
-        ) : (
-          <ul className="divide-y divide-ink-100">
-            {enAttente.map((demande) => (
-              <li key={demande.id} className="flex flex-wrap items-start justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-ink-800">
-                    {demande.tenant_name} — {demande.subject_label}
-                  </p>
-                  <p className="mt-0.5 text-xs text-ink-500">
-                    {demande.subject_type_label} · demandé par {demande.requested_by_email} le{' '}
-                    {dateCourte(demande.created_at)}
-                  </p>
-                  {demande.reason && (
-                    <p className="mt-1 max-w-2xl text-sm italic text-ink-600">
-                      « {demande.reason} »
-                    </p>
-                  )}
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <Button
-                    variant="primary"
-                    icon={Check}
-                    loading={enCours === `demande-${demande.id}`}
-                    onClick={() => repondre(demande, true)}
-                  >
-                    Accorder
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    icon={X}
-                    onClick={() => repondre(demande, false)}
-                  >
-                    Refuser
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-        {traitees.length > 0 && (
-          <ul className="mt-4 space-y-1 border-t border-ink-200 pt-3 text-xs text-ink-500">
-            {traitees.map((demande) => (
-              <li key={demande.id}>
-                {dateCourte(demande.handled_at)} — {demande.tenant_name} :{' '}
-                {demande.subject_label} ({demande.status === 'granted' ? 'accordée' : 'refusée'})
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
       <Card>
         <CardHeader
           title="Attribuer à un client"

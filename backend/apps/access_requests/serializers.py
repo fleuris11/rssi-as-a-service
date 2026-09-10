@@ -8,6 +8,10 @@ class AccessRequestSerializer(serializers.ModelSerializer):
     requested_by_email = serializers.SerializerMethodField()
     handled_by_email = serializers.SerializerMethodField()
     subject_type_label = serializers.SerializerMethodField()
+    # Le libellé plutôt que la valeur brute : « Client contacté » se lit,
+    # « contacted » se devine.
+    status_label = serializers.SerializerMethodField()
+    is_open = serializers.SerializerMethodField()
 
     class Meta:
         model = AccessRequest
@@ -19,6 +23,8 @@ class AccessRequestSerializer(serializers.ModelSerializer):
             "subject_label",
             "reason",
             "status",
+            "status_label",
+            "is_open",
             "response",
             "requested_by_email",
             "created_at",
@@ -36,6 +42,12 @@ class AccessRequestSerializer(serializers.ModelSerializer):
     def get_subject_type_label(self, demande):
         subject = subjects.get(demande.subject_type)
         return subject.label if subject else demande.subject_type
+
+    def get_status_label(self, demande):
+        return demande.get_status_display()
+
+    def get_is_open(self, demande) -> bool:
+        return demande.is_open
 
 
 class ConsoleAccessRequestSerializer(AccessRequestSerializer):
@@ -56,7 +68,20 @@ class CreateAccessRequestSerializer(serializers.Serializer):
 
 
 class HandleAccessRequestSerializer(serializers.Serializer):
-    # « accorder » ou « refuser » : un booléen et non un statut libre, pour que
-    # la console ne puisse pas replacer une demande en attente après coup.
-    granted = serializers.BooleanField()
+    """L'étape suivante du suivi (V2-6).
+
+    La liste des choix exclut ``pending`` et ``cancelled`` : la console ne
+    replace pas une demande en « nouvelle » après l'avoir travaillée, et elle
+    n'annule pas au nom du client. Ces deux exclusions valent règle métier —
+    le service les redemande, pour qu'un appel direct rencontre le même refus.
+    """
+
+    status = serializers.ChoiceField(
+        choices=[
+            AccessRequest.Status.CONTACTED,
+            AccessRequest.Status.PROPOSAL,
+            AccessRequest.Status.GRANTED,
+            AccessRequest.Status.DECLINED,
+        ]
+    )
     response = serializers.CharField(required=False, allow_blank=True, default="")

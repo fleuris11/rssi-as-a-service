@@ -314,7 +314,9 @@ class TestApiConsole:
 
         response = api_client.post(
             reverse("console-access-request-detail", args=[demande.id]),
-            {"granted": True, "response": "Attribué, bonne évaluation."},
+            # V2-6 : une ÉTAPE de suivi, plus un booléen (voir
+            # TestSuiviCommercial).
+            {"status": "granted", "response": "Attribué, bonne évaluation."},
             format="json",
             **headers,
         )
@@ -351,7 +353,7 @@ class TestApiConsole:
         lecture = api_client.get(reverse("console-access-request-list"), **headers)
         reponse = api_client.post(
             reverse("console-access-request-detail", args=[demande.id]),
-            {"granted": True},
+            {"status": "granted"},
             format="json",
             **headers,
         )
@@ -390,3 +392,200 @@ class TestConsoleAttributionDirecte:
         par_slug = {ligne["slug"]: ligne for ligne in response.data}
         assert par_slug[second_referential.slug]["kind"] == "licensed"
         assert par_slug[second_referential.slug]["licence_notice"]
+
+
+class TestSuiviCommercial:
+    """V2-6 : une demande de fonctionnalité se TRAVAILLE avant de se conclure.
+
+    V2-4 n'avait que « en attente / accordée / refusée ». Suffisant pour un
+    référentiel qu'on attribue d'un clic ; pas pour une fonctionnalité, dont
+    l'ouverture passe par une conversation. Un client qui lit « en attente »
+    pendant dix jours ne sait pas si quelqu'un l'a vu — et la consigne V2-6 le
+    dit : une demande sans retour est pire que pas de bouton.
+    """
+
+    @pytest.fixture
+    def demande(self, tenant, tenant_owner, non_attribue):
+        return services.create_request(
+            tenant=tenant,
+            user=tenant_owner,
+            subject_type=subjects.REFERENTIAL,
+            subject_key=non_attribue.slug,
+            reason="Notre assureur le demande.",
+        )
+
+    def test_les_etapes_intermediaires_ne_concluent_rien(self, demande, admin_plateforme):
+        demande, attribue = services.advance_request(
+            demande, status=AccessRequest.Status.CONTACTED, actor=admin_plateforme
+        )
+
+        assert attribue is False
+        assert demande.is_open is True
+        # ``handled_at`` est la date de la DÉCISION, pas celle du dernier clic.
+        assert demande.handled_at is None
+
+    def test_le_client_voit_ou_en_est_sa_demande(
+        self, api_client, tenant, tenant_owner, demande, admin_plateforme
+    ):
+        services.advance_request(
+            demande,
+            status=AccessRequest.Status.PROPOSAL,
+            response="Nous vous avons envoyé une proposition ce matin.",
+            actor=admin_plateforme,
+        )
+
+        response = api_client.get(
+            reverse("access-request-list"), **_auth(api_client, tenant_owner, tenant)
+        )
+
+        ligne = response.data[0]
+        assert ligne["status"] == "proposal"
+        assert ligne["status_label"] == "Proposition envoyée"
+        assert ligne["is_open"] is True
+        assert "proposition" in ligne["response"]
+
+    def test_une_demande_en_cours_de_traitement_reste_unique(
+        self, demande, tenant, tenant_owner, non_attribue, admin_plateforme
+    ):
+        """Le défaut que V2-6 corrige : passée en « contacté », la demande
+        n'était plus « pending » et le client pouvait en redéposer une
+        deuxième. Le commercial aurait travaillé deux lignes pour une seule
+        conversation."""
+        services.advance_request(
+            demande, status=AccessRequest.Status.CONTACTED, actor=admin_plateforme
+        )
+
+        with pytest.raises(services.DuplicateRequestError):
+            services.create_request(
+                tenant=tenant,
+                user=tenant_owner,
+                subject_type=subjects.REFERENTIAL,
+                subject_key=non_attribue.slug,
+            )
+
+    def test_accorder_apres_deux_etapes_attribue_quand_meme(
+        self, demande, tenant, non_attribue, admin_plateforme
+    ):
+        services.advance_request(
+            demande, status=AccessRequest.Status.CONTACTED, actor=admin_plateforme
+        )
+        services.advance_request(
+            demande, status=AccessRequest.Status.PROPOSAL, actor=admin_plateforme
+        )
+        demande, attribue = services.advance_request(
+            demande, status=AccessRequest.Status.GRANTED, actor=admin_plateforme
+        )
+
+        assert attribue is True
+        assert demande.handled_at is not None
+        assert assessments_services.is_granted(tenant, non_attribue) is True
+
+    def test_la_console_ne_replace_pas_une_demande_en_nouvelle(self, demande, admin_plateforme):
+        with pytest.raises(services.AccessRequestError):
+            services.advance_request(
+                demande, status=AccessRequest.Status.PENDING, actor=admin_plateforme
+            )
+
+    def test_la_console_n_annule_pas_au_nom_du_client(self, demande, admin_plateforme):
+        with pytest.raises(services.AccessRequestError):
+            services.advance_request(
+                demande, status=AccessRequest.Status.CANCELLED, actor=admin_plateforme
+            )
+
+    def test_le_client_peut_encore_retirer_une_demande_en_cours(self, demande, admin_plateforme):
+        services.advance_request(
+            demande, status=AccessRequest.Status.CONTACTED, actor=admin_plateforme
+        )
+        services.cancel_request(demande)
+
+        assert demande.status == AccessRequest.Status.CANCELLED
+
+    def test_la_file_compte_tout_ce_qui_reste_ouvert(self, demande, admin_plateforme):
+        """« Nouvelles » sous-estimerait la charge : une demande contactée
+        sans suite demande toujours du travail."""
+        services.advance_request(
+            demande, status=AccessRequest.Status.CONTACTED, actor=admin_plateforme
+        )
+
+        assert services.pending_count() == 0
+        assert services.open_count() == 1
+
+    def test_l_api_console_fait_avancer_le_suivi(self, api_client, demande, admin_plateforme):
+        response = api_client.post(
+            reverse("console-access-request-detail", args=[demande.id]),
+            {"status": "contacted", "response": "Nous vous rappelons demain."},
+            format="json",
+            **_auth(api_client, admin_plateforme),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["status_label"] == "Client contacté"
+        assert response.data["is_open"] is True
+
+    def test_l_api_console_refuse_une_etape_interdite(self, api_client, demande, admin_plateforme):
+        response = api_client.post(
+            reverse("console-access-request-detail", args=[demande.id]),
+            {"status": "pending"},
+            format="json",
+            **_auth(api_client, admin_plateforme),
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+class TestDemandeDeFonctionnalite:
+    """Le point 6 de V2-6 : le mécanisme générique de V2-4, appliqué aux
+    fonctionnalités. Ces tests suivent le PARCOURS complet, du bouton au
+    retour."""
+
+    @pytest.fixture
+    def hors_offre(self, tenant):
+        from apps.billing import entitlements
+
+        abonnement = entitlements.get_subscription(tenant)
+        abonnement.override_features = [
+            cle for cle in abonnement.effective_features if cle != "watched_accounts"
+        ]
+        abonnement.save(update_fields=["override_features"])
+        return "watched_accounts"
+
+    def test_le_client_demande_ce_que_son_offre_ne_comprend_pas(
+        self, api_client, tenant, tenant_owner, hors_offre
+    ):
+        response = api_client.post(
+            reverse("access-request-list"),
+            {
+                "subject_type": "feature",
+                "subject_key": hors_offre,
+                "reason": "Nos dirigeants sont ciblés.",
+            },
+            format="json",
+            **_auth(api_client, tenant_owner, tenant),
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["subject_label"] == "Surveillance de comptes désignés"
+        assert response.data["status_label"] == "Nouvelle"
+
+    def test_accorder_une_fonctionnalite_n_ouvre_rien_toute_seule(
+        self, api_client, tenant, tenant_owner, hors_offre, admin_plateforme
+    ):
+        """Changer l'offre d'un client est un acte commercial avec des
+        conséquences de facturation, pas la conséquence silencieuse d'un
+        clic. La console dit ce qui reste à faire."""
+        demande = services.create_request(
+            tenant=tenant,
+            user=tenant_owner,
+            subject_type=subjects.FEATURE,
+            subject_key=hors_offre,
+        )
+
+        response = api_client.post(
+            reverse("console-access-request-detail", args=[demande.id]),
+            {"status": "granted", "response": "C'est ajouté à votre offre."},
+            format="json",
+            **_auth(api_client, admin_plateforme),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["granted_automatically"] is False

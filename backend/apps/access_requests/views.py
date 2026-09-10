@@ -80,16 +80,26 @@ class ConsoleAccessRequestListView(APIView):
         )
         return Response(
             {
+                # Deux compteurs : ce que personne n'a encore regardé, et
+                # tout ce qui reste ouvert. Le second est la vraie charge de
+                # travail — une demande contactée sans suite en fait partie.
                 "pending_count": services.pending_count(),
+                "open_count": services.open_count(),
                 "results": ConsoleAccessRequestSerializer(demandes, many=True).data,
             }
         )
 
 
 class ConsoleAccessRequestDetailView(APIView):
-    """Répondre à une demande. Lecture ouverte aux deux niveaux
-    d'administrateur, réponse réservée au niveau complet : accorder un
-    référentiel est un acte de gestion, pas un suivi commercial."""
+    """Faire avancer une demande. Lecture ouverte aux deux niveaux
+    d'administrateur, écriture réservée au niveau complet : accorder un
+    référentiel ou une fonctionnalité est un acte de gestion.
+
+    V2-6 : la réponse n'est plus un booléen mais une ÉTAPE. Une demande passe
+    par « client contacté » et « proposition envoyée » avant de se conclure —
+    c'est ce qui permet au client de voir que quelqu'un s'occupe de lui plutôt
+    que de lire « en attente » pendant dix jours.
+    """
 
     permission_classes = [permissions.IsAuthenticated, IsFullPlatformAdmin]
 
@@ -101,14 +111,16 @@ class ConsoleAccessRequestDetailView(APIView):
         serializer = HandleAccessRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            demande, attribue = services.handle_request(
+            demande, attribue = services.advance_request(
                 demande,
-                granted=serializer.validated_data["granted"],
+                status=serializer.validated_data["status"],
                 response=serializer.validated_data["response"],
                 actor=request.user,
             )
         except services.AlreadyHandledError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except services.AccessRequestError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         record_admin_action(
             actor=request.user,
