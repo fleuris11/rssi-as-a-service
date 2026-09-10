@@ -8,6 +8,8 @@ from .models import (
     IdentifierAccessAudit,
     MonitoredAsset,
     SecretRevealAudit,
+    WatchedAccount,
+    WatchedAccountFinding,
 )
 
 
@@ -351,3 +353,116 @@ class BreachIntelligenceUsageSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = fields
+
+
+# --- Comptes désignés (V2-6, ADR-033) ---------------------------------------
+
+
+class WatchedAccountSerializer(serializers.ModelSerializer):
+    category_label = serializers.CharField(source="get_category_display", read_only=True)
+    legal_basis_label = serializers.CharField(source="get_legal_basis_display", read_only=True)
+    declared_by_email = serializers.SerializerMethodField()
+    open_findings = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WatchedAccount
+        fields = [
+            "id",
+            "value",
+            "label",
+            "category",
+            "category_label",
+            # La déclaration est exposée en LECTURE : le client doit pouvoir
+            # relire ce qu'il a déclaré, et quand. C'est aussi ce qu'il
+            # montrera si la personne concernée le lui demande.
+            "legal_basis",
+            "legal_basis_label",
+            "purpose",
+            "declaration_version",
+            "declared_by_email",
+            "declared_at",
+            "is_active",
+            "last_scanned_at",
+            "removed_at",
+            "open_findings",
+        ]
+        read_only_fields = fields
+
+    def get_declared_by_email(self, account):
+        return account.declared_by.email if account.declared_by_id else None
+
+    def get_open_findings(self, account):
+        return sum(
+            1
+            for finding in account.findings.all()
+            if finding.status == WatchedAccountFinding.Status.OPEN
+        )
+
+
+class WatchedAccountCreateSerializer(serializers.Serializer):
+    """La déclaration fait partie de la CRÉATION, pas d'un écran d'après.
+
+    ``declaration_accepted`` et ``purpose`` sont obligatoires ici, et la
+    validation du service les redemande : une garde de sérialiseur protège la
+    saisie, pas l'API — un appel direct doit rencontrer la même exigence.
+    """
+
+    value = serializers.CharField(max_length=255)
+    label = serializers.CharField(max_length=120, required=False, allow_blank=True, default="")
+    category = serializers.ChoiceField(
+        choices=WatchedAccount.Category.choices, default=WatchedAccount.Category.OTHER
+    )
+    legal_basis = serializers.ChoiceField(choices=WatchedAccount.LegalBasis.choices)
+    purpose = serializers.CharField(max_length=2000)
+    declaration_accepted = serializers.BooleanField()
+
+    def validate_declaration_accepted(self, value):
+        if not value:
+            raise serializers.ValidationError(
+                "La déclaration est obligatoire pour ajouter un compte à surveiller."
+            )
+        return value
+
+
+class WatchedAccountFindingSerializer(serializers.ModelSerializer):
+    account_value = serializers.CharField(source="account.value", read_only=True)
+    account_label = serializers.CharField(source="account.label", read_only=True)
+    severity_label = serializers.CharField(source="get_severity_display", read_only=True)
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+
+    class Meta:
+        model = WatchedAccountFinding
+        fields = [
+            "id",
+            "account",
+            "account_value",
+            "account_label",
+            "source_endpoint",
+            "finding_type",
+            "severity",
+            "severity_label",
+            "status",
+            "status_label",
+            "identifier_masked",
+            "secret_masked",
+            # Jamais de valeur de secret : il n'en existe aucune en base pour
+            # un compte désigné (ADR-033). Le booléen dit qu'un mot de passe a
+            # fuité, ce qui suffit à décider de le changer.
+            "has_secret",
+            "breach_date",
+            "detected_at",
+            "last_seen_at",
+            "treated_at",
+        ]
+        read_only_fields = fields
+
+
+class WatchedAccountScanTriggerSerializer(serializers.Serializer):
+    # Vide = tous les comptes actifs. La consigne demande « un ou plusieurs ».
+    account_ids = serializers.ListField(
+        child=serializers.IntegerField(), required=False, allow_empty=True, default=list
+    )
+
+
+class WatchedAccountFindingUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=WatchedAccountFinding.Status.choices)

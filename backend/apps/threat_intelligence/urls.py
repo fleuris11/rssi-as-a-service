@@ -15,9 +15,39 @@ from .views import (
     SecretRevealAuditListView,
     ThreatIntelligenceAdminStatusView,
     ThreatIntelligenceStatusView,
+    WatchedAccountDetailView,
+    WatchedAccountFindingDetailView,
+    WatchedAccountFindingListView,
+    WatchedAccountListCreateView,
+    WatchedAccountScanTriggerView,
 )
 
 urlpatterns = [
+    path(
+        "watched-accounts/",
+        WatchedAccountListCreateView.as_view(),
+        name="ti-watched-account-list",
+    ),
+    path(
+        "watched-accounts/<int:account_id>/",
+        WatchedAccountDetailView.as_view(),
+        name="ti-watched-account-detail",
+    ),
+    path(
+        "watched-accounts/findings/",
+        WatchedAccountFindingListView.as_view(),
+        name="ti-watched-account-finding-list",
+    ),
+    path(
+        "watched-accounts/findings/<int:finding_id>/",
+        WatchedAccountFindingDetailView.as_view(),
+        name="ti-watched-account-finding-detail",
+    ),
+    path(
+        "watched-accounts/scans/",
+        WatchedAccountScanTriggerView.as_view(),
+        name="ti-watched-account-scan",
+    ),
     path("findings/", BreachFindingListView.as_view(), name="breach-finding-list"),
     path(
         "findings/<int:finding_id>/",

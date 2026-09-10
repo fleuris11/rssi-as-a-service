@@ -162,6 +162,32 @@ def _sonde_surveillance(client, entetes, ctx):
     )
 
 
+def _sonde_comptes_designes(client, entetes, ctx):
+    """Déclarer un compte à surveiller (V2-6). La garde est posée AVANT la
+    validation, donc une charge minimale suffit à l'exercer."""
+    return client.post(
+        reverse("ti-watched-account-list"),
+        {
+            "value": "sonde@exemple.fr",
+            "legal_basis": "company",
+            "purpose": "Sonde de garde.",
+            "declaration_accepted": True,
+        },
+        format="json",
+        **entetes,
+    )
+
+
+def _sonde_analyse_comptes_designes(client, entetes, ctx):
+    """Lancer une analyse sur ces comptes. Point d'usage distinct du
+    précédent : sans lui, retirer la garde du lancement ne ferait rougir
+    aucun test — c'est exactement le trou que ce fichier existe pour
+    empêcher."""
+    return client.post(
+        reverse("ti-watched-account-scan"), {"account_ids": []}, format="json", **entetes
+    )
+
+
 def _sonde_correlation(client, entetes, ctx):
     """Mode « omission » : le flux doit être servi, la corrélation non calculée.
 
@@ -197,6 +223,10 @@ SONDES: dict[str, list[Sonde]] = {
         Sonde("envoyer un message", _sonde_envoyer_message),
     ],
     features.CHARTER_GENERATION: [Sonde("générer une charte", _sonde_charte)],
+    features.WATCHED_ACCOUNTS: [
+        Sonde("déclarer un compte à surveiller", _sonde_comptes_designes),
+        Sonde("analyser des comptes désignés", _sonde_analyse_comptes_designes),
+    ],
     features.PDF_EXPORT: [Sonde("exporter un document en PDF", _sonde_export_pdf)],
     features.EXPOSURE_SYNTHESIS: [Sonde("régénérer la synthèse", _sonde_synthese)],
     features.SECRET_REVEAL: [Sonde("révéler un mot de passe", _sonde_revelation)],
@@ -241,6 +271,20 @@ def contexte(db, user_factory, tenant_factory, api_client):
     )
     with patch.object(ownership_checks, "verify_dns_txt", return_value=(True, "vérifié")):
         monitoring_services.verify_ownership_proof(preuve)
+
+    # V2-6 : même raisonnement que la preuve de possession ci-dessus. Les
+    # comptes désignés ont, EN PLUS de leur clé de fonctionnalité, deux quotas
+    # d'offre. Sans emplacement, la sonde serait refusée en 402 pour une
+    # raison étrangère aux gardes qu'on teste ici — et le test constaterait un
+    # refus en croyant constater une garde.
+    from apps.billing import entitlements
+
+    abonnement = entitlements.get_subscription(tenant)
+    abonnement.override_watched_accounts = 5
+    abonnement.override_monthly_watched_account_scans = 5
+    abonnement.save(
+        update_fields=["override_watched_accounts", "override_monthly_watched_account_scans"]
+    )
     return {
         "client": api_client,
         "entetes": _auth(api_client, user, tenant),
@@ -367,7 +411,7 @@ class TestCatalogueReel:
             else:
                 assert resultat.status_code == REFUS, sonde.libelle
 
-    def test_pilotage_donne_les_huit_fonctionnalites_du_registre(self):
+    def test_pilotage_donne_toutes_les_fonctionnalites_du_registre(self):
         # Si le catalogue et le registre divergent, une offre vend une clé qui
         # n'existe plus — ou en oublie une que le produit sait faire.
         pilotage = Plan.objects.get(code="pilotage")

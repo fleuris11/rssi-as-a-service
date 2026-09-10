@@ -1602,3 +1602,26 @@ def refresh_exposure_synthesis(tenant) -> ExposureSynthesis:
 
     content = ai_services.generate_exposure_synthesis(tenant=tenant)
     return save_exposure_synthesis(tenant, content)
+
+
+# --- Comptes désignés (V2-6) ------------------------------------------------
+# Le code vit dans ``watched_accounts.py`` — services.py fait déjà 1 200 lignes
+# et parle des actifs — mais l'interface publique de l'app reste CE module :
+# les autres apps n'ont pas à savoir en combien de fichiers il est découpé.
+from .watched_accounts import (  # noqa: E402,F401
+    DECLARATION_TEXT,
+    DECLARATION_VERSION,
+    DeclarationRequiredError,
+    WatchedAccountError,
+    create_watched_account_scan_job,
+    declare_watched_account,
+    execute_watched_account_scan,
+    get_watched_account,
+    get_watched_account_finding,
+    list_watched_account_findings,
+    list_watched_accounts,
+    remove_watched_account,
+    resolve_scan_targets,
+    update_watched_account_finding_status,
+    watched_accounts_summary,
+)

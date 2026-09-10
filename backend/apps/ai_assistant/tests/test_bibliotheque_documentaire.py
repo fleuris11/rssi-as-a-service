@@ -280,9 +280,7 @@ class TestUtilisableTelQuel:
 
         assert noms_anssi == set(composers.POLITIQUE_DOMAINES)
 
-    def test_la_possession_des_actifs_est_ecrite_en_francais(
-        self, client_equipe, tenant_owner
-    ):
+    def test_la_possession_des_actifs_est_ecrite_en_francais(self, client_equipe, tenant_owner):
         """« declared » dans un document lu par un dirigeant est un défaut,
         pas un détail — il a été trouvé en relisant la sortie réelle."""
         document = services.compose_document(

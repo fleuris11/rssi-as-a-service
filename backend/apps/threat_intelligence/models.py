@@ -233,6 +233,17 @@ class BreachScanJob(TenantScopedModel):
     triggered_by = models.CharField(
         max_length=20, choices=BreachIntelligenceUsage.TriggeredBy.choices
     )
+
+    # V2-6 : le même job sert deux périmètres. Les analyses de comptes
+    # désignés n'ont pas d'actif (``asset`` reste nul) et portent leurs
+    # comptes dans ``result_ref``. Un second modèle de job aurait dupliqué le
+    # statut, les reprises et la tâche Celery pour la seule différence de ce
+    # qu'on interroge.
+    class Scope(models.TextChoices):
+        ASSETS = "assets", "Actifs déclarés"
+        WATCHED_ACCOUNTS = "watched_accounts", "Comptes désignés"
+
+    scope = models.CharField(max_length=20, choices=Scope.choices, default=Scope.ASSETS)
     result_ref = models.JSONField(default=dict, blank=True)
     error_message = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -390,3 +401,165 @@ class SecretRevealAudit(TenantScopedModel):
     def __str__(self):
         outcome = "accordée" if self.success else f"refusée ({self.denial_reason})"
         return f"Révélation {outcome} — {self.tenant_id} — {self.user_id}"
+
+
+# --- Comptes désignés (V2-6, ADR-033) ---------------------------------------
+
+
+class WatchedAccount(TenantScopedModel):
+    """Un compte que le client demande à faire surveiller, en dehors de ses
+    domaines : l'adresse de son dirigeant, celle d'un client important, un
+    compte technique sensible.
+
+    **Le point qui n'est pas technique.** Faire surveiller l'adresse d'un
+    tiers est un traitement de données personnelles de ce tiers. La base
+    légale relève du client, pas de la plateforme — mais le produit ne peut
+    pas se contenter de l'ignorer : il fait déclarer, il fige la déclaration,
+    et il la garde. C'est le rôle des cinq champs ``legal_basis`` →
+    ``declared_at``. Voir ADR-033.
+
+    ``declaration_text`` conserve le **texte exact** accepté au moment de la
+    déclaration, et non un renvoi à la version courante des conditions : le
+    jour où l'on reformule cet engagement, ce qu'a réellement accepté ce
+    client-là ne doit pas changer rétroactivement.
+
+    Le retrait est **logique** (``removed_at``). Une ligne supprimée
+    emporterait la déclaration avec elle, et avec elle la preuve de la date à
+    laquelle la surveillance a cessé — exactement ce qu'on veut pouvoir
+    montrer si la personne concernée le demande.
+    """
+
+    class Category(models.TextChoices):
+        EXECUTIVE = "executive", "Dirigeant ou mandataire social"
+        EMPLOYEE = "employee", "Collaborateur"
+        CLIENT = "client", "Client ou partenaire"
+        SERVICE = "service", "Compte technique ou de service"
+        OTHER = "other", "Autre"
+
+    class LegalBasis(models.TextChoices):
+        """Ce que le client déclare comme fondement du traitement.
+
+        Formulé dans les termes d'un dirigeant de PME, pas dans ceux du
+        RGPD : « c'est mon compte », « c'est un compte professionnel de mon
+        entreprise ». Le rapprochement avec l'article 6 est fait dans
+        ADR-033, pas dans une liste déroulante que personne ne comprendrait.
+        """
+
+        OWN = "own", "C'est mon propre compte"
+        COMPANY = "company", "Compte professionnel fourni par mon entreprise"
+        CONSENT = "consent", "La personne concernée m'a donné son accord"
+        CONTRACT = "contract", "Prévu au contrat qui me lie à cette personne"
+        OTHER = "other", "Autre situation, que je précise ci-dessous"
+
+    # Normalisé en minuscules par le service : deux déclarations qui ne
+    # diffèrent que par la casse sont le même compte, et compteraient deux
+    # fois dans le quota.
+    value = models.CharField(max_length=255)
+    label = models.CharField(max_length=120, blank=True)
+    category = models.CharField(max_length=20, choices=Category.choices, default=Category.OTHER)
+
+    # --- La déclaration, figée à la création --------------------------------
+    legal_basis = models.CharField(max_length=20, choices=LegalBasis.choices)
+    # Obligatoire, contrairement au « pourquoi » d'une demande d'accès
+    # (V2-4) qui, lui, est facultatif. La différence est entière : là on
+    # demandait une fonctionnalité, ici on déclare traiter les données d'un
+    # tiers. Une finalité vide rendrait la déclaration ininterprétable le
+    # jour où quelqu'un la relit.
+    purpose = models.TextField()
+    declaration_text = models.TextField()
+    declaration_version = models.CharField(max_length=20)
+    declared_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+    declared_at = models.DateTimeField(auto_now_add=True)
+
+    # --- Cycle de vie -------------------------------------------------------
+    is_active = models.BooleanField(default=True)
+    last_scanned_at = models.DateTimeField(null=True, blank=True)
+    removed_at = models.DateTimeField(null=True, blank=True)
+    removed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    removal_reason = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["-declared_at"]
+        constraints = [
+            # Partielle : un compte retiré puis re-déclaré est une NOUVELLE
+            # déclaration, avec sa propre date et sa propre finalité. La
+            # contrainte ne doit donc porter que sur les comptes actifs.
+            models.UniqueConstraint(
+                fields=["tenant", "value"],
+                condition=models.Q(is_active=True),
+                name="unique_active_watched_account",
+            ),
+        ]
+        indexes = [models.Index(fields=["tenant", "is_active"])]
+
+    def __str__(self):
+        etat = "surveillé" if self.is_active else "retiré"
+        return f"{self.value} ({etat})"
+
+
+class WatchedAccountFinding(TenantScopedModel):
+    """Ce que le fournisseur remonte sur un compte désigné.
+
+    Table distincte de ``BreachFinding``, et c'est la décision structurante
+    d'ADR-033. Trois raisons, dans cet ordre :
+
+    1. **ce ne sont pas les actifs du client.** La consigne V2-6 demande une
+       présentation séparée ; une table séparée rend la séparation
+       structurelle plutôt que dépendante d'un filtre que chaque requête
+       devrait penser à poser. Le score d'exposition (ADR-016), le fil
+       d'exposition, les indicateurs de comité et le registre des incidents
+       interrogent ``BreachFinding`` : ils ignorent ces lignes sans qu'on ait
+       eu à les modifier ;
+    2. **aucune alerte de surveillance n'est ouverte.** Une alerte se pose sur
+       un ``monitoring.Asset``, et il n'y en a pas ici ;
+    3. **aucun secret n'est conservé, même chiffré.** ``BreachFinding`` chiffre
+       le secret pour permettre sa révélation tracée (ADR-014). Révéler le mot
+       de passe du compte d'un tiers à quelqu'un d'autre que lui est une tout
+       autre affaire, et l'action utile est la même sans le secret : « ce
+       compte est exposé, faites-le changer ». Il n'y a donc pas de colonne à
+       révéler, et rien à purger.
+    """
+
+    class Status(models.TextChoices):
+        OPEN = "open", "Ouvert"
+        TREATED = "treated", "Traité"
+        IGNORED = "ignored", "Ignoré"
+
+    account = models.ForeignKey(WatchedAccount, on_delete=models.CASCADE, related_name="findings")
+    source_endpoint = models.CharField(max_length=20, choices=BreachFinding.SourceEndpoint.choices)
+    finding_type = models.CharField(max_length=60)
+    severity = models.CharField(max_length=10, choices=BreachFinding.Severity.choices)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
+
+    # Toujours masqué. Le compte lui-même est déjà connu du client — il l'a
+    # déclaré — et reproduire l'adresse en clair sur chaque ligne la
+    # multiplierait dans les exports et les captures d'écran sans rien
+    # apprendre à personne.
+    identifier_masked = models.CharField(max_length=255, blank=True)
+    # Qu'un mot de passe ait fuité ou non change la gravité et l'urgence ; sa
+    # valeur, elle, n'est ni stockée ni récupérable (voir la docstring).
+    secret_masked = models.CharField(max_length=32, blank=True)
+    has_secret = models.BooleanField(default=False)
+
+    breach_date = models.DateField(null=True, blank=True)
+    detected_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    treated_at = models.DateTimeField(null=True, blank=True)
+    raw_data = models.JSONField(default=dict, blank=True)
+    dedup_hash = models.CharField(max_length=64)
+
+    class Meta:
+        ordering = ["-detected_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "dedup_hash"], name="unique_watched_account_finding"
+            ),
+        ]
+        indexes = [models.Index(fields=["tenant", "status", "-detected_at"])]
+
+    def __str__(self):
+        return f"{self.account_id} — {self.finding_type} ({self.severity})"
