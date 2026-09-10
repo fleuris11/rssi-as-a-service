@@ -135,6 +135,10 @@ export const authApi = {
       recovery_code: recoveryCode,
     }),
   me: () => apiClient.get('/api/v1/auth/me/'),
+  // Profil d'affichage (V2-5). Le seul champ de l'identité modifiable ici :
+  // il ne donne accès à rien et se change a tout moment.
+  setDisplayProfile: (profile) =>
+    apiClient.patch('/api/v1/auth/me/', { display_profile: profile }),
 }
 
 export const twoFactorApi = {
@@ -314,7 +318,13 @@ export const aiApi = {
   previewCharter: () => apiClient.get('/api/v1/ai/preview/charter/'),
   previewAssistant: () => apiClient.get('/api/v1/ai/preview/assistant/'),
 
+  // La bibliothèque documentaire (V2-5) : les sept documents que la
+  // plateforme sait produire, l'état de chacun, et ce qui manque pour qu'il
+  // soit personnalisé.
+  documentCatalog: () => apiClient.get('/api/v1/ai/documents/catalog/'),
   listDocuments: () => apiClient.get('/api/v1/ai/documents/'),
+  // Réponse en 201 avec le document prêt pour un document composé, en 202
+  // avec un job pour la charte, qui passe par l'IA.
   generateDocument: (type) => apiClient.post('/api/v1/ai/documents/', { type }),
   getDocument: (id) => apiClient.get(`/api/v1/ai/documents/${id}/`),
   updateDocument: (id, contentMarkdown) =>
@@ -326,6 +336,10 @@ export const aiApi = {
     apiClient.get(`/api/v1/ai/documents/${id}/export/`, { responseType: 'blob' }),
   exportDocumentPdf: (id) =>
     apiClient.get(`/api/v1/ai/documents/${id}/export/pdf/`, { responseType: 'blob' }),
+  // Format éditable : ce que « modifiable » veut dire pour une PME, qui
+  // n'ouvre pas un fichier Markdown.
+  exportDocumentDocx: (id) =>
+    apiClient.get(`/api/v1/ai/documents/${id}/export/docx/`, { responseType: 'blob' }),
 
   listConversations: () => apiClient.get('/api/v1/ai/conversations/'),
   createConversation: () => apiClient.post('/api/v1/ai/conversations/'),

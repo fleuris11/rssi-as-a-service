@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { actionsApi, tenantsApi } from '../api/endpoints'
 import Badge from '../components/ui/Badge'
 import Card from '../components/ui/Card'
+import { TechnicalDetail } from '../components/DisplayProfile'
 import EmptyState from '../components/ui/EmptyState'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
@@ -53,7 +54,13 @@ function ActionCard({ item, members, updatingId, onUpdate }) {
       </div>
 
       <div>
-        <p className="text-sm font-medium text-ink-800">{item.measure.official_title}</p>
+        {/* L'énoncé en langage clair porte la carte, l'intitulé officiel du
+            référentiel est juste dessous, replié : « ce qu'on me demande de
+            faire » avant « comment la norme le formule ». Les deux restent
+            dans la page (ADR-031). */}
+        <p className="text-sm font-medium text-ink-800">
+          {item.measure.statement || item.measure.official_title}
+        </p>
         <p className="mt-0.5 text-xs text-ink-500">{item.domain_name}</p>
       </div>
 
@@ -65,6 +72,35 @@ function ActionCard({ item, members, updatingId, onUpdate }) {
           Effort {LEVEL_LABEL[item.measure.effort]}
         </span>
       </div>
+
+      <TechnicalDetail summary="Référence de la mesure">
+        <dl className="space-y-1 text-ink-600">
+          <div>
+            <dt className="inline font-medium">Intitulé officiel : </dt>
+            <dd className="inline">{item.measure.official_title}</dd>
+          </div>
+          <div>
+            <dt className="inline font-medium">Référentiel : </dt>
+            <dd className="inline">
+              {item.referential_name} — mesure {item.measure.code}
+            </dd>
+          </div>
+          {item.measure.level && (
+            <div>
+              <dt className="inline font-medium">Niveau : </dt>
+              <dd className="inline">{item.measure.level}</dd>
+            </div>
+          )}
+          <div>
+            <dt className="inline font-medium">Poids dans le score : </dt>
+            <dd className="inline">{item.measure.weight}</dd>
+          </div>
+          <div>
+            <dt className="inline font-medium">Priorité (impact / effort) : </dt>
+            <dd className="inline">{item.priority}</dd>
+          </div>
+        </dl>
+      </TechnicalDetail>
 
       <div className="flex items-center gap-2">
         <AssigneeAvatar email={item.assignee_email} />

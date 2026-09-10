@@ -37,12 +37,36 @@ class User(AbstractBaseUser, PermissionsMixin):
     """Platform-wide identity. Not tenant data — a user can belong to
     several tenants via apps.tenants.models.Membership."""
 
+    class DisplayProfile(models.TextChoices):
+        """Comment cette personne veut qu'on lui parle (V2-5, ADR-031).
+
+        **Ce n'est pas un rôle.** Les droits restent portés par
+        ``Membership.role`` (administrateur / contributeur / lecteur) et ne
+        sont modifiés ni consultés ici. Un lecteur en profil technique voit
+        les mêmes données qu'un lecteur en profil dirigeant, rangées
+        autrement ; un administrateur en profil dirigeant garde tous ses
+        droits d'administrateur.
+
+        Porté par l'UTILISATEUR et non par l'entreprise : dans une même PME,
+        le dirigeant et son prestataire informatique regardent les mêmes
+        écrans et n'ont pas besoin de la même lecture.
+        """
+
+        EXECUTIVE = "executive", "Dirigeant"
+        TECHNICAL = "technical", "Technique"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True)
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    # Défaut « dirigeant » : c'est le lecteur que le produit vise en premier
+    # (TPE/PME sans RSSI), et c'est le réglage le moins risqué — on ne noie
+    # personne sous du jargon qu'il n'a pas demandé.
+    display_profile = models.CharField(
+        max_length=12, choices=DisplayProfile.choices, default=DisplayProfile.EXECUTIVE
+    )
     date_joined = models.DateTimeField(auto_now_add=True)
 
     objects = UserManager()

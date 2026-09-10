@@ -2,6 +2,7 @@ import { Globe, Mail, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { monitoringApi } from '../api/endpoints'
 import Badge from '../components/ui/Badge'
+import { TechnicalDetail } from '../components/DisplayProfile'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
@@ -324,11 +325,38 @@ export default function SurveillancePage() {
                     </p>
                     <ul className="space-y-2">
                       {row.open_alerts.map((alert) => (
-                        <li key={alert.id} className="flex items-center gap-2 text-sm text-ink-700">
-                          <Badge variant={alert.severity === 'critical' ? 'critical' : 'warning'} dot>
-                            {alert.severity === 'critical' ? 'Critique' : 'Avertissement'}
-                          </Badge>
-                          {ALERT_TYPE_LABELS[alert.alert_type] || alert.alert_type}
+                        <li key={alert.id} className="text-sm text-ink-700">
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={alert.severity === 'critical' ? 'critical' : 'warning'}
+                              dot
+                            >
+                              {alert.severity === 'critical' ? 'Critique' : 'Avertissement'}
+                            </Badge>
+                            {ALERT_TYPE_LABELS[alert.alert_type] || alert.alert_type}
+                          </div>
+                          {/* Ce que le contrôle a réellement constaté :
+                              en-têtes manquants, date d'expiration du
+                              certificat, enregistrements DNS. Illisible pour
+                              un dirigeant, indispensable au prestataire qui
+                              doit corriger — donc présent pour les deux,
+                              replié pour l'un (ADR-031). */}
+                          {alert.details && Object.keys(alert.details).length > 0 && (
+                            <TechnicalDetail summary="Ce que le contrôle a constaté">
+                              <dl className="space-y-1">
+                                {Object.entries(alert.details).map(([cle, valeur]) => (
+                                  <div key={cle}>
+                                    <dt className="inline font-medium text-ink-700">{cle} : </dt>
+                                    <dd className="inline break-all text-ink-600">
+                                      {typeof valeur === 'object'
+                                        ? JSON.stringify(valeur)
+                                        : String(valeur)}
+                                    </dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            </TechnicalDetail>
+                          )}
                         </li>
                       ))}
                     </ul>

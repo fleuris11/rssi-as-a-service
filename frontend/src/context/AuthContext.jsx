@@ -104,6 +104,9 @@ export function AuthProvider({ children }) {
   const value = useMemo(
     () => ({
       user,
+      // Exposé pour `useDisplayProfile` : le profil d'affichage vit sur
+      // l'utilisateur, et le basculer ne doit pas recharger tout le contexte.
+      setUser,
       tenants,
       currentTenantId,
       currentTenant,
@@ -117,6 +120,7 @@ export function AuthProvider({ children }) {
     }),
     [
       user,
+      setUser,
       tenants,
       currentTenantId,
       currentTenant,
