@@ -5,7 +5,9 @@ n'ont ni RSSI ni budget pour en recruter un.
 
 Le produit répond à une question que ces entreprises se posent sans pouvoir y répondre seules :
 **« sommes-nous exposés, et par quoi devons-nous commencer ? »** Il combine un diagnostic de
-maturité (ANSSI, ISO 27001, NIST CSF ou un référentiel propre au client), un plan d'action priorisé, la surveillance continue des
+maturité (ANSSI, ISO 27001, NIST CSF ou un référentiel propre au client), un plan d'action priorisé,
+une bibliothèque documentaire (politique de sécurité, charte, procédure et registre d'incidents,
+plan de continuité, sensibilisation, rapport de comité), la surveillance continue des
 actifs déclarés (disponibilité, TLS, en-têtes, SPF/DMARC), la détection de fuites de données,
 et une assistance par IA.
 

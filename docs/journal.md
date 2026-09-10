@@ -5171,3 +5171,186 @@ resté invisible tant qu'on ne regarde que la page finie.
 - Pas de table de correspondance entre référentiels. C'est ce qui interdit de
   dédoublonner un plan d'action consolidé, et c'est dit dans ADR-030 plutôt que
   contourné.
+
+---
+
+## 10 septembre 2026 — V2-5 : à qui on parle, et ce qu'on lui donne
+
+### Partie A — deux lecteurs, un seul écran
+
+Le produit s'adresse à deux personnes qui regardent les mêmes pages : le
+dirigeant, et celui qui gère son informatique. Jusqu'ici il tranchait pour tout
+le monde, en faveur du premier — vocabulaire vulgarisé partout, détails
+techniques absents. Conséquence, le prestataire devait aller chercher dans
+l'API ce que l'écran ne lui montrait pas.
+
+`User.display_profile` vaut désormais `executive` ou `technical`. Sur
+l'utilisateur et non sur l'entreprise : dans une même PME, les deux ont chacun
+un compte, et un réglage d'entreprise obligerait l'un à subir la lecture de
+l'autre.
+
+**La décision qui structure tout est un refus** ([ADR-031](adr/031-profil-d-affichage.md)) :
+*aucune réponse d'API ne dépend du profil.* Le serveur le stocke et l'ignore.
+C'était tentant de faire l'inverse — le serveur sait déjà rédiger, il aurait pu
+renvoyer un libellé vulgarisé ou technique selon le lecteur. Rejeté pour trois
+raisons, dont une décisive : dès que la réponse dépend du profil, plus rien ne
+garantit que le dirigeant *peut* voir ce que voit le technicien. La consigne
+« un même fait doit rester le même fait » deviendrait une intention ; ici c'est
+une propriété, vérifiée par un test qui compare les charges utiles des deux
+profils sur quatre endpoints et exige qu'elles soient identiques.
+
+Deux autres tests disent ce que ce réglage n'est pas : un lecteur en profil
+technique reste refusé au démarrage d'un diagnostic, un administrateur en
+profil dirigeant garde ses droits. Ce n'est pas un rôle.
+
+Côté écran, trois primitives plutôt que des `if (isTechnical)` disséminés —
+une condition finit toujours par *supprimer* quelque chose. `TechnicalDetail`
+masque par l'attribut `hidden` et ne retire jamais du DOM : le contenu reste
+trouvable par une recherche dans la page, et le dirigeant qui déplie voit
+exactement ce que voit son prestataire. `Term` affiche **toujours les deux**
+formulations : masquer « SPF » au dirigeant l'empêcherait de reconnaître le mot
+dans le courriel de son prestataire, c'est-à-dire au moment précis où il en a
+besoin.
+
+Le basculement vit dans la barre du haut. La consigne dit « à tout moment », et
+un réglage qu'il faut aller chercher dans un menu ne se change jamais.
+
+### Partie B — l'inventaire, puis ce qui manquait
+
+Ce qui existait : la charte informatique (rédigée par l'IA, versionnée,
+exportable) et le rapport de comité (déterministe, mais ni stocké ni
+versionné). Rien d'autre.
+
+Ce qui a été ajouté : politique de sécurité, procédure de gestion des
+incidents, registre des incidents, plan de continuité simplifié, fiche de
+sensibilisation. Et le rapport de comité entre dans la bibliothèque, archivé et
+versionné.
+
+### La décision de fond : composés, pas rédigés
+
+Six documents sur sept sont **composés** par du code à partir des données de la
+plateforme. Seule la charte reste rédigée par l'IA.
+
+C'est le contraire de ce qu'on attendrait d'une version qui parle de génération
+documentaire, et c'est la consigne de vérification qui l'impose : *« un
+document qu'il faut réécrire entièrement ne sert à rien »*. Un LLM à qui l'on
+demande une politique de sécurité produit un texte plausible et générique. Un
+modèle que nous écrivons une fois, qui cite les dix domaines du guide
+d'hygiène, l'état constaté de chacun et les mesures en écart avec leur
+échéance, est plus précis — et il l'est pour tous les clients à la fois, parce
+qu'on l'améliore une fois. S'y ajoutent la reproductibilité (deux générations
+donnent le même texte, ce qui se défend devant un auditeur — même raisonnement
+qu'ADR-028) et la sobriété.
+
+La charte fait exception parce que son contenu doit réellement s'adapter au
+contexte : un artisan et un cabinet de conseil n'ont pas les mêmes usages à
+encadrer. La consigne 7 reste donc vraie et ne concerne qu'elle : rien de
+nouveau n'appelle l'API Anthropic. Raisonnement complet dans
+[ADR-032](adr/032-bibliotheque-documentaire.md).
+
+### Trois règles, et ce qu'elles interdisent
+
+**On n'invente rien.** Ce que la plateforme ne sait pas est écrit
+`[à compléter]`. Un plan de continuité qui annonce un délai de reprise que
+personne n'a décidé est pire qu'une case vide. Un test l'exige dans chacun des
+six documents.
+
+**Un document générique le dit en tête.** Sans diagnostic terminé, un bandeau
+l'annonce — y compris pour celui qui reçoit le fichier sans avoir vu l'écran.
+Et le catalogue prévient **avant** la génération : « sera générique : aucun
+actif déclaré ».
+
+**Le registre ne recopie aucun identifiant fuité**, pas même masqué. Ce
+document s'imprime, se transmet, finit en pièce jointe. La ligne existe — c'est
+un incident à documenter — mais elle dit « un compte lié à tel domaine », pas
+l'adresse.
+
+### Ce que j'ai trouvé en relisant les documents produits
+
+J'ai composé les six documents pour un client fictif complet et je les ai lus
+comme les lirait une PME. Trois défauts, invisibles dans les tests :
+
+- l'état de possession des actifs s'affichait en anglais brut — « declared »
+  dans un document lu par un dirigeant. Un test pin désormais la traduction ;
+- les cinq lignes vierges du registre étaient toutes numérotées « 1 » ;
+- les tableaux **à remplir** affichaient un tiret dans chaque case vide : un
+  formulaire qui a l'air déjà rempli, de rien. `_tableau` distingue maintenant
+  les tableaux de restitution (tiret, sinon la colonne s'effondre) des
+  tableaux à remplir (case vide).
+
+Un quatrième contrôle est devenu un test : la politique de sécurité choisit son
+texte d'engagement **par nom de domaine**. Si un nom du fichier ANSSI change,
+le document retombe silencieusement sur une phrase générique — il reste
+plausible et perd exactement ce qui en faisait un document d'entreprise. Le
+test compare les dix noms aux dix clés, plutôt que d'espérer.
+
+### « Éditable » veut dire Word
+
+L'export Markdown existait et reste, non gardé : c'est la garantie que le
+client récupère son contenu quoi qu'il arrive. Mais une PME n'édite pas du
+Markdown. Le format éditable est donc le `.docx`, produit par `python-docx` —
+une dépendance pure Python, sans bibliothèque système, contrairement à
+WeasyPrint. L'export Word fonctionne donc là où le PDF échoue, ce qui est
+précisément le cas de ce poste.
+
+### Deux gardes déplacées, et un défaut corrigé au passage
+
+Tant qu'il n'existait qu'un document, garder la vue de création revenait à
+garder la charte. Un commentaire de la phase 12 l'anticipait ; c'est fait. La
+clé `charter_generation` ne garde plus que la charte : la retirer d'une offre
+ne retire plus le registre des incidents.
+
+`IsAIEnabled` quitte les vues documentaires. L'interrupteur d'IA doit
+désactiver **ce qui appelle l'IA**, pas reprendre au client ce qu'aucune IA ne
+rédige. Cela corrige un défaut antérieur : avant V2-5, un client qui coupait
+l'IA ne pouvait plus relire la charte générée la veille. Le test
+`TestAIDisabledReturns403Everywhere` a été resserré et son intention réécrite,
+avec en regard `TestBibliothequeSansIA` qui dit ce que l'interrupteur ne doit
+pas emporter.
+
+### Un vrai défaut de production, trouvé par l'heure qu'il était
+
+La suite a rougi sur trois tests de restitution qui passaient la veille. Ce
+n'était ni une régression de V2-5, ni un test instable : `periods.resolve`
+prenait la date sur `timezone.now()`, **en UTC**, et posait les bornes dans le
+fuseau d'affichage (Europe/Paris). Entre minuit et deux heures du matin, la
+date UTC est encore celle de la veille : la période « en cours » se terminait
+hier à 23 h 59 heure de Paris — **dans le passé**. Le tableau de bord du comité
+perdait silencieusement tout ce qui s'était produit dans les deux dernières
+heures.
+
+Personne ne l'aurait vu, sauf un RSSI ouvrant sa page à minuit et demi. Il a
+fallu lancer la suite à 1 h 50 pour que ça se voie. Correction d'une ligne
+(`timezone.localdate`), et un test paramétré sur trois instants — 1 h 50 heure
+d'été, 0 h 30 heure d'hiver, midi — qui exige que la période contienne
+toujours l'instant courant.
+
+### Vérifications
+
+**1420 tests backend verts** (contre 1348), **178 frontend** (contre 172). Les
+quatre échecs WeasyPrint habituels, environnementaux sous Windows. `ruff` et
+`eslint` propres, construction verte.
+
+Docker Desktop a lâché en cours de session — la panne connue de ce poste. Une
+première passe avait produit un mur d'erreurs qui n'était que la base disparue,
+et non une régression.
+
+### Reste à faire
+
+- **Le profil d'affichage n'est appliqué qu'à deux écrans** (plan d'action,
+  surveillance). Les primitives existent ; les autres pages les ignorent
+  encore. C'est un travail d'écran par écran, à poursuivre.
+- **Rien n'a tourné sur la production**, comme depuis V2-1. Deux migrations
+  cette fois : le champ de profil et les types de documents, toutes deux
+  additives et sans reprise de données.
+- **La politique de sécurité dépend des noms de domaines de l'ANSSI.** Sur un
+  référentiel importé (V2-4) aux domaines différents, elle retombe sur une
+  phrase générique. Une table de correspondance domaine → engagement,
+  alimentable à l'import, serait la suite.
+- **Pas de module de gestion d'incidents.** Le registre part de ce que la
+  plateforme détecte ; la saisie manuelle se fait dans le document. C'était le
+  bon périmètre pour cette version, ce ne le restera pas.
+- Le modèle documentaire vit toujours dans `apps.ai_assistant`, qui contient
+  désormais plus de déterministe que d'IA. Le nom est une dette assumée : le
+  déplacer demanderait de migrer une table portant les documents de vrais
+  clients.
