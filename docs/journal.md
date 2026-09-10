@@ -5661,3 +5661,192 @@ Windows. `ruff` et `eslint` propres, construction verte.
   vieilliront : c'est précisément pourquoi l'état des sources est affiché, et
   pourquoi elles se corrigent depuis la console sans redéploiement.
 - **Rien vérifié en production**, comme depuis V2-1.
+
+
+## 10 septembre 2026 (soir) — Revue de fin de phase V2-7 : remise au vert
+
+La revue de fin de phase a trouvé un défaut sérieux, deux blocages de CI,
+quatre incohérences et une lacune de test. Cette session les traite. Ce qui
+suit rapporte des **mesures**, pas des intentions.
+
+### D1 — la veille ne veillait pas
+
+`poll_sources_task` était déclarée sans entrée dans `CELERY_TASK_ROUTES`. Elle
+partait donc dans la file `default`, que le worker ne consomme pas
+(`-Q monitoring,emails,ai`). Chaque lundi à 06 h 15, le planificateur publiait
+un message que rien ne dépilait. **La fonctionnalité vedette de la phase ne
+s'exécutait jamais**, et la suite de tests restait verte — parce que les tests
+appellent les tâches directement, jamais à travers le courtier.
+
+La docstring du module affirmait « File `monitoring` ». C'est cette phrase qui
+a empêché d'aller vérifier : *une phrase qui décrit une intention se lit comme
+un constat*.
+
+Mesure avant/après, sur la vraie pile :
+
+| | Avant | Après |
+|---|---|---|
+| File résolue | `default` | `monitoring` |
+| `llen default` après envoi | 1, jamais dépilée | 0 |
+| Exécution | jamais | `succeeded in 2.00s` |
+
+**Le correctif qui compte n'est pas la ligne de route, c'est
+`config/tests/test_files_celery.py`** : il résout la file de *chaque* tâche du
+projet et échoue si l'une atterrit dans une file non consommée. La liste des
+files consommées n'y est pas recopiée — elle est **lue dans la commande du
+worker**, dans les deux fichiers `docker-compose`. Une liste recopiée diverge
+au premier changement, et un contrôle qui décrit un monde périmé ne contrôle
+rien : c'est la leçon de l'`awk` des fins de ligne, apprise une troisième fois.
+
+Ce test ne garde pas la veille. Il garde le prochain module.
+
+Détail utile : sa première version est passée au rouge sur sa propre garde
+« le test ne mesure rien » — le chemin de la racine était faux d'un cran. Le
+garde-fou a servi avant le test lui-même.
+
+### Les deux avis de sécurité
+
+`weasyprint` 69.0 → 70.0 (PYSEC-2026-3940). Les quatre tests d'export PDF ont
+été passés **dans le conteneur** avant et après : 4 verts dans les deux cas.
+Le rendu n'est pas cassé.
+
+`js-yaml` : **corrigé, pas accepté**. `fixAvailable` était vrai,
+`npm audit fix` sans `--force` a suffi (4.3.1 → 4.3.2, trois lignes de
+`package-lock.json`). Inscrire un risque accepté alors qu'un correctif propre
+existe aurait été le mauvais geste — le mécanisme d'exception reste pour les
+cas où il n'y en a pas.
+
+**Signalé, non traité** : weasyprint 70 émet un avertissement neuf,
+`HarfBuzz-Subset will be required by future versions`. Le `Dockerfile`
+n'installe pas cette bibliothèque. Une future montée cassera la génération PDF
+en production. Hors périmètre de cette session.
+
+### Les quatre incohérences
+
+**D2 — « intégrée » est désormais un état terminal.** La garde d'origine ne
+jouait que dans un sens : on ne pouvait pas *poser* ce statut, rien
+n'empêchait de le *retirer*. Une suggestion repassée en « écartée » laissait
+la mesure dans le référentiel, le lien `integrated_measures` en place, et
+`target_referential` effacé au passage. Pas de mécanisme de dé-intégration :
+si l'exploitant s'est trompé, il retire la mesure du référentiel — geste
+distinct, explicite et tracé.
+
+**D3 — `review_update` distingue « non fourni » de « vidé ».** Une sentinelle
+`NON_FOURNI`, parce que `None` est déjà la valeur qui signifie « détacher ».
+Re-trier une suggestion sans re-préciser son référentiel ne l'efface plus.
+
+**D4 — `integrate_as_measure` est transactionnelle.** C'est le seul chemin par
+lequel la veille écrit dans le cœur métier : une mesure orpheline serait
+servie aux clients dans leur questionnaire sans qu'aucune suggestion ne la
+revendique.
+
+**D5 — la liste des sources est figée dans la migration.** Elle importait le
+module vivant : rejouée un jour sur une base neuve, elle aurait installé ce
+que `sources.py` contiendrait *alors*. La liste figée a été **générée** depuis
+`sources.py`, pas retranscrite — cinq sources et une quarantaine de champs
+recopiés à la main auraient introduit des écarts silencieux.
+
+### Ce que la neutralisation a trouvé, et qu'aucune relecture n'aurait vu
+
+Sept gardes neuves, vérifiées en réintroduisant leur défaut. Six rougissent.
+**Une reste verte** : en neutralisant le seul contrôle du sérialiseur,
+`test_l_api_refuse_aussi` continuait de passer — le service refusait, et la
+vue traduisait ce refus en 400. Le test ne prouvait donc pas l'existence de la
+deuxième couche qu'il était censé garder.
+
+D'où `test_le_serialiseur_refuse_seul_sans_passer_par_le_service`, qui
+n'appelle aucun service. Il rougit quand on neutralise le sérialiseur seul.
+
+*Un test qui ne distingue pas la couche qu'il garde ne garde pas cette
+couche.* C'est la troisième fois sur ce projet qu'une garde passe pour une
+raison qui n'est pas la sienne.
+
+### Le rayon de panne de la console
+
+`platformApi.listReferentials()` était dans le `Promise.all` de `loadCore` :
+toute la console dépendait d'un appel dont un seul écran a besoin. Si le
+catalogue tombait, l'exploitant perdait aussi la vue de ses ressources rares —
+la raison première d'ouvrir cette page. Le catalogue est désormais chargé à
+l'ouverture de l'onglet Veille, une seule fois, et son échec n'affecte que cet
+écran.
+
+Découvert en écrivant le test : le fichier de test de la console ne moquait
+pas `watchQueue`/`watchSources`. Dès qu'un test ouvrait l'onglet Veille,
+`WatchPanel` partait en rejet non capturé — et Vitest affichait « 8 passed »
+au-dessus d'une exception non traitée. Les mocks ont été écrits en lisant le
+contrat réel de `WatchQueueView` (`{summary, health, results}`), après qu'une
+première version inventée a fait planter le panneau.
+
+### Les parcours de bout en bout, enfin exercés
+
+C'était le trou principal de la revue : **11 parcours authentifiés n'avaient
+jamais tourné sur cette phase**, l'inscription étant bloquée par la capacité.
+
+| | Avant | Après |
+|---|---|---|
+| Inscription | HTTP 400, « inscriptions fermées » | HTTP 201 |
+| Parcours e2e | 8 verts / 11 rouges | **17 verts / 2 rouges** |
+
+Les deux clients résiduels « Audit » et « Audit Direct » ont été purgés par le
+vrai chemin — archivage (qui résilie l'abonnement et libère les emplacements)
+puis suppression définitive.
+
+**Les 2 échecs restants sont pré-existants, et c'est prouvé, pas supposé** :
+toutes les modifications de la session ont été remisées (`git stash`) et les
+deux spécifications relancées sur la même base — elles échouent à l'identique.
+`h-feature-guards` attend 402 et reçoit 400 sur `POST /api/v1/ai/documents/` :
+depuis la V2-5, la garde d'offre porte sur le *type* de document, donc la
+validation du corps s'exécute avant `ensure_feature`, et le test envoie un
+corps vide. **Le test encode le contrat d'avant la V2-5.** À traiter à part.
+
+### Le jeu de démonstration mange la licence
+
+Question posée pendant la revue, réponse mesurée : **non, le jeu de
+démonstration ne devrait pas engager 13 emplacements.**
+
+| Client de démonstration | Offre | Engagés | Actifs réels |
+|---|---|---|---|
+| Clinique des Tilleuls | souverain | 5 | 0 |
+| Cabinet Comptable Durand | pilotage | 3 | 4 |
+| Transports Vidal | pilotage | 3 | 0 |
+| Agence Novaé | essai | 1 | 0 |
+| Menuiserie Lambert | veille | 1 | 0 |
+| **Total** | | **13** | **4** |
+
+13 des 15 emplacements de la licence — **87 % de la capacité vendable** — pour
+4 actifs réellement surveillés. La cause est structurelle : les emplacements
+sont comptés **engagés** (`monitored_assets_quota` des abonnements
+`trial`/`active`), et les clients de démonstration portent de vrais
+abonnements.
+
+Ce n'est pas une hypothèse de laboratoire : `docs/deploiement_production.md`
+documente `seed_demo_clients --allow-production`. Si la commande a été passée
+en production, la plateforme y dispose de **2 emplacements vendables sur 15**.
+
+**Non corrigé volontairement.** Exclure les clients de démonstration du calcul
+d'engagement touche la garde qui empêche de survendre la licence : cela mérite
+un ADR et une décision, pas un correctif glissé dans une session de remise au
+vert. Le plafond local a simplement été porté à 60 — un réglage de base
+locale, pas une modification de code, sans effet sur la production.
+
+### WatchPanel : de 0 à 8 tests
+
+544 lignes sans aucun test. Huit tests désormais, sur les endroits où une
+régression silencieuse coûterait cher : le tri part avec le bon statut, on ne
+peut pas ajouter une mesure sans avoir rédigé son contenu, l'état des sources
+remonte, et une source jamais configurée n'est pas présentée comme une panne.
+Six mutations du composant, six rouges.
+
+### Reste à faire
+
+- **`c-charter-generation` et `h-feature-guards`** : deux parcours rouges
+  d'origine V2-5, indépendants de la veille. Le second est un test à mettre à
+  jour ; le premier demande un diagnostic.
+- **Le jeu de démonstration et la licence** : arbitrage à prendre, ADR à
+  écrire.
+- **`libharfbuzz-subset` absente du `Dockerfile`** : dette posée par la montée
+  de weasyprint.
+- **Le flux EUR-Lex** reste à brancher (décision éditoriale, inchangée).
+- **Aucune notification** : cinquième fonctionnalité qui attend le même
+  mécanisme d'envoi.
+- **Rien vérifié en production**, toujours.
