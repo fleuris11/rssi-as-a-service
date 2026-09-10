@@ -131,6 +131,17 @@ class Measure(models.Model):
     # constant) so the API/frontend carry the disclaimer even if a future
     # referential someday ships ANSSI-sourced ratings instead.
     effort_impact_disclaimer = models.BooleanField(default=True)
+    # V2-7 : provenance. « On ne livre pas ce qu'on ne peut pas sourcer » —
+    # une mesure ajoutée depuis la veille réglementaire garde le lien vers la
+    # publication officielle dont elle vient.
+    #
+    # Deux champs de TEXTE, et non une clé étrangère vers la veille : ils
+    # survivent au retrait de l'app de veille, à un export, à une copie de
+    # référentiel. Le lien structuré existe aussi, dans l'autre sens
+    # (``WatchUpdate.integrated_measures``), là où il ne crée pas de
+    # dépendance du cœur vers la périphérie.
+    source_url = models.URLField(max_length=1000, blank=True)
+    source_reference = models.CharField(max_length=300, blank=True)
 
     class Meta:
         constraints = [

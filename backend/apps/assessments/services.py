@@ -25,6 +25,7 @@ surcharges d'énoncé. Trois règles s'y lisent partout :
 
 import logging
 
+from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
@@ -435,6 +436,63 @@ def get_referential_structure(referential: Referential, *, tenant=None, subset=N
             continue
         structure.append({"domain": domain, "measures": du_domaine})
     return structure
+
+
+def add_measure(
+    *,
+    referential: Referential,
+    domain_code: str,
+    code: str,
+    official_title: str,
+    plain_language: str,
+    level: str = "",
+    weight: float = 1.0,
+    effort: str = "medium",
+    impact: str = "medium",
+    source_url: str = "",
+    source_reference: str = "",
+) -> Measure:
+    """Ajoute UNE mesure à un référentiel existant.
+
+    Point d'entrée unique pour les ajouts à l'unité — l'importateur
+    (``importers.py``) reste le chemin des chargements en masse. Existe pour
+    la veille réglementaire (V2-7), qui doit pouvoir créer une mesure sans
+    connaître les modèles de cette app, et sans passer par un fichier.
+
+    Le rang est calculé à la fin du domaine : une mesure ajoutée en cours de
+    vie de référentiel se pose après les autres, elle ne se glisse pas au
+    milieu d'une numérotation que des évaluations en cours utilisent déjà.
+    """
+    domain = Domain.objects.filter(referential=referential, code=domain_code).first()
+    if domain is None:
+        raise MeasureNotInReferentialError(
+            f"Le domaine « {domain_code} » n'existe pas dans « {referential.name} »."
+        )
+    code = (code or "").strip()
+    if not code:
+        raise MeasureNotInReferentialError("Le code de la mesure est obligatoire.")
+    if Measure.objects.filter(referential=referential, code=code).exists():
+        raise MeasureNotInReferentialError(
+            f"Une mesure « {code} » existe déjà dans ce référentiel."
+        )
+
+    dernier_rang = (
+        Measure.objects.filter(domain=domain).aggregate(models.Max("order"))["order__max"] or 0
+    )
+    return Measure.objects.create(
+        referential=referential,
+        domain=domain,
+        code=code,
+        order=dernier_rang + 1,
+        official_title=official_title.strip(),
+        plain_language=plain_language.strip(),
+        level=level,
+        weight=weight,
+        effort=effort,
+        impact=impact,
+        source_url=source_url,
+        source_reference=source_reference,
+    )
 
 
 def get_referential_measures(referential: Referential):

@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "apps.billing",
     "apps.reporting",
     "apps.access_requests",
+    "apps.regulatory_watch",
 ]
 
 MIDDLEWARE = [
