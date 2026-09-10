@@ -90,8 +90,11 @@ export const platformApi = {
     }),
   listAccessRequests: (status) =>
     apiClient.get('/api/v1/platform/access-requests/', { params: status ? { status } : {} }),
-  handleAccessRequest: (id, granted, response = '') =>
-    apiClient.post(`/api/v1/platform/access-requests/${id}/`, { granted, response }),
+  // V2-6 : une ETAPE de suivi (contacted / proposal / granted / declined),
+  // plus un booleen accorder-ou-refuser. Une demande se travaille avant de
+  // se conclure.
+  advanceAccessRequest: (id, status, response = '') =>
+    apiClient.post(`/api/v1/platform/access-requests/${id}/`, { status, response }),
 
   listProspects: (params) => apiClient.get('/api/v1/platform/prospects/', { params }),
   createProspect: (payload) => apiClient.post('/api/v1/platform/prospects/', payload),
@@ -290,6 +293,26 @@ export const threatIntelligenceApi = {
     apiClient.post('/api/v1/threat-intelligence/scans/', assetId ? { asset_id: assetId } : {}),
   getScanJob: (jobId) => apiClient.get(`/api/v1/threat-intelligence/scans/${jobId}/`),
   status: () => apiClient.get('/api/v1/threat-intelligence/status/'),
+
+  // --- Comptes designes (V2-6) --------------------------------------------
+  // Espace distinct de l'exposition : ce ne sont pas les actifs du client,
+  // ce sont des comptes qu'il declare surveiller, avec une declaration
+  // engageante a l'ajout (ADR-033).
+  listWatchedAccounts: () => apiClient.get('/api/v1/threat-intelligence/watched-accounts/'),
+  declareWatchedAccount: (payload) =>
+    apiClient.post('/api/v1/threat-intelligence/watched-accounts/', payload),
+  removeWatchedAccount: (id, reason = '') =>
+    apiClient.delete(`/api/v1/threat-intelligence/watched-accounts/${id}/`, {
+      data: { reason },
+    }),
+  listWatchedAccountFindings: (params = {}) =>
+    apiClient.get('/api/v1/threat-intelligence/watched-accounts/findings/', { params }),
+  updateWatchedAccountFinding: (id, status) =>
+    apiClient.patch(`/api/v1/threat-intelligence/watched-accounts/findings/${id}/`, { status }),
+  scanWatchedAccounts: (accountIds = []) =>
+    apiClient.post('/api/v1/threat-intelligence/watched-accounts/scans/', {
+      account_ids: accountIds,
+    }),
   adminStatus: () => apiClient.get('/api/v1/threat-intelligence/admin/status/'),
 }
 

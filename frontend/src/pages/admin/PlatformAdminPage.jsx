@@ -2,6 +2,7 @@ import {
   Activity,
   BookOpen,
   Building2,
+  Inbox,
   ClipboardList,
   Gauge,
   Settings,
@@ -25,6 +26,7 @@ import PlansPanel from './panels/PlansPanel'
 import { AdminsPanel, SettingsPanel, TrashPanel } from './panels/PlatformPanel'
 import ProspectsPanel from './panels/ProspectsPanel'
 import ReferentialsPanel from './panels/ReferentialsPanel'
+import RequestsPanel from './panels/RequestsPanel'
 
 const TABS = [
   { id: 'capacity', label: 'Ressources', icon: Gauge },
@@ -32,6 +34,7 @@ const TABS = [
   { id: 'prospects', label: 'Prospects', icon: Users },
   { id: 'plans', label: 'Offres', icon: Tags },
   { id: 'referentials', label: 'Référentiels', icon: BookOpen },
+  { id: 'requests', label: 'Demandes', icon: Inbox },
   { id: 'ownership', label: 'Possession', icon: ShieldQuestion },
   { id: 'admins', label: 'Administrateurs', icon: ShieldCheck },
   { id: 'settings', label: 'Réglages', icon: Settings },
@@ -420,6 +423,7 @@ export default function PlatformAdminPage() {
         <PlansPanel plans={plans} featureCatalog={config?.features || []} onRefresh={loadCore} />
       )}
       {!loading && activeTab === 'referentials' && <ReferentialsPanel clients={tenants} />}
+      {!loading && activeTab === 'requests' && <RequestsPanel />}
           {!loading && activeTab === 'ownership' && <OwnershipReviewPanel />}
   {!loading && activeTab === 'admins' && <AdminsPanel />}
       {!loading && activeTab === 'settings' && <SettingsPanel configuration={config} />}

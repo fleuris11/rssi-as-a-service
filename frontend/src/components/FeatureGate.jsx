@@ -1,4 +1,5 @@
 import { Lock } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useEntitlements } from '../context/EntitlementsContext'
 import Tooltip from './ui/Tooltip'
 
@@ -67,6 +68,16 @@ export function FeatureLockedNotice({ feature }) {
             Compris à partir de l’offre {info.required_plan}.
           </p>
         )}
+        {/* V2-6 : voir qu'une fonctionnalité existe sans pouvoir rien en
+            faire est frustrant. Le lien mène là où l'on peut la demander ET
+            suivre la demande — un bouton sans retour serait pire que pas de
+            bouton (consigne V2-6, point 8). */}
+        <Link
+          to="/mes-demandes"
+          className="transition-smooth mt-2 inline-block text-sm font-medium text-brand-700 underline underline-offset-2 hover:text-brand-800"
+        >
+          Demander cette fonctionnalité
+        </Link>
       </div>
     </div>
   )
