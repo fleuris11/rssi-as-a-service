@@ -201,7 +201,13 @@ describe('ExposurePage', () => {
       render(<ExposurePage />)
 
       expect(await screen.findByText(/Réutilisation possible — à vérifier/)).toBeInTheDocument()
-      expect(screen.getByText(/hypothèse à vérifier/)).toBeInTheDocument()
+      // `findByText` et non `getByText` : l'explication est peinte APRÈS le
+      // libellé du signal. La lecture synchrone passait tant que la machine
+      // était rapide, et échouait environ une fois sur deux dès que la suite
+      // s'est allongée — un test intermittent finit par être ignoré, ce qui
+      // coûte plus cher que le test lui-même. L'assertion est inchangée :
+      // c'est bien le texte exact du serveur qui est exigé.
+      expect(await screen.findByText(/hypothèse à vérifier/)).toBeInTheDocument()
     })
 
     it('n’affirme jamais une réutilisation confirmée', async () => {
