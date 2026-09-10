@@ -5850,3 +5850,91 @@ Six mutations du composant, six rouges.
 - **Aucune notification** : cinquième fonctionnalité qui attend le même
   mécanisme d'envoi.
 - **Rien vérifié en production**, toujours.
+
+
+## 11 septembre 2026 — Mise en production de la V2-4 à la V2-7
+
+Première mise en production depuis la V2-1 : la production tournait sur
+`eecd03a`, quatre phases en arrière.
+
+### Les deux derniers rouges de la CI n'étaient pas des défauts du produit
+
+`c-charter-generation` et `h-feature-guards` échouaient depuis la V2-5. La
+revue de fin de phase avait déjà prouvé par `git stash` qu'ils étaient
+antérieurs ; le diagnostic a montré que **ni l'un ni l'autre ne signalait un
+défaut** : tous deux décrivaient l'interface et l'API d'avant la V2-5.
+
+La page des documents est devenue un **catalogue** de types : le bouton unique
+« Générer la charte informatique » n'existe plus, et les exports se nomment
+« .md », « Word (.docx) » et « PDF ». Le test visait des libellés disparus.
+
+Le second postait un corps vide sur `/api/v1/ai/documents/` en attendant 402.
+Depuis la V2-5 la garde d'offre porte sur le **type de document demandé** et
+non plus sur la vue : un corps vide se fait donc refuser pour corps invalide
+**avant** d'atteindre la garde. Vérifié par HTTP, avec un vrai jeton, sur un
+client en offre « Veille » :
+
+    corps vide           -> 400
+    corps avec le type   -> 402, required_plan = « Pilotage »
+
+Le test mesurait la validation du corps en croyant mesurer la garde d'offre.
+
+**Un vrai défaut trouvé en corrigeant le premier** : le catalogue affiche sept
+boutons portant le même libellé visible. Rien ne les distingue pour qui
+navigue au lecteur d'écran ou au clavier. Le nom accessible porte désormais le
+document concerné — corrigé dans son propre commit, et c'est aussi ce qui rend
+le catalogue testable par rôle et par nom.
+
+### Le déploiement
+
+CI verte sur `e9d3a94` — les cinq jobs, e2e compris. Déclenché par le workflow
+tracé (ADR-023), avec sauvegarde et point de retour posés d'abord :
+
+- `pg_dump` de 194 Ko, conservé sur le serveur ;
+- tag `avant-v2-4-a-v2-7` sur `eecd03a`.
+
+**17 migrations appliquées**, de neuf apps, sans échec. `showmigrations` ne
+compte plus aucune migration en attente.
+
+### Vérifié en production, pas supposé
+
+**D1, le défaut central de la V2-7 :**
+
+    file resolue pour poll_sources_task : monitoring
+    files consommees par le worker      : monitoring, emails, ai
+    file « default »                    : 0
+
+Puis la preuve de bout en bout — une vraie tâche passée par le courtier :
+
+    {'sources': 4, 'created': 18, 'failed': []}
+
+**18 publications réellement collectées** auprès de la CNIL et du NIST, aucune
+source en échec. La veille veille.
+
+Les cinq sources sont installées, EUR-Lex livrée inactive comme prévu.
+
+**Le client n'a rien perdu** : 7 clients, CRRH toujours à 3 actifs et
+2 évaluations, capacité inchangée à 8 engagés sur 15. Vu d'Internet :
+`/healthz`, l'accueil, la connexion et `/api/v1/billing/plans/` répondent 200.
+
+### La licence en production : moins grave qu'annoncé
+
+La revue avertissait que le jeu de démonstration pouvait occuper 13 des 15
+emplacements. **Mesuré en production : 8 engagés sur 15**, dont 5 pour le vrai
+client (CRRH, offre souverain) et 3 seulement pour les clients de
+démonstration. La commande de seed n'a été passée que partiellement. Il reste
+**7 emplacements vendables**. L'arbitrage de fond — les clients de
+démonstration ne devraient pas engager d'emplacements réels — reste ouvert,
+mais il n'est pas urgent.
+
+### Reste à faire
+
+- **L'arbitrage sur le jeu de démonstration et la licence** (ADR à écrire).
+- **`libharfbuzz-subset` absente du `Dockerfile`** : une future montée de
+  weasyprint cassera la génération PDF.
+- **Le flux EUR-Lex** reste à brancher (décision éditoriale).
+- **Aucune notification** : cinquième fonctionnalité à attendre le mécanisme
+  d'envoi.
+- **Un test frontend intermittent de plus** (`ExposurePage` a été corrigé ;
+  une autre passe a montré un échec isolé non reproduit). À surveiller : la
+  suite est longue et la machine de développement saturée fausse le verdict.
