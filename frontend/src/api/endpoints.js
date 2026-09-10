@@ -20,6 +20,9 @@ export const billingApi = {
 // Back-office plateforme (is_staff). Espace distinct de l'espace client.
 export const platformApi = {
   capacity: () => apiClient.get('/api/v1/platform/capacity/'),
+  // Actifs dont la possession n'est pas etablie (ADR-026) : ceux declares
+  // avant la V2-1, a regulariser sans etre coupes.
+  ownershipReview: () => apiClient.get('/api/v1/platform/ownership-review/'),
   listTenants: () => apiClient.get('/api/v1/platform/tenants/'),
   tenantDetail: (id) => apiClient.get(`/api/v1/platform/tenants/${id}/`),
   updateTenant: (id, payload) => apiClient.patch(`/api/v1/platform/tenants/${id}/`, payload),
@@ -76,6 +79,38 @@ export const platformApi = {
   deletePlan: (code) => apiClient.delete(`/api/v1/platform/plans/${code}/delete/`),
   previewPlan: (code) => apiClient.get(`/api/v1/platform/plans/${code}/preview/`),
 
+  // --- Referentiels et demandes (V2-4) ------------------------------------
+  listReferentials: () => apiClient.get('/api/v1/platform/referentials/'),
+  clientReferentials: (id) => apiClient.get(`/api/v1/platform/clients/${id}/referentials/`),
+  assignReferential: (id, slug, note = '') =>
+    apiClient.post(`/api/v1/platform/clients/${id}/referentials/`, { referential: slug, note }),
+  revokeReferential: (id, slug) =>
+    apiClient.delete(`/api/v1/platform/clients/${id}/referentials/`, {
+      data: { referential: slug },
+    }),
+  // --- Veille reglementaire (V2-7) ----------------------------------------
+  // Console UNIQUEMENT : la veille alimente le catalogue partage, et une
+  // suggestion non triee n'a rien a faire dans un espace client.
+  watchQueue: (params = {}) => apiClient.get('/api/v1/platform/watch/', { params }),
+  watchSources: () => apiClient.get('/api/v1/platform/watch/sources/'),
+  updateWatchSource: (slug, payload) =>
+    apiClient.patch(`/api/v1/platform/watch/sources/${slug}/`, payload),
+  pollWatchSource: (slug) => apiClient.post(`/api/v1/platform/watch/sources/${slug}/poll/`),
+  reviewWatchUpdate: (id, payload) =>
+    apiClient.post(`/api/v1/platform/watch/updates/${id}/review/`, payload),
+  integrateWatchUpdate: (id, payload) =>
+    apiClient.post(`/api/v1/platform/watch/updates/${id}/integrate/`, payload),
+  summarizeWatchUpdate: (id) =>
+    apiClient.post(`/api/v1/platform/watch/updates/${id}/summary/`),
+
+  listAccessRequests: (status) =>
+    apiClient.get('/api/v1/platform/access-requests/', { params: status ? { status } : {} }),
+  // V2-6 : une ETAPE de suivi (contacted / proposal / granted / declined),
+  // plus un booleen accorder-ou-refuser. Une demande se travaille avant de
+  // se conclure.
+  advanceAccessRequest: (id, status, response = '') =>
+    apiClient.post(`/api/v1/platform/access-requests/${id}/`, { status, response }),
+
   listProspects: (params) => apiClient.get('/api/v1/platform/prospects/', { params }),
   createProspect: (payload) => apiClient.post('/api/v1/platform/prospects/', payload),
   updateProspect: (id, payload) => apiClient.patch(`/api/v1/platform/prospects/${id}/`, payload),
@@ -118,6 +153,10 @@ export const authApi = {
       recovery_code: recoveryCode,
     }),
   me: () => apiClient.get('/api/v1/auth/me/'),
+  // Profil d'affichage (V2-5). Le seul champ de l'identité modifiable ici :
+  // il ne donne accès à rien et se change a tout moment.
+  setDisplayProfile: (profile) =>
+    apiClient.patch('/api/v1/auth/me/', { display_profile: profile }),
 }
 
 export const twoFactorApi = {
@@ -133,15 +172,58 @@ export const tenantsApi = {
 }
 
 export const assessmentsApi = {
-  referential: () => apiClient.get('/api/v1/assessments/referential/'),
-  start: () => apiClient.post('/api/v1/assessments/start/'),
-  current: () => apiClient.get('/api/v1/assessments/current/'),
-  list: () => apiClient.get('/api/v1/assessments/'),
+  // Le catalogue vu par l'entreprise courante : ce qu'elle a, ce qu'elle a eu,
+  // et ce qu'elle pourrait demander (chaque ligne porte `granted`).
+  listReferentials: () => apiClient.get('/api/v1/assessments/referentials/'),
+  // Sans slug : le référentiel par défaut (le premier attribué). Cet appel
+  // existait avant V2-4 et garde exactement le même contrat.
+  referential: (slug, subset) =>
+    apiClient.get(slug ? `/api/v1/assessments/referentials/${slug}/` : '/api/v1/assessments/referential/', {
+      params: subset ? { subset } : {},
+    }),
+  start: (referential, subset) =>
+    apiClient.post('/api/v1/assessments/start/', {
+      ...(referential ? { referential } : {}),
+      ...(subset ? { subset } : {}),
+    }),
+  current: (referential) =>
+    apiClient.get('/api/v1/assessments/current/', {
+      params: referential ? { referential } : {},
+    }),
+  list: (referential) =>
+    apiClient.get('/api/v1/assessments/', { params: referential ? { referential } : {} }),
   detail: (id) => apiClient.get(`/api/v1/assessments/${id}/`),
   submitAnswer: (assessmentId, measureId, value, note = '') =>
     apiClient.put(`/api/v1/assessments/${assessmentId}/answers/${measureId}/`, { value, note }),
   complete: (id) => apiClient.post(`/api/v1/assessments/${id}/complete/`),
   scores: (id) => apiClient.get(`/api/v1/assessments/${id}/scores/`),
+  // Le score par référentiel et, quand il y en a plusieurs, le consolidé —
+  // qui ne voyage jamais sans son détail (ADR-030).
+  consolidatedScores: () => apiClient.get('/api/v1/assessments/scores/consolidated/'),
+
+  listSubsets: (referential) =>
+    apiClient.get('/api/v1/assessments/subsets/', {
+      params: referential ? { referential } : {},
+    }),
+  createSubset: (payload) => apiClient.post('/api/v1/assessments/subsets/', payload),
+
+  // Reformulation d'une mesure pour cette entreprise. Elle vit A COTE du
+  // référentiel : `plain_language` reste l'énoncé d'origine, `statement` est
+  // ce qu'on affiche.
+  listOverrides: () => apiClient.get('/api/v1/assessments/overrides/'),
+  setOverride: (measureId, payload) =>
+    apiClient.put(`/api/v1/assessments/measures/${measureId}/override/`, payload),
+  clearOverride: (measureId) =>
+    apiClient.delete(`/api/v1/assessments/measures/${measureId}/override/`),
+}
+
+// Demandes de l'entreprise a l'exploitant : un référentiel aujourd'hui,
+// d'autres fonctionnalités demain — le mécanisme est générique (V2-4/V2-6).
+export const accessRequestsApi = {
+  list: (status) =>
+    apiClient.get('/api/v1/access-requests/', { params: status ? { status } : {} }),
+  create: (payload) => apiClient.post('/api/v1/access-requests/', payload),
+  cancel: (id) => apiClient.delete(`/api/v1/access-requests/${id}/`),
 }
 
 export const actionsApi = {
@@ -179,6 +261,16 @@ export const monitoringApi = {
     }),
   dashboard: () => apiClient.get('/api/v1/monitoring/dashboard/'),
   openAlerts: () => apiClient.get('/api/v1/monitoring/alerts/'),
+  // Possession d'un domaine (ADR-026) : l'etat, l'ouverture d'une preuve,
+  // et sa verification.
+  ownership: (assetId) => apiClient.get(`/api/v1/monitoring/assets/${assetId}/ownership/`),
+  startOwnershipProof: (assetId, payload) =>
+    apiClient.post(`/api/v1/monitoring/assets/${assetId}/ownership/`, payload),
+  verifyOwnershipProof: (assetId, proofId, payload) =>
+    apiClient.post(
+      `/api/v1/monitoring/assets/${assetId}/ownership/${proofId}/verify/`,
+      payload
+    ),
 }
 
 export const threatIntelligenceApi = {
@@ -216,7 +308,40 @@ export const threatIntelligenceApi = {
     apiClient.post('/api/v1/threat-intelligence/scans/', assetId ? { asset_id: assetId } : {}),
   getScanJob: (jobId) => apiClient.get(`/api/v1/threat-intelligence/scans/${jobId}/`),
   status: () => apiClient.get('/api/v1/threat-intelligence/status/'),
+
+  // --- Comptes designes (V2-6) --------------------------------------------
+  // Espace distinct de l'exposition : ce ne sont pas les actifs du client,
+  // ce sont des comptes qu'il declare surveiller, avec une declaration
+  // engageante a l'ajout (ADR-033).
+  listWatchedAccounts: () => apiClient.get('/api/v1/threat-intelligence/watched-accounts/'),
+  declareWatchedAccount: (payload) =>
+    apiClient.post('/api/v1/threat-intelligence/watched-accounts/', payload),
+  removeWatchedAccount: (id, reason = '') =>
+    apiClient.delete(`/api/v1/threat-intelligence/watched-accounts/${id}/`, {
+      data: { reason },
+    }),
+  listWatchedAccountFindings: (params = {}) =>
+    apiClient.get('/api/v1/threat-intelligence/watched-accounts/findings/', { params }),
+  updateWatchedAccountFinding: (id, status) =>
+    apiClient.patch(`/api/v1/threat-intelligence/watched-accounts/findings/${id}/`, { status }),
+  scanWatchedAccounts: (accountIds = []) =>
+    apiClient.post('/api/v1/threat-intelligence/watched-accounts/scans/', {
+      account_ids: accountIds,
+    }),
   adminStatus: () => apiClient.get('/api/v1/threat-intelligence/admin/status/'),
+}
+
+// Restitution de comité (ADR-028). La période est résolue par le SERVEUR :
+// une clé (`quarter`) ou deux dates. Le frontend n'en calcule aucune — deux
+// implémentations du même trimestre finiraient par diverger, et l'écart se
+// verrait le jour où le PDF ne dirait pas la même chose que la page.
+export const reportingApi = {
+  dashboard: (params) => apiClient.get('/api/v1/reporting/dashboard/', { params }),
+  report: (params) => apiClient.get('/api/v1/reporting/report/', { params }),
+  reportPdf: (params) =>
+    apiClient.get('/api/v1/reporting/report.pdf', { params, responseType: 'blob' }),
+  exportCsv: (params) =>
+    apiClient.get('/api/v1/reporting/export.csv', { params, responseType: 'blob' }),
 }
 
 export const notificationsApi = {
@@ -231,7 +356,13 @@ export const aiApi = {
   previewCharter: () => apiClient.get('/api/v1/ai/preview/charter/'),
   previewAssistant: () => apiClient.get('/api/v1/ai/preview/assistant/'),
 
+  // La bibliothèque documentaire (V2-5) : les sept documents que la
+  // plateforme sait produire, l'état de chacun, et ce qui manque pour qu'il
+  // soit personnalisé.
+  documentCatalog: () => apiClient.get('/api/v1/ai/documents/catalog/'),
   listDocuments: () => apiClient.get('/api/v1/ai/documents/'),
+  // Réponse en 201 avec le document prêt pour un document composé, en 202
+  // avec un job pour la charte, qui passe par l'IA.
   generateDocument: (type) => apiClient.post('/api/v1/ai/documents/', { type }),
   getDocument: (id) => apiClient.get(`/api/v1/ai/documents/${id}/`),
   updateDocument: (id, contentMarkdown) =>
@@ -243,6 +374,10 @@ export const aiApi = {
     apiClient.get(`/api/v1/ai/documents/${id}/export/`, { responseType: 'blob' }),
   exportDocumentPdf: (id) =>
     apiClient.get(`/api/v1/ai/documents/${id}/export/pdf/`, { responseType: 'blob' }),
+  // Format éditable : ce que « modifiable » veut dire pour une PME, qui
+  // n'ouvre pas un fichier Markdown.
+  exportDocumentDocx: (id) =>
+    apiClient.get(`/api/v1/ai/documents/${id}/export/docx/`, { responseType: 'blob' }),
 
   listConversations: () => apiClient.get('/api/v1/ai/conversations/'),
   createConversation: () => apiClient.post('/api/v1/ai/conversations/'),

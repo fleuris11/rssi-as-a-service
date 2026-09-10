@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 from django.core.cache import cache
 
@@ -42,6 +44,33 @@ def website_asset(tenant, tenant_owner):
         value="https://example.com",
         ownership_confirmed=True,
     )
+
+
+@pytest.fixture
+def prouver_possession():
+    """Amène un actif à l'état « possession prouvée » (ADR-026), condition de
+    la surveillance continue.
+
+    Passe par le VRAI parcours — ouverture d'une preuve puis vérification —
+    avec le seul contrôle réseau simulé. Écrire la ligne vérifiée directement
+    en base serait plus court, mais la fixture cesserait de dire la vérité le
+    jour où le parcours changerait, et les tests qui s'appuient dessus
+    continueraient de passer sur un état que le produit ne sait plus
+    atteindre.
+    """
+    from apps.monitoring.models import AssetOwnershipProof
+
+    def _prouver(asset):
+        proof = monitoring_services.start_ownership_proof(
+            asset=asset, method=AssetOwnershipProof.Method.DNS_TXT
+        )
+        with patch(
+            "apps.monitoring.checks.ownership.verify_dns_txt",
+            return_value=(True, "Enregistrement TXT trouvé."),
+        ):
+            return monitoring_services.verify_ownership_proof(proof)
+
+    return _prouver
 
 
 class FakeProvider(BreachIntelligenceProvider):

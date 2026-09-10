@@ -16,6 +16,11 @@ vi.mock('../../api/endpoints', () => ({
     listPlans: vi.fn(),
     configuration: vi.fn(),
     audit: vi.fn(),
+    // V2-7 : le catalogue de référentiels sert au formulaire d'intégration
+    // de la veille. Chargé à la demande, à l'ouverture de cet onglet.
+    listReferentials: vi.fn(),
+    watchQueue: vi.fn(),
+    watchSources: vi.fn(),
     listDemoRequests: vi.fn(),
     updateDemoRequest: vi.fn(),
     convertDemoRequest: vi.fn(),
@@ -106,6 +111,16 @@ function mockOk() {
   platformApi.listPlans.mockResolvedValue({ data: [] })
   platformApi.configuration.mockResolvedValue({ data: { sections: [] } })
   platformApi.audit.mockResolvedValue({ data: { entries: [] } })
+  platformApi.listReferentials.mockResolvedValue({ data: [] })
+  // Forme réelle servie par WatchQueueView : summary + health + results.
+  platformApi.watchQueue.mockResolvedValue({
+    data: {
+      summary: { new: 0, kept: 0, integrated: 0, promise: '' },
+      health: { total: 0, active: 0, failing: 0, unconfigured: 0 },
+      results: [],
+    },
+  })
+  platformApi.watchSources.mockResolvedValue({ data: [] })
   platformApi.listDemoRequests.mockResolvedValue({ data: { requests: [], open_count: 0 } })
   platformApi.health.mockResolvedValue({ data: { checks: [], scheduled: [], volumes: {} } })
   platformApi.clientDetail.mockResolvedValue({
@@ -152,6 +167,34 @@ describe('PlatformAdminPage', () => {
     // qui évite d'engager une vente irréalisable.
     expect(screen.getByText('Oui')).toBeInTheDocument()
     expect(screen.getByText('Non — plafond atteint')).toBeInTheDocument()
+  })
+
+  it('reste debout si le catalogue de référentiels ne répond pas', async () => {
+    // Le catalogue ne sert QU'à l'écran de veille. Tant qu'il était chargé
+    // dans le `Promise.all` du socle, sa panne emportait toute la console —
+    // y compris la vue des ressources rares, qui est la raison première
+    // d'ouvrir cette page (revue V2-7).
+    platformApi.listReferentials.mockRejectedValue(new Error('503'))
+
+    render(<PlatformAdminPage />)
+
+    expect(
+      await screen.findByText('Emplacements de surveillance continue')
+    ).toBeInTheDocument()
+    expect(screen.getByText('1 disponible')).toBeInTheDocument()
+  })
+
+  it('ne charge le catalogue de référentiels qu’à l’ouverture de la veille', async () => {
+    const user = userEvent.setup()
+    render(<PlatformAdminPage />)
+    await screen.findByText('Emplacements de surveillance continue')
+
+    // Rien tant qu'on n'a pas ouvert l'onglet.
+    expect(platformApi.listReferentials).not.toHaveBeenCalled()
+
+    await user.click(await screen.findByRole('tab', { name: /Veille/ }))
+
+    await waitFor(() => expect(platformApi.listReferentials).toHaveBeenCalled())
   })
 
   it('ouvre la fiche d’un client depuis la liste', async () => {

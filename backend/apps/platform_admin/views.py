@@ -20,7 +20,9 @@ from apps.billing import capacity, entitlements
 from apps.billing import services as billing_services
 from apps.billing.models import Plan, Subscription
 from apps.marketing.models import DemoRequest
+from apps.monitoring import services as monitoring_services
 from apps.tenants.models import Tenant
+from apps.threat_intelligence import services as ti_services
 
 from . import services
 from .models import AdminAuditLog
@@ -407,4 +409,50 @@ class AdminAuditRawView(PlatformAdminView):
     def get(self, request):
         return Response(
             AdminAuditLogSerializer(services.list_admin_audit(limit=200), many=True).data
+        )
+
+
+class OwnershipReviewView(PlatformAdminView):
+    """Les actifs surveillés dont la possession n'est pas établie (ADR-026).
+
+    Ce sont les actifs déclarés AVANT la V2-1 : ni preuve, ni déclaration
+    tracée, parce que ni l'une ni l'autre n'existaient. Ils **continuent
+    d'être surveillés** — couper un client pour une règle postérieure à son
+    engagement serait le punir de notre propre retard — mais l'exploitant doit
+    savoir ce qui reste à régulariser, et avec qui en parler.
+
+    C'est aussi l'écran qui aurait montré `ratp.fr` déclaré par un client qui
+    ne le possède pas, sans qu'il faille lire la base pour s'en apercevoir.
+    """
+
+    def get(self, request):
+        lignes = []
+        for asset in monitoring_services.assets_needing_ownership_review():
+            monitored = ti_services.get_monitored_asset(tenant=asset.tenant, asset_id=asset.id)
+            lignes.append(
+                {
+                    "asset_id": asset.id,
+                    "asset_value": asset.value,
+                    "asset_type": asset.get_type_display(),
+                    "domain": monitoring_services.asset_domain(asset),
+                    "is_active": asset.is_active,
+                    "declared_at": asset.created_at,
+                    "tenant_id": str(asset.tenant_id),
+                    "tenant_name": asset.tenant.name,
+                    # La surveillance continue est ce qui rend le cas urgent :
+                    # elle occupe un emplacement de la licence et fait parvenir
+                    # des alertes sur un domaine qui n'est peut-être pas celui
+                    # du client.
+                    "under_continuous_monitoring": monitored is not None,
+                }
+            )
+        return Response(
+            {
+                "results": lignes,
+                "count": len(lignes),
+                # Le sous-ensemble à traiter en premier.
+                "under_continuous_monitoring": sum(
+                    1 for ligne in lignes if ligne["under_continuous_monitoring"]
+                ),
+            }
         )

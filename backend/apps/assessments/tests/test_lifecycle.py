@@ -61,7 +61,9 @@ class TestSubmitAnswer:
 
         other_domain = Domain.objects.create(referential=other_referential, code="d", name="D")
         foreign_measure = Measure.objects.create(
+            referential=other_referential,
             domain=other_domain,
+            code="999",
             number=999,
             official_title="Mesure étrangère",
             plain_language="?",

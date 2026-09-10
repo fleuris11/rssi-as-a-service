@@ -187,6 +187,30 @@ function FindingRow({ finding, canReveal, onReveal, retentionDays }) {
         )}
       </div>
       <p className="mt-2 text-sm leading-relaxed text-ink-700">{finding.meaning}</p>
+      {finding.impact && (
+        <p className="mt-2 text-sm leading-relaxed text-ink-600">
+          <span className="font-semibold text-ink-700">Ce que ça implique : </span>
+          {finding.impact}
+        </p>
+      )}
+
+      {/* V2-2 (ADR-027) : ce que la source renvoie et que le produit taisait.
+          Déployé ici plutôt que replié comme dans la liste : le fil
+          d'exposition est la vue où l'on cherche à COMPRENDRE un actif, pas à
+          traiter des lignes une à une. */}
+      {finding.details?.length > 0 && (
+        <dl className="mt-2 grid gap-2 rounded-md bg-ink-50 px-3 py-2 sm:grid-cols-2">
+          {finding.details.map((detail) => (
+            <div key={detail.label}>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+                {detail.label}
+              </dt>
+              <dd className="text-sm text-ink-800">{detail.value}</dd>
+              <dd className="text-xs text-ink-500">{detail.implication}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
 
       {finding.reuse_signals?.map((signal) => (
         <p

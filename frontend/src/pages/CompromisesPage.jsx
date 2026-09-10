@@ -9,6 +9,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { monitoringApi, threatIntelligenceApi } from '../api/endpoints'
 import FeatureGate from '../components/FeatureGate'
+import OwnershipProofModal from '../components/OwnershipProofModal'
 import RevealSecretModal from '../components/RevealSecretModal'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
@@ -73,6 +74,50 @@ function usePolling(fetchJob) {
   )
 }
 
+/**
+ * Ce que la source renvoie, et que le produit taisait (V2-2, ADR-027).
+ *
+ * Rien n'est mis en forme ici : le libellé, la valeur et l'implication
+ * viennent du serveur. Traduire côté écran aurait garanti qu'un jour les
+ * textes divergent entre la liste, le fil d'exposition et l'email — c'est
+ * exactement ce qui était arrivé à la grille tarifaire.
+ *
+ * Replié par défaut : sept lignes de détail sur chaque carte noieraient
+ * « ce qu'il faut faire », qui reste l'information principale.
+ */
+function DetailsFuite({ details }) {
+  const [ouvert, setOuvert] = useState(false)
+  if (!details?.length) return null
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOuvert((v) => !v)}
+        aria-expanded={ouvert}
+        className="text-sm font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700"
+      >
+        {ouvert ? 'Masquer le détail' : `Ce que l’on sait de plus (${details.length})`}
+      </button>
+      {ouvert && (
+        <dl className="mt-2 space-y-2 rounded-md bg-ink-50 px-3 py-2">
+          {details.map((detail) => (
+            <div key={detail.label}>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+                {detail.label}
+              </dt>
+              <dd className="text-sm text-ink-800">{detail.value}</dd>
+              {/* La valeur seule informe ; l'implication permet de décider.
+                  « Raccoon » ne dit rien à un dirigeant. */}
+              <dd className="text-xs text-ink-500">{detail.implication}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  )
+}
+
 function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal }) {
   return (
     <Card>
@@ -103,8 +148,12 @@ function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal })
             </div>
             <p className="mt-0.5 text-xs text-ink-500">
               {SOURCE_LABELS[finding.source_endpoint] || finding.source_endpoint}
-              {finding.identifier_plain && ` — ${finding.identifier_plain}`}
-              {!finding.identifier_plain && finding.identifier_masked && ` — ${finding.identifier_masked}`}
+              {/* V2-2 (ADR-027) : UN seul champ. C'est le serveur qui décide
+                  ce qu'il contient selon le rôle du lecteur — le client ne
+                  reçoit plus les deux formes et n'a donc rien à arbitrer.
+                  L'arbitrage côté écran, c'est une garde qui saute au premier
+                  composant qui oublie de la refaire. */}
+              {finding.identifier && ` — ${finding.identifier}`}
               {finding.breach_date && ` — fuite du ${new Date(finding.breach_date).toLocaleDateString('fr-FR')}`}
             </p>
           </div>
@@ -146,6 +195,13 @@ function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal })
         </div>
       </div>
       <p className="mt-3 rounded-md bg-ink-50 px-3 py-2 text-sm text-ink-700">{finding.meaning}</p>
+      {finding.impact && (
+        <p className="mt-2 rounded-md bg-ink-50 px-3 py-2 text-sm text-ink-700">
+          <span className="font-semibold">Ce que ça implique : </span>
+          {finding.impact}
+        </p>
+      )}
+      <DetailsFuite details={finding.details} />
       <p className="mt-2 rounded-md bg-accent-100/50 px-3 py-2 text-sm text-accent-900">
         <span className="font-semibold">À faire : </span>
         {finding.recommended_action}
@@ -234,7 +290,15 @@ function PanneauSecondaire({ titre, action, children }) {
   )
 }
 
-function MonitoredAssetsPanel({ assets, monitored, onRegister, onUnregister, statut, busyId }) {
+function MonitoredAssetsPanel({
+  assets,
+  monitored,
+  onRegister,
+  onUnregister,
+  onProveOwnership,
+  statut,
+  busyId,
+}) {
   const monitoredAssetIds = new Set(monitored.map((m) => m.asset_id))
   const registrable = assets.filter((a) => !monitoredAssetIds.has(a.id))
 
@@ -288,14 +352,30 @@ function MonitoredAssetsPanel({ assets, monitored, onRegister, onUnregister, sta
               <li key={asset.id} className="flex items-center justify-between gap-3">
                 <span className="truncate text-sm text-ink-700">{asset.value}</span>
                 <FeatureGate feature="realtime_monitoring">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={busyId === asset.id}
-                    onClick={() => onRegister(asset.id)}
-                  >
-                    Surveiller
-                  </Button>
+                  {/* ADR-026 : la surveillance continue exige une possession
+                      PROUVÉE. Proposer « Surveiller » sur un actif non prouvé
+                      mènerait droit à un refus — autant nommer d'emblée
+                      l'étape qui manque. L'analyse ponctuelle, elle, reste
+                      accessible : rien n'est retiré au client. */}
+                  {asset.ownership_state === 'proven' ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={busyId === asset.id}
+                      onClick={() => onRegister(asset.id)}
+                    >
+                      Surveiller
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={busyId === asset.id}
+                      onClick={() => onProveOwnership(asset)}
+                    >
+                      Prouver la possession
+                    </Button>
+                  )}
                 </FeatureGate>
               </li>
             ))}
@@ -380,9 +460,15 @@ export default function CompromisesPage() {
   const [assets, setAssets] = useState([])
   const [monitored, setMonitored] = useState([])
   const [scanning, setScanning] = useState(false)
+  // V2-1 : ce que la dernière analyse a revu sans le remonter dans la liste.
+  // Une fuite déjà traitée n'y réapparaît plus — mais la taire complètement
+  // laisserait croire que le fournisseur ne la remonte plus. On masque, on ne
+  // cache pas.
+  const [dejaTraiteesRevues, setDejaTraiteesRevues] = useState(0)
   const [updatingId, setUpdatingId] = useState(null)
   const [busyAssetId, setBusyAssetId] = useState(null)
   const [revealFindingId, setRevealFindingId] = useState(null)
+  const [ownershipAsset, setOwnershipAsset] = useState(null)
   const [revealAudits, setRevealAudits] = useState(null)
   const [loadingAudits, setLoadingAudits] = useState(false)
 
@@ -438,6 +524,7 @@ export default function CompromisesPage() {
       setScanning(false)
       if (job.status === 'done') {
         const created = job.result_ref?.findings_created ?? 0
+        setDejaTraiteesRevues(job.result_ref?.already_treated_seen ?? 0)
         showToast({
           type: 'success',
           message:
@@ -560,6 +647,25 @@ export default function CompromisesPage() {
 
       <Tabs tabs={TABS} activeId={activeTab} onChange={setActiveTab} />
 
+      {dejaTraiteesRevues > 0 && activeTab !== 'treated' && (
+        <p className="-mt-2 text-sm text-ink-500">
+          La dernière analyse a revu{' '}
+          <strong className="font-medium text-ink-700">
+            {dejaTraiteesRevues} compromission{dejaTraiteesRevues > 1 ? 's' : ''}
+          </strong>{' '}
+          que vous aviez déjà traitée{dejaTraiteesRevues > 1 ? 's' : ''} ou ignorée
+          {dejaTraiteesRevues > 1 ? 's' : ''}. Elle{dejaTraiteesRevues > 1 ? 's' : ''} ne
+          revien{dejaTraiteesRevues > 1 ? 'nent' : 't'} pas dans cette liste.{' '}
+          <button
+            type="button"
+            onClick={() => setActiveTab('treated')}
+            className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700"
+          >
+            Les consulter
+          </button>
+        </p>
+      )}
+
       {findings.length === 0 ? (
         activeTab === 'open' ? (
           // Une absence de fuite n'est pas une absence de données : c'est le
@@ -623,6 +729,7 @@ export default function CompromisesPage() {
         assets={assets}
         monitored={monitored}
         onRegister={handleRegister}
+        onProveOwnership={setOwnershipAsset}
         onUnregister={handleUnregister}
         statut={status}
         busyId={busyAssetId}
@@ -631,6 +738,13 @@ export default function CompromisesPage() {
       {isTenantAdmin && (
         <RevealAuditPanel audits={revealAudits} onLoad={loadRevealAudits} loading={loadingAudits} />
       )}
+
+      <OwnershipProofModal
+        open={ownershipAsset !== null}
+        asset={ownershipAsset}
+        onClose={() => setOwnershipAsset(null)}
+        onProven={loadAll}
+      />
 
       <RevealSecretModal
         open={revealFindingId !== null}

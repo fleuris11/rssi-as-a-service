@@ -120,12 +120,30 @@ class AIJob(TenantScopedModel):
 
 
 class GeneratedDocument(TenantScopedModel):
-    """US-4.1: charte informatique — versioned, brouillon/validé, markdown.
-    Each (re)generation creates a new row with an incremented ``version``
-    for its (tenant, type); editing in place keeps the same version."""
+    """La bibliothèque documentaire du client — versionnée, brouillon/validé,
+    en Markdown. Chaque (re)génération crée une ligne avec un ``version``
+    incrémenté pour son (tenant, type) ; l'édition sur place garde la version.
+
+    V2-5 : le modèle portait un seul type, la charte informatique rédigée par
+    l'IA. Il en porte désormais sept, dont six **composés** — assemblés par du
+    code à partir des données de la plateforme, sans appel d'IA (ADR-032).
+    ``source`` porte cette distinction, parce qu'elle change ce qu'on promet
+    au lecteur : un document composé est reproductible et se relit tel quel,
+    un document rédigé demande une relecture attentive.
+    """
 
     class DocumentType(models.TextChoices):
+        SECURITY_POLICY = "security_policy", "Politique de sécurité du SI"
         IT_CHARTER = "it_charter", "Charte informatique"
+        INCIDENT_PROCEDURE = "incident_procedure", "Procédure de gestion des incidents"
+        INCIDENT_REGISTER = "incident_register", "Registre des incidents"
+        CONTINUITY_PLAN = "continuity_plan", "Plan de continuité simplifié"
+        AWARENESS_SHEET = "awareness_sheet", "Fiche de sensibilisation"
+        COMMITTEE_REPORT = "committee_report", "Rapport de comité de sécurité"
+
+    class Source(models.TextChoices):
+        COMPOSED = "composed", "Composé à partir de vos données"
+        AI = "ai", "Rédigé par l'IA, à relire"
 
     class Status(models.TextChoices):
         GENERATING = "generating", "Génération en cours"
@@ -134,6 +152,10 @@ class GeneratedDocument(TenantScopedModel):
         FAILED = "failed", "Échec de génération"
 
     type = models.CharField(max_length=30, choices=DocumentType.choices)
+    # Défaut ``AI`` : c'est ce qu'étaient toutes les lignes existantes à la
+    # migration, et un défaut qui ment sur l'historique serait pire que pas
+    # de champ du tout.
+    source = models.CharField(max_length=10, choices=Source.choices, default=Source.AI)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.GENERATING)
     version = models.PositiveIntegerField(default=1)
     content_markdown = models.TextField(blank=True)

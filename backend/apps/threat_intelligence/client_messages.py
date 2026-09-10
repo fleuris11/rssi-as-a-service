@@ -72,6 +72,33 @@ MONITORING_CAPACITY_REACHED = (
     "dans votre offre. Retirez-en un, ou contactez-nous pour en ajouter."
 )
 
+# --- Le nom du fournisseur, nulle part -------------------------------------
+#
+# RÈGLE ABSOLUE (V2-2, ADR-027). Le nom de la source de renseignement
+# n'apparaît JAMAIS côté client : ni à l'écran, ni dans un message d'erreur,
+# ni dans un export, ni dans un email. Ce n'est pas une pudeur : c'est un
+# actif commercial. Un client qui le connaît peut aller voir le tarif public
+# de la source, et le rapport entre ce qu'il paie et ce que coûte la donnée
+# devient une conversation qu'on n'a pas choisi d'avoir.
+#
+# Cette liste-ci est plus ÉTROITE que `FORBIDDEN_IN_CLIENT_MESSAGES`, et c'est
+# volontaire : elle est balayée sur TOUT ce qui part vers un client, y compris
+# des textes légitimes où « api » ou « http » apparaissent sans rien trahir
+# (l'adresse d'un site surveillé, par exemple). Deux listes pour deux
+# portées — une seule, trop large, aurait fini par être désactivée.
+VENDOR_NAMES = (
+    "breachsense",
+    "anthropic",
+    "claude",
+    "haiku",
+    "sonnet",
+    # Le fournisseur écarté au profit de l'actuel (ADR-013) : le nommer
+    # révélerait la même chose en creux.
+    "have i been pwned",
+    "hibp",
+)
+
+
 # --- Vocabulaire interdit ---------------------------------------------------
 # Vérifié par le test : aucun de ces fragments ne doit apparaître dans un
 # message destiné à un client. La liste est volontairement large — mieux vaut

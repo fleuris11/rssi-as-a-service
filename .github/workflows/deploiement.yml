@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       commit:
-        description: "Commit ou branche à déployer (défaut : main)"
+        description: "Commit, branche ou TAG à déployer (défaut : main ; retour arrière : v1.0-production)"
         required: false
         default: "main"
       raison:
@@ -29,6 +29,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      # `ref` accepte indifféremment un SHA, une branche ou un TAG : c'est ce
+      # qui rend le retour arrière praticable (déployer `v1.0-production` sans
+      # avoir à retrouver son SHA). L'environnement `production` ne restreint
+      # pas les refs déployables — s'il venait à le faire, il faudrait y
+      # autoriser explicitement les tags, sans quoi ce workflow refuserait le
+      # retour arrière au moment précis où on en a besoin.
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.commit }}
@@ -39,7 +45,16 @@ jobs:
         run: |
           sha=$(git rev-parse HEAD)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "Commit visé : $sha"
+
+          # Le SHA ne dit pas ce qu'on a demandé. Sous la pression d'un retour
+          # arrière, savoir qu'on a bien visé `v1.0-production` et pas `main`
+          # vaut mieux que relire quarante caractères hexadécimaux.
+          etiquette=$(git describe --tags --exact-match "$sha" 2>/dev/null || echo "-")
+          echo "etiquette=$etiquette" >> "$GITHUB_OUTPUT"
+
+          echo "Ref demandée : ${{ inputs.commit }}"
+          echo "Commit visé  : $sha"
+          echo "Tag exact    : $etiquette"
           git log --oneline -1 "$sha"
 
       # Garde-fou principal : on ne déploie pas du rouge. CLAUDE.md l'interdit
@@ -124,7 +139,9 @@ jobs:
             echo ""
             echo "| | |"
             echo "|---|---|"
+            echo "| Ref demandée | \`${{ inputs.commit }}\` |"
             echo "| Commit | \`${{ steps.cible.outputs.sha }}\` |"
+            echo "| Tag exact | \`${{ steps.cible.outputs.etiquette }}\` |"
             echo "| Motif | ${{ inputs.raison }} |"
             echo "| Déclenché par | @${{ github.actor }} |"
             echo "| Résultat | ${{ job.status }} |"

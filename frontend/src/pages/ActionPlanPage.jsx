@@ -1,9 +1,10 @@
-import { Zap } from 'lucide-react'
+import { CalendarClock, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { actionsApi, tenantsApi } from '../api/endpoints'
 import Badge from '../components/ui/Badge'
 import Card from '../components/ui/Card'
+import { TechnicalDetail } from '../components/DisplayProfile'
 import EmptyState from '../components/ui/EmptyState'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
@@ -53,7 +54,13 @@ function ActionCard({ item, members, updatingId, onUpdate }) {
       </div>
 
       <div>
-        <p className="text-sm font-medium text-ink-800">{item.measure.official_title}</p>
+        {/* L'énoncé en langage clair porte la carte, l'intitulé officiel du
+            référentiel est juste dessous, replié : « ce qu'on me demande de
+            faire » avant « comment la norme le formule ». Les deux restent
+            dans la page (ADR-031). */}
+        <p className="text-sm font-medium text-ink-800">
+          {item.measure.statement || item.measure.official_title}
+        </p>
         <p className="mt-0.5 text-xs text-ink-500">{item.domain_name}</p>
       </div>
 
@@ -65,6 +72,35 @@ function ActionCard({ item, members, updatingId, onUpdate }) {
           Effort {LEVEL_LABEL[item.measure.effort]}
         </span>
       </div>
+
+      <TechnicalDetail summary="Référence de la mesure">
+        <dl className="space-y-1 text-ink-600">
+          <div>
+            <dt className="inline font-medium">Intitulé officiel : </dt>
+            <dd className="inline">{item.measure.official_title}</dd>
+          </div>
+          <div>
+            <dt className="inline font-medium">Référentiel : </dt>
+            <dd className="inline">
+              {item.referential_name} — mesure {item.measure.code}
+            </dd>
+          </div>
+          {item.measure.level && (
+            <div>
+              <dt className="inline font-medium">Niveau : </dt>
+              <dd className="inline">{item.measure.level}</dd>
+            </div>
+          )}
+          <div>
+            <dt className="inline font-medium">Poids dans le score : </dt>
+            <dd className="inline">{item.measure.weight}</dd>
+          </div>
+          <div>
+            <dt className="inline font-medium">Priorité (impact / effort) : </dt>
+            <dd className="inline">{item.priority}</dd>
+          </div>
+        </dl>
+      </TechnicalDetail>
 
       <div className="flex items-center gap-2">
         <AssigneeAvatar email={item.assignee_email} />
@@ -82,6 +118,29 @@ function ActionCard({ item, members, updatingId, onUpdate }) {
             </option>
           ))}
         </select>
+      </div>
+
+      {/* V2-3 (ADR-028) : sans échéance, aucune action ne peut être « en
+          retard », et l'indicateur du comité resterait à zéro pour tout le
+          monde. Le champ est facultatif — une action sans date n'est pas en
+          faute, elle est sans date, ce que le rapport dit séparément. */}
+      <div className="flex items-center gap-2">
+        <CalendarClock
+          className={`size-4 shrink-0 ${item.is_overdue ? 'text-critical-strong' : 'text-ink-400'}`}
+          aria-hidden="true"
+        />
+        <input
+          type="date"
+          aria-label="Échéance"
+          value={item.due_date ?? ''}
+          disabled={updatingId === item.id}
+          onChange={(e) => onUpdate(item.id, { due_date: e.target.value || null })}
+          className={`transition-smooth min-w-0 flex-1 rounded-md border px-2 py-1 text-xs focus-visible:outline-2 focus-visible:outline-brand-600 ${
+            item.is_overdue
+              ? 'border-critical-strong text-critical-strong'
+              : 'border-ink-200 text-ink-700'
+          }`}
+        />
       </div>
 
       <div className="flex gap-2 pt-0.5">

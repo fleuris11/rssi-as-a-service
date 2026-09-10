@@ -24,7 +24,20 @@ urlpatterns = [
     # Back-office plateforme (Phase 10) : abonnements, offres, ressources
     # rares, santé. Garde IsAdminUser, jamais les permissions de tenant.
     path("api/v1/platform/", include("apps.platform_admin.urls")),
+    path(
+        "api/v1/platform/access-requests/",
+        include("apps.access_requests.console_urls"),
+    ),
+    # Veille reglementaire (V2-7) : console UNIQUEMENT. Sous le namespace
+    # plateforme, jamais sous un namespace client — une suggestion non triee
+    # n'a rien a faire sous les yeux d'un client.
+    path("api/v1/platform/watch/", include("apps.regulatory_watch.urls")),
     path("api/v1/billing/", include("apps.billing.urls")),
+    path("api/v1/reporting/", include("apps.reporting.urls")),
+    # Demandes d'un client a l'exploitant. Le meme modele sert des deux cotes :
+    # ici le depot et le suivi (permissions de tenant), plus bas dans le
+    # namespace plateforme la file et les reponses (permissions de console).
+    path("api/v1/access-requests/", include("apps.access_requests.urls")),
     # Hors du namespace tenant-scopé habituel : pas de JWT/X-Tenant-Id côté
     # Breachsense, authentification HTTP Basic dédiée (ADR-013 §7).
     path(

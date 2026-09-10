@@ -7,6 +7,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from . import services
 from .serializers import (
+    DisplayProfileSerializer,
     InvitationAcceptSerializer,
     LoginSerializer,
     RegisterSerializer,
@@ -135,6 +136,20 @@ class MeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        return Response(UserSerializer(request.user).data)
+
+    def patch(self, request):
+        """Change le profil d'affichage (V2-5, ADR-031), et rien d'autre.
+
+        Volontairement le seul champ modifiable ici : l'email est
+        l'identifiant de connexion, le nom est repris dans des documents
+        signés, et ni l'un ni l'autre ne se change à la volée depuis un
+        bouton de la barre du haut.
+        """
+        serializer = DisplayProfileSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        request.user.display_profile = serializer.validated_data["display_profile"]
+        request.user.save(update_fields=["display_profile"])
         return Response(UserSerializer(request.user).data)
 
 

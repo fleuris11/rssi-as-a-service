@@ -5,18 +5,27 @@ already-resolved tenant/asset, so it consistently uses ``all_objects``
 with an explicit ``tenant=`` filter rather than the request-scoped one.
 """
 
+import logging
+import secrets
 from datetime import timedelta
 from urllib.parse import urlparse
 
+from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Max, Q
+from django.core.mail import send_mail
+from django.db import transaction
+from django.db.models import Count, Max, Q
 from django.utils import timezone
 
+from . import ownership_messages
+from .checks import ownership as ownership_checks
 from .checks.email_dns import check_email_dns
 from .checks.http_uptime import check_http_uptime
 from .checks.security_headers import check_security_headers
 from .checks.ssl_certificate import check_ssl_certificate
-from .models import Alert, Asset, CheckResult
+from .models import Alert, Asset, AssetOwnershipAttestation, AssetOwnershipProof, CheckResult
+
+logger = logging.getLogger(__name__)
 
 # Written every minute by tasks.heartbeat (Beat + a worker on the
 # monitoring queue), read by config.views.healthz_worker — proves the
@@ -62,18 +71,44 @@ CHECK_TYPES_BY_ASSET_TYPE = {
 # --- Assets ------------------------------------------------------------
 
 
-def create_asset(*, tenant, user, type: str, value: str, ownership_confirmed: bool) -> Asset:
+def create_asset(
+    *,
+    tenant,
+    user,
+    type: str,
+    value: str,
+    ownership_confirmed: bool,
+    ip_address: str = "",
+    user_agent: str = "",
+) -> Asset:
+    """Déclare un actif, et TRACE la déclaration sur l'honneur qui l'autorise.
+
+    La case cochée ne laissait aucune trace : ni qui, ni quand, ni sur quel
+    actif. C'est ce qui manquait le jour où un client a déclaré le domaine
+    d'une autre organisation — on ne pouvait même pas dire qui l'avait
+    affirmé. La déclaration devient une ligne datée et nominative
+    (``AssetOwnershipAttestation``, ADR-026), et c'est elle qui autorise
+    l'analyse ponctuelle.
+
+    L'actif et sa déclaration sont écrits dans la même transaction : un actif
+    sans déclaration serait exactement l'état qu'on cherche à ne plus créer.
+    """
     if not ownership_confirmed:
         raise InvalidAssetError(
             "La case d'engagement de propriété doit être cochée pour déclarer un actif."
         )
-    return Asset.all_objects.create(
-        tenant=tenant,
-        type=type,
-        value=value,
-        ownership_confirmed=True,
-        created_by=user,
-    )
+    with transaction.atomic():
+        asset = Asset.all_objects.create(
+            tenant=tenant,
+            type=type,
+            value=value,
+            ownership_confirmed=True,
+            created_by=user,
+        )
+        record_ownership_attestation(
+            asset=asset, user=user, ip_address=ip_address, user_agent=user_agent
+        )
+    return asset
 
 
 def list_assets(tenant):
@@ -92,6 +127,268 @@ def set_asset_active(asset: Asset, is_active: bool) -> Asset:
 
 def delete_asset(asset: Asset) -> None:
     asset.delete()
+
+
+# --- Possession d'un domaine (V2-1, ADR-026) --------------------------------
+#
+# ADR-010 posait « un actif n'est verifie que s'il est declare ». La
+# production a montre la faille de ce principe : **declarer n'est pas
+# posseder**. Un client a declare, puis fait surveiller, le domaine d'une
+# autre organisation.
+#
+# La regle retenue distingue les deux gestes selon ce qu'ils engagent :
+#
+#   - **surveillance continue** — durable, invisible du dehors, elle occupe
+#     un emplacement de la licence plateforme et fera parvenir des alertes
+#     pendant des mois : elle exige une PREUVE ;
+#   - **analyse ponctuelle** — un geste unique, decide et date, dont le
+#     client repond : une declaration sur l'honneur suffit, mais elle est
+#     TRACEE (qui, quand, quel actif).
+
+
+class OwnershipError(MonitoringError):
+    """Regle de possession non respectee."""
+
+
+class OwnershipNotProvenError(OwnershipError):
+    pass
+
+
+# Adresses generiques admises pour la validation par email. Liste FERMEE, et
+# c'est tout l'interet : laisser le client saisir l'adresse de son choix
+# reviendrait a lui demander de s'ecrire a lui-meme. Ce sont les boites que
+# les autorites de certification utilisent pour la meme raison — seul
+# quelqu'un qui administre reellement le domaine y a acces.
+OWNERSHIP_EMAIL_LOCAL_PARTS = ("admin", "administrator", "hostmaster", "postmaster", "webmaster")
+
+
+def asset_domain(asset: Asset) -> str:
+    """Domaine d'un actif, quel que soit son type. Un actif « site web »
+    porte une URL complete, un actif « domaine email » porte le domaine nu."""
+    if asset.type == Asset.Type.WEBSITE:
+        return urlparse(asset.value).hostname or asset.value
+    return asset.value
+
+
+def record_ownership_attestation(
+    *, asset: Asset, user, ip_address: str = "", user_agent: str = ""
+) -> AssetOwnershipAttestation:
+    """Trace la declaration sur l'honneur qui autorise une analyse ponctuelle."""
+    return AssetOwnershipAttestation.all_objects.create(
+        tenant=asset.tenant,
+        asset=asset,
+        user=user,
+        statement=ownership_messages.ATTESTATION_STATEMENT,
+        ip_address=ip_address or None,
+        user_agent=user_agent[:255],
+    )
+
+
+def list_ownership_attestations(asset: Asset):
+    return AssetOwnershipAttestation.all_objects.filter(asset=asset).select_related("user")
+
+
+def is_ownership_proven(asset: Asset) -> bool:
+    return AssetOwnershipProof.all_objects.filter(
+        asset=asset, status=AssetOwnershipProof.Status.VERIFIED
+    ).exists()
+
+
+def has_ownership_attestation(asset: Asset) -> bool:
+    return AssetOwnershipAttestation.all_objects.filter(asset=asset).exists()
+
+
+def needs_ownership_review(asset: Asset) -> bool:
+    """Actif « a verifier » : ni preuve, ni declaration tracee.
+
+    Derive plutot que stocke. Un drapeau aurait du etre pose par une
+    migration, puis maintenu a jour a chaque preuve validee — deux occasions
+    de diverger de la realite. Ici la question n'a qu'une seule reponse
+    possible, celle que portent les tables.
+
+    Ce sont exactement les actifs declares AVANT la V2-1 : ils continuent
+    d'etre surveilles (les couper punirait le client d'une regle qui
+    n'existait pas quand il a declare), mais ils apparaissent dans l'ecran de
+    regularisation de la console.
+    """
+    return not is_ownership_proven(asset) and not has_ownership_attestation(asset)
+
+
+def ownership_state(asset: Asset) -> str:
+    if is_ownership_proven(asset):
+        return "proven"
+    if has_ownership_attestation(asset):
+        return "declared"
+    return "to_review"
+
+
+def assets_needing_ownership_review():
+    """Tous tenants confondus — ecran de regularisation de la console.
+
+    L'une des rares lectures non scopees de ce module, et pour la meme raison
+    que le pool de surveillance : la question posee est celle de l'exploitant
+    (« que reste-t-il a regulariser sur la plateforme ? »), pas celle d'un
+    client sur ses propres actifs.
+    """
+    return (
+        Asset.all_objects.filter(ownership_proofs__isnull=True, ownership_attestations__isnull=True)
+        .select_related("tenant")
+        .order_by("tenant__name", "value")
+    )
+
+
+def get_ownership_proof(*, asset: Asset, proof_id: int) -> AssetOwnershipProof | None:
+    return AssetOwnershipProof.all_objects.filter(asset=asset, id=proof_id).first()
+
+
+def list_ownership_proofs(asset: Asset):
+    return AssetOwnershipProof.all_objects.filter(asset=asset)
+
+
+def start_ownership_proof(
+    *, asset: Asset, method: str, user=None, email_recipient: str = ""
+) -> AssetOwnershipProof:
+    """Ouvre une verification et renvoie ce que le client doit publier.
+
+    Une preuve deja VERIFIEE n'est pas rejouee : la contrainte d'unicite
+    l'interdirait de toute facon, et redemander une preuve acquise serait une
+    perte de temps pour le client.
+    """
+    if method not in AssetOwnershipProof.Method.values:
+        raise OwnershipError("Methode de verification inconnue.")
+    if is_ownership_proven(asset):
+        raise OwnershipError("La possession de cet actif est deja prouvee.")
+
+    domaine = asset_domain(asset)
+    if method == AssetOwnershipProof.Method.EMAIL:
+        partie_locale = (email_recipient or "").split("@")[0].strip().lower()
+        if partie_locale not in OWNERSHIP_EMAIL_LOCAL_PARTS:
+            raise OwnershipError(ownership_messages.email_choices_message(domaine))
+        email_recipient = f"{partie_locale}@{domaine}"
+    else:
+        email_recipient = ""
+
+    # Les tentatives en cours de la MEME methode sont remplacees : deux jetons
+    # valides simultanement pour la meme methode ne servent qu'a faire publier
+    # le mauvais.
+    AssetOwnershipProof.all_objects.filter(
+        asset=asset,
+        method=method,
+        status__in=[AssetOwnershipProof.Status.PENDING, AssetOwnershipProof.Status.FAILED],
+    ).delete()
+
+    proof = AssetOwnershipProof.all_objects.create(
+        tenant=asset.tenant,
+        asset=asset,
+        method=method,
+        token=secrets.token_urlsafe(24),
+        email_recipient=email_recipient,
+        created_by=user,
+    )
+    if method == AssetOwnershipProof.Method.EMAIL:
+        _send_ownership_email(proof)
+    return proof
+
+
+def _send_ownership_email(proof: AssetOwnershipProof) -> None:
+    domaine = asset_domain(proof.asset)
+    try:
+        send_mail(
+            subject=ownership_messages.email_subject(domaine),
+            message=ownership_messages.email_body(
+                domaine=domaine, entreprise=proof.asset.tenant.name, jeton=proof.token
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[proof.email_recipient],
+            fail_silently=False,
+        )
+    except Exception as exc:  # noqa: BLE001 — un echec d'envoi n'est pas une panne
+        # Journalise SANS l'adresse : elle designe une organisation tierce
+        # tant que la possession n'est justement pas prouvee.
+        logger.warning(
+            "Envoi de l'email de verification de possession impossible (actif %s) : %s",
+            proof.asset_id,
+            exc,
+        )
+        proof.status = AssetOwnershipProof.Status.FAILED
+        proof.last_attempt_at = timezone.now()
+        proof.last_error = ownership_messages.EMAIL_SEND_FAILED
+        proof.save(update_fields=["status", "last_attempt_at", "last_error"])
+
+
+def ownership_instructions(proof: AssetOwnershipProof) -> dict:
+    """Ce que le client doit faire, dans ses mots. Calcule cote serveur pour
+    que l'ecran, l'email et le support disent exactement la meme chose."""
+    domaine = asset_domain(proof.asset)
+    if proof.method == AssetOwnershipProof.Method.DNS_TXT:
+        return {
+            "method": proof.method,
+            "domain": domaine,
+            "record_name": domaine,
+            "record_type": "TXT",
+            "record_value": ownership_checks.expected_dns_record(proof.token),
+            "how_to": ownership_messages.DNS_TXT_HOW_TO.format(domaine=domaine),
+        }
+    if proof.method == AssetOwnershipProof.Method.HTTP_FILE:
+        return {
+            "method": proof.method,
+            "domain": domaine,
+            "file_url": f"https://{domaine}{ownership_checks.HTTP_FILE_PATH}",
+            "file_content": proof.token,
+            "how_to": ownership_messages.HTTP_FILE_HOW_TO.format(
+                chemin=ownership_checks.HTTP_FILE_PATH, domaine=domaine
+            ),
+        }
+    return {
+        "method": proof.method,
+        "domain": domaine,
+        "email_recipient": proof.email_recipient,
+        "how_to": ownership_messages.EMAIL_HOW_TO.format(adresse=proof.email_recipient),
+    }
+
+
+def verify_ownership_proof(
+    proof: AssetOwnershipProof, *, submitted_token: str = ""
+) -> AssetOwnershipProof:
+    """Controle la preuve et met son statut a jour.
+
+    Ne leve pas quand la preuve n'est pas encore la : « pas encore publie »
+    est un etat normal du parcours, pas une erreur. Ce qui leve, c'est ce qui
+    empeche de conclure (DNS injoignable, domaine non resolvable).
+    """
+    domaine = asset_domain(proof.asset)
+    proof.last_attempt_at = timezone.now()
+
+    try:
+        if proof.method == AssetOwnershipProof.Method.DNS_TXT:
+            ok, detail = ownership_checks.verify_dns_txt(domaine, proof.token)
+        elif proof.method == AssetOwnershipProof.Method.HTTP_FILE:
+            ok, detail = ownership_checks.verify_http_file(domaine, proof.token)
+        else:
+            ok = secrets.compare_digest(submitted_token.strip(), proof.token)
+            detail = "Code accepte." if ok else ownership_messages.EMAIL_CODE_MISMATCH
+    except ownership_checks.OwnershipCheckError as exc:
+        proof.status = AssetOwnershipProof.Status.FAILED
+        proof.last_error = str(exc)
+        proof.save(update_fields=["status", "last_attempt_at", "last_error"])
+        return proof
+
+    if ok:
+        proof.status = AssetOwnershipProof.Status.VERIFIED
+        proof.verified_at = timezone.now()
+        proof.last_error = ""
+        proof.save(update_fields=["status", "verified_at", "last_attempt_at", "last_error"])
+    else:
+        proof.status = AssetOwnershipProof.Status.FAILED
+        proof.last_error = detail
+        proof.save(update_fields=["status", "last_attempt_at", "last_error"])
+    return proof
+
+
+def ensure_ownership_proven(asset: Asset) -> None:
+    """Garde appelee avant toute activation de la surveillance continue."""
+    if not is_ownership_proven(asset):
+        raise OwnershipNotProvenError(ownership_messages.OWNERSHIP_REQUIRED)
 
 
 # --- Running checks ------------------------------------------------------
@@ -379,6 +676,75 @@ def get_asset_dashboard(asset: Asset) -> dict:
 
 def get_tenant_dashboard(tenant) -> list[dict]:
     return [get_asset_dashboard(asset) for asset in list_assets(tenant)]
+
+
+# --- Indicateurs pour le comité (V2-3, ADR-028) -----------------------------
+
+
+def monitoring_indicators(tenant, *, start, end) -> dict:
+    """Surveillance : disponibilité sur la période, et certificats à échéance.
+
+    La disponibilité est agrégée EN BASE — deux compteurs sur la table des
+    contrôles, jamais une boucle sur les résultats. Un actif contrôlé toutes
+    les cinq minutes produit 8 640 lignes par mois : les charger pour en
+    compter une proportion serait exactement la faute que le fil d'exposition
+    a déjà coûtée.
+    """
+    controles = CheckResult.all_objects.filter(
+        tenant=tenant,
+        check_type=CheckResult.CheckType.HTTP_UPTIME,
+        checked_at__gte=start,
+        checked_at__lte=end,
+    )
+    comptes = controles.aggregate(
+        total=Count("id"),
+        ok=Count("id", filter=Q(status=CheckResult.Status.OK)),
+    )
+    disponibilite = round(100 * comptes["ok"] / comptes["total"], 2) if comptes["total"] else None
+
+    actifs = Asset.all_objects.filter(tenant=tenant)
+    alertes = Alert.all_objects.filter(tenant=tenant)
+
+    return {
+        "assets_total": actifs.count(),
+        "assets_active": actifs.filter(is_active=True).count(),
+        "uptime_percentage": disponibilite,
+        "checks_in_period": comptes["total"],
+        "failed_checks_in_period": comptes["total"] - comptes["ok"],
+        "open_alerts": alertes.filter(is_open=True).count(),
+        "alerts_opened_in_period": alertes.filter(opened_at__gte=start, opened_at__lte=end).count(),
+        "alerts_resolved_in_period": alertes.filter(
+            resolved_at__gte=start, resolved_at__lte=end
+        ).count(),
+        "certificates": expiring_certificates(tenant),
+    }
+
+
+def expiring_certificates(tenant, *, within_days: int = 60) -> list[dict]:
+    """Certificats dont l'échéance approche, du plus urgent au moins urgent.
+
+    Lit le dernier contrôle TLS de chaque actif : un tenant a quelques actifs,
+    pas des milliers, et l'information vit dans le JSON de détail — il n'y a
+    rien à agréger en base ici.
+    """
+    proches = []
+    for asset in Asset.all_objects.filter(tenant=tenant, type=Asset.Type.WEBSITE, is_active=True):
+        dernier = get_latest_check(asset, CheckResult.CheckType.SSL_CERTIFICATE)
+        if dernier is None:
+            continue
+        jours = (dernier.details or {}).get("days_left")
+        if jours is None or jours > within_days:
+            continue
+        proches.append(
+            {
+                "asset_id": asset.id,
+                "asset_value": asset.value,
+                "days_left": jours,
+                "expires_at": (dernier.details or {}).get("expires_at"),
+            }
+        )
+    proches.sort(key=lambda ligne: ligne["days_left"])
+    return proches
 
 
 # --- Worker health -----------------------------------------------------------

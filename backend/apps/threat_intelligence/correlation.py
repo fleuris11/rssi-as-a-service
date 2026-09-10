@@ -119,8 +119,17 @@ def correlate(findings: list[BreachFinding], *, tenant_emails: set[str], assets)
 
     # Un identifiant masqué ("j.••••@ex••••.com") ne peut pas servir de clé de
     # croisement : plusieurs comptes distincts produisent le même masque. On
-    # ne croise donc que sur des identifiants en clair — c'est-à-dire, par
-    # construction (ADR-014 §4), ceux des membres du tenant.
+    # ne croise donc que sur des identifiants en clair.
+    #
+    # Depuis la V2-2 (ADR-027), TOUTE fuite en porte un : le croisement ne se
+    # limite plus aux membres du tenant, il couvre l'ensemble des adresses
+    # remontées. C'est un élargissement voulu — une réutilisation entre le
+    # compte personnel d'un salarié et son accès professionnel est précisément
+    # le cas que l'ADR-017 voulait rendre visible, et c'était justement celui
+    # que le masquage empêchait de voir.
+    #
+    # Les fuites ingérées AVANT la V2-2 et jamais réobservées depuis n'ont pas
+    # d'identifiant en clair : elles restent hors du croisement, comme avant.
     by_identifier: dict[str, list[BreachFinding]] = {}
     for finding in relevant:
         if not finding.identifier_plain:

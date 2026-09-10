@@ -39,6 +39,7 @@ CHARTER_GENERATION = "charter_generation"
 # offre existera, c'est-à-dire quand il y aura quelque chose à étendre.
 # Raisonnement complet : docs/adr/025-retrait-de-la-cle-historique-etendu.md
 REALTIME_MONITORING = "realtime_monitoring"
+WATCHED_ACCOUNTS = "watched_accounts"
 
 REGISTRY: dict[str, Feature] = {
     f.key: f
@@ -81,6 +82,12 @@ REGISTRY: dict[str, Feature] = {
             CHARTER_GENERATION,
             "Génération de charte informatique",
             "Produisez une charte informatique adaptée à votre entreprise, à relire et valider.",
+        ),
+        Feature(
+            WATCHED_ACCOUNTS,
+            "Surveillance de comptes désignés",
+            "Faites surveiller des comptes précis — dirigeants, comptes sensibles — "
+            "indépendamment de vos noms de domaine, et lancez l'analyse quand vous le décidez.",
         ),
         Feature(
             REALTIME_MONITORING,

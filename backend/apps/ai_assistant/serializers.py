@@ -4,11 +4,19 @@ from .models import AIJob, Conversation, GeneratedDocument, Message
 
 
 class GeneratedDocumentSerializer(serializers.ModelSerializer):
+    # Le libellé vient du modèle plutôt que du frontend : sept types, sept
+    # noms à tenir synchronisés des deux côtés sinon.
+    type_label = serializers.CharField(source="get_type_display", read_only=True)
+    source_label = serializers.CharField(source="get_source_display", read_only=True)
+
     class Meta:
         model = GeneratedDocument
         fields = [
             "id",
             "type",
+            "type_label",
+            "source",
+            "source_label",
             "status",
             "version",
             "content_markdown",

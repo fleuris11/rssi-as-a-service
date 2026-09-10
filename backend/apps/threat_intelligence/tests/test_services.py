@@ -111,7 +111,30 @@ class TestCreateScanJob:
 
 
 class TestMonitoredAssetPool:
-    def test_register_creates_monitored_asset(self, tenant, website_asset, fake_provider, settings):
+    def test_register_refuses_an_asset_whose_ownership_is_not_proven(
+        self, tenant, website_asset, fake_provider, settings
+    ):
+        """ADR-026 : la surveillance continue exige une possession PROUVÉE.
+
+        La garde est posée AVANT toute autre : un domaine dont on ne sait pas
+        s'il appartient au client ne doit ni consommer un emplacement de la
+        licence, ni faire l'objet d'une requête sortante à son sujet.
+        """
+        settings.BREACHSENSE_WEBHOOK_CALLBACK_URL = "https://api.example.com/webhook"
+        with patch("apps.threat_intelligence.services.get_provider", return_value=fake_provider):
+            with pytest.raises(services.OwnershipNotProvenError):
+                services.register_monitored_asset(tenant=tenant, asset=website_asset)
+
+        assert fake_provider.registered == []
+        assert MonitoredAsset.all_objects.count() == 0
+
+    def test_register_creates_monitored_asset(
+        self, tenant, website_asset, fake_provider, settings, prouver_possession
+    ):
+        # ADR-026 : la surveillance continue exige une possession
+        # PROUVEE. Sans cette ligne, le test echoue sur la garde —
+        # ce qui est precisement ce qu'elle doit faire.
+        prouver_possession(website_asset)
         settings.BREACHSENSE_WEBHOOK_CALLBACK_URL = "https://api.example.com/webhook"
         with patch("apps.threat_intelligence.services.get_provider", return_value=fake_provider):
             monitored = services.register_monitored_asset(tenant=tenant, asset=website_asset)
@@ -120,16 +143,24 @@ class TestMonitoredAssetPool:
         assert fake_provider.registered == ["example.com"]
 
     def test_register_refuses_without_webhook_url_configured(
-        self, tenant, website_asset, fake_provider, settings
+        self, tenant, website_asset, fake_provider, settings, prouver_possession
     ):
+        # ADR-026 : la surveillance continue exige une possession
+        # PROUVEE. Sans cette ligne, le test echoue sur la garde —
+        # ce qui est precisement ce qu'elle doit faire.
+        prouver_possession(website_asset)
         settings.BREACHSENSE_WEBHOOK_CALLBACK_URL = ""
         with patch("apps.threat_intelligence.services.get_provider", return_value=fake_provider):
             with pytest.raises(services.WebhookNotConfiguredError):
                 services.register_monitored_asset(tenant=tenant, asset=website_asset)
 
     def test_register_refuses_when_already_monitored(
-        self, tenant, website_asset, fake_provider, settings
+        self, tenant, website_asset, fake_provider, settings, prouver_possession
     ):
+        # ADR-026 : la surveillance continue exige une possession
+        # PROUVEE. Sans cette ligne, le test echoue sur la garde —
+        # ce qui est precisement ce qu'elle doit faire.
+        prouver_possession(website_asset)
         settings.BREACHSENSE_WEBHOOK_CALLBACK_URL = "https://api.example.com/webhook"
         with patch("apps.threat_intelligence.services.get_provider", return_value=fake_provider):
             services.register_monitored_asset(tenant=tenant, asset=website_asset)
@@ -137,8 +168,12 @@ class TestMonitoredAssetPool:
                 services.register_monitored_asset(tenant=tenant, asset=website_asset)
 
     def test_register_refuses_when_pool_full_locally(
-        self, tenant, website_asset, fake_provider, settings
+        self, tenant, website_asset, fake_provider, settings, prouver_possession
     ):
+        # ADR-026 : la surveillance continue exige une possession
+        # PROUVEE. Sans cette ligne, le test echoue sur la garde —
+        # ce qui est precisement ce qu'elle doit faire.
+        prouver_possession(website_asset)
         settings.BREACHSENSE_WEBHOOK_CALLBACK_URL = "https://api.example.com/webhook"
         settings.BREACHSENSE_MONITORED_ASSET_POOL_SIZE = 0
         with patch("apps.threat_intelligence.services.get_provider", return_value=fake_provider):
@@ -146,7 +181,13 @@ class TestMonitoredAssetPool:
                 services.register_monitored_asset(tenant=tenant, asset=website_asset)
         assert fake_provider.registered == []  # refused before calling the provider
 
-    def test_register_translates_provider_pool_full_error(self, tenant, website_asset, settings):
+    def test_register_translates_provider_pool_full_error(
+        self, tenant, website_asset, settings, prouver_possession
+    ):
+        # ADR-026 : la surveillance continue exige une possession
+        # PROUVEE. Sans cette ligne, le test echoue sur la garde —
+        # ce qui est precisement ce qu'elle doit faire.
+        prouver_possession(website_asset)
         settings.BREACHSENSE_WEBHOOK_CALLBACK_URL = "https://api.example.com/webhook"
         provider = type(
             "P",
@@ -162,8 +203,12 @@ class TestMonitoredAssetPool:
                 services.register_monitored_asset(tenant=tenant, asset=website_asset)
 
     def test_unregister_deactivates_and_calls_provider(
-        self, tenant, website_asset, fake_provider, settings
+        self, tenant, website_asset, fake_provider, settings, prouver_possession
     ):
+        # ADR-026 : la surveillance continue exige une possession
+        # PROUVEE. Sans cette ligne, le test echoue sur la garde —
+        # ce qui est precisement ce qu'elle doit faire.
+        prouver_possession(website_asset)
         settings.BREACHSENSE_WEBHOOK_CALLBACK_URL = "https://api.example.com/webhook"
         with patch("apps.threat_intelligence.services.get_provider", return_value=fake_provider):
             monitored = services.register_monitored_asset(tenant=tenant, asset=website_asset)

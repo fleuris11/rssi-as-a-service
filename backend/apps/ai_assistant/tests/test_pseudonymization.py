@@ -219,6 +219,73 @@ class TestBreachDataNoLeak:
         _assert_no_leak(payload, scenario)
         assert "SuperSecretRealValue123" not in payload
 
+    #: Adresse compromise n'appartenant à AUCUN membre de l'espace — le cas
+    #: que la V2-2 rend possible, et le plus exposé.
+    ADRESSE_TIERCE = "ancien.salarie@fournisseur-mail.example"
+
+    def _ingest_finding_for_a_third_party(self, tenant):
+        website = Asset.all_objects.get(tenant=tenant, type=Asset.Type.WEBSITE)
+        raw = RawFinding(
+            endpoint="stealer",
+            payload={"usr": self.ADRESSE_TIERCE, "pwd": "MotDePasseReel456", "src": "fuite"},
+        )
+        return threat_intelligence_services.ingest_raw_findings(
+            tenant=tenant, asset=website, raw_findings=[raw]
+        )[0]
+
+    def test_a_compromised_address_of_a_non_member_never_reaches_the_model(
+        self, scenario_tenant, mock_claude_client
+    ):
+        """La conséquence la plus risquée du démasquage (V2-2, ADR-027).
+
+        Avant, une adresse qui n'était celle d'aucun membre était réduite à sa
+        forme masquée AVANT d'être stockée : elle ne pouvait pas fuir, parce
+        qu'elle n'existait pas. Maintenant qu'elle est conservée en clair, elle
+        entre dans le contexte de l'assistant — et le collecteur de valeurs
+        sensibles ne ramassait que les adresses des MEMBRES.
+
+        C'est exactement le genre d'effet de bord qu'un changement utile
+        produit ailleurs, à l'endroit où personne ne regarde.
+        """
+        tenant, scenario = scenario_tenant
+        finding = self._ingest_finding_for_a_third_party(tenant)
+        assert finding.identifier_plain == self.ADRESSE_TIERCE  # le clair est bien stocké
+
+        conversation = Conversation.all_objects.create(tenant=tenant)
+        Message.all_objects.create(
+            tenant=tenant, conversation=conversation, role=Message.Role.USER, content="Bonjour"
+        )
+
+        services.generate_assistant_reply(conversation=conversation)
+
+        call_kwargs = mock_claude_client.messages.create.call_args.kwargs
+        payload = call_kwargs["system"] + str(call_kwargs["messages"])
+        assert self.ADRESSE_TIERCE not in payload
+        assert "MotDePasseReel456" not in payload
+        _assert_no_leak(payload, scenario)
+
+    def test_the_third_party_address_is_replaced_by_a_placeholder_not_dropped(
+        self, scenario_tenant, mock_claude_client
+    ):
+        """Ne pas fuir ne suffit pas : l'information doit arriver.
+
+        Une adresse simplement supprimée du contexte priverait l'assistant de
+        la matière qu'il est censé lire. Le test précédent passerait pourtant
+        au vert — c'est la paire qui a du sens, pas chacun isolément.
+        """
+        tenant, _scenario = scenario_tenant
+        self._ingest_finding_for_a_third_party(tenant)
+
+        conversation = Conversation.all_objects.create(tenant=tenant)
+        Message.all_objects.create(
+            tenant=tenant, conversation=conversation, role=Message.Role.USER, content="Bonjour"
+        )
+
+        services.generate_assistant_reply(conversation=conversation)
+
+        payload = mock_claude_client.messages.create.call_args.kwargs["system"]
+        assert "{{EMAIL_" in payload
+
     def test_assistant_context_includes_pseudonymizable_breach_summary(
         self, scenario_tenant, mock_claude_client
     ):

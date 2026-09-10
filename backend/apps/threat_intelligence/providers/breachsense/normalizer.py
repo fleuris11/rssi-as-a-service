@@ -87,9 +87,16 @@ class EndpointSchema:
     identifier_fields: tuple[str, ...] = ()
     date_fields: tuple[str, ...] = ()
     type_field: str | None = None
-    # Champs (non-secrets) utilisés pour construire le dédoublonnage —
-    # en plus du secret masqué, jamais la valeur brute.
-    dedup_fields: tuple[str, ...] = field(default_factory=tuple)
+    # Champs (non secrets) qui IDENTIFIENT l'observation — ce qui reste vrai
+    # d'une remontée à l'autre pour une même fuite. Les dates du fournisseur
+    # (`fnd`, `inf`, `found`) en sont volontairement exclues : elles disent
+    # quand LUI l'a trouvée, pas de quelle fuite il s'agit, et elles sont
+    # optionnelles dans son schéma réel. Les y inclure faisait deux fuites
+    # d'une seule dès qu'une remontée arrivait sans sa date — donc une ligne
+    # déjà traitée qui revient. Ce que la date apportait comme pouvoir de
+    # distinction est désormais porté par l'empreinte du secret, qui le fait
+    # correctement.
+    identity_fields: tuple[str, ...] = field(default_factory=tuple)
 
 
 ENDPOINT_SCHEMAS: dict[str, EndpointSchema] = {
@@ -99,19 +106,19 @@ ENDPOINT_SCHEMAS: dict[str, EndpointSchema] = {
         identifier_fields=("usr",),
         date_fields=("inf", "fnd"),
         type_field="mal",
-        dedup_fields=("usr", "src", "inf", "fnd"),
+        identity_fields=("usr", "src"),
     ),
     # usr, pwd(SECRET), src, fle, fnd, cnt
     "combo": EndpointSchema(
         identifier_fields=("usr",),
         date_fields=("fnd",),
-        dedup_fields=("usr", "src", "fnd"),
+        identity_fields=("usr", "src"),
     ),
     # eml, pwd(SECRET), src, fnd, atr, hash (0/1 — indicateur, pas un secret)
     "creds": EndpointSchema(
         identifier_fields=("eml",),
         date_fields=("fnd",),
-        dedup_fields=("eml", "src", "fnd"),
+        identity_fields=("eml", "src"),
     ),
     # dom, cookie_name, cookie_path, val(SECRET), expires, user_name, iip,
     # inf, mal, malware_path, bid, fnd — "expires" est la validité du
@@ -119,7 +126,7 @@ ENDPOINT_SCHEMAS: dict[str, EndpointSchema] = {
     "sessions": EndpointSchema(
         identifier_fields=("user_name",),
         date_fields=("fnd",),
-        dedup_fields=("user_name", "dom", "cookie_name", "fnd"),
+        identity_fields=("user_name", "dom", "cookie_name"),
     ),
     # token(SECRET), token_type, platform, category, source_type, prefix,
     # src, pth, ip, usr, fnd + champs stealer optionnels (bid, hid, mal, os, av)
@@ -127,18 +134,18 @@ ENDPOINT_SCHEMAS: dict[str, EndpointSchema] = {
         identifier_fields=("usr",),
         date_fields=("fnd",),
         type_field="category",
-        dedup_fields=("usr", "platform", "src", "fnd"),
+        identity_fields=("usr", "platform", "src"),
     ),
     # data (domaine victime), name (entreprise), desc, site (threat actor),
     # tadesc, src, found, img (absent en Essentials — palier Business+ uniquement)
     "darkweb": EndpointSchema(
         date_fields=("found",),
-        dedup_fields=("data", "site", "found"),
+        identity_fields=("data", "site"),
     ),
     # data, src, found, img (absent en Essentials)
     "radar": EndpointSchema(
         date_fields=("found",),
-        dedup_fields=("data", "src", "found"),
+        identity_fields=("data", "src"),
     ),
     # doc_id, file_name, file_hash, file_size, content_type,
     # extraction_timestamp, leak_date, threat_actor, company_name,
@@ -146,13 +153,13 @@ ENDPOINT_SCHEMAS: dict[str, EndpointSchema] = {
     "docs": EndpointSchema(
         date_fields=("leak_date",),
         type_field="content_type",
-        dedup_fields=("doc_id", "file_hash"),
+        identity_fields=("doc_id", "file_hash"),
     ),
     # dom, type (ns/mx/ast/pphish), cname, ip, found
     "asm": EndpointSchema(
         date_fields=("found",),
         type_field="type",
-        dedup_fields=("dom", "type", "cname", "ip"),
+        identity_fields=("dom", "type", "cname", "ip"),
     ),
 }
 
@@ -324,46 +331,118 @@ def _compute_severity(endpoint: str, payload: dict) -> str:
     return SEVERITY_BY_ENDPOINT.get(endpoint, "attention")
 
 
-def _compute_dedup_hash(*, endpoint: str, payload: dict, secret_masked: str) -> str:
+# Le dédoublonnage tient en DEUX moitiés, délibérément séparées.
+#
+#   `identity_hash`      — QUI a fuité et d'où : l'endpoint et les champs non
+#                          secrets qui identifient l'observation.
+#   `secret_fingerprint` — QUEL secret : empreinte à sens unique du secret.
+#
+# Cette séparation est ce qui distingue les deux cas que la version
+# précédente confondait :
+#
+#   - même compte, même mot de passe, revu par un nouveau scan → la MÊME
+#     fuite. Si elle a déjà été traitée, elle ne doit pas se rouvrir ;
+#   - même compte, mot de passe DIFFÉRENT → une NOUVELLE fuite, qui doit
+#     apparaître même si la précédente a été traitée.
+#
+# Pourquoi `secret_masked` ne suffisait pas. Sa forme est « ••••••XY » :
+# six puces et les DEUX derniers caractères du secret. Deux mots de passe
+# distincts qui se terminent pareil — « Ete2024! » et « Hiver2024! » donnent
+# tous deux « ••••••4! » — produisaient la même empreinte. Le second était
+# alors silencieusement absorbé par le premier : une compromission réelle et
+# nouvelle n'apparaissait jamais. Ce n'est pas un défaut d'affichage, c'est
+# une fuite non signalée.
+#
+# Pourquoi une empreinte du secret en clair ne pose pas de problème au regard
+# de l'ADR-014 : le produit détient DÉJÀ ce secret sous une forme
+# **réversible** (chiffrement Fernet, révélation privilégiée et tracée). Une
+# empreinte à sens unique est strictement moins sensible que ce qui est déjà
+# en base — et elle survit à la purge du secret, ce qui est précisément ce
+# qu'il faut pour que le dédoublonnage continue de fonctionner après.
+
+
+def _compute_identity_hash(*, endpoint: str, payload: dict) -> str:
+    """Identité de l'observation, secret exclu.
+
+    Les champs ABSENTS sont omis, et les présents sont nommés. Ce n'est pas
+    un détail de mise en forme : le schéma réel du fournisseur pose que
+    « tous les champs sont optionnels », et l'ancienne formule les prenait
+    par position en remplaçant un absent par une chaîne vide. Une même fuite
+    remontée une fois avec sa date ``fnd`` et une fois sans produisait alors
+    DEUX empreintes — donc deux fuites, donc la réapparition d'une ligne que
+    le client venait de traiter. Nommer les champs présents évite au passage
+    la collision que l'omission seule introduirait (``{eml:x, fnd:y}`` et
+    ``{eml:x, src:y}`` se réduiraient tous deux à « x|y »).
+    """
     schema = ENDPOINT_SCHEMAS.get(endpoint)
-    dedup_fields = schema.dedup_fields if schema else ()
-    # Le champ secret (s'il y en a un pour cet endpoint) est représenté par
-    # sa forme déjà masquée, jamais la valeur brute (ADR-014).
-    values = [payload.get(f) for f in dedup_fields]
-    values.append(secret_masked)
-    source = "|".join(str(v) if v is not None else "" for v in values)
-    return hashlib.sha256(f"{endpoint}|{source}".encode()).hexdigest()
+    identity_fields = schema.identity_fields if schema else ()
+    presents = [
+        f"{champ}={payload[champ]}"
+        for champ in identity_fields
+        if payload.get(champ) not in (None, "")
+    ]
+    return hashlib.sha256(f"{endpoint}|{'|'.join(presents)}".encode()).hexdigest()
 
 
-def normalize_finding(endpoint: str, raw: dict, *, tenant_emails: set[str] | None = None) -> dict:
+def _compute_secret_fingerprint(secret_plain: str) -> str:
+    """Empreinte à sens unique du secret. Chaîne vide quand la fuite n'en
+    porte aucun (radar, surface d'attaque…) — une valeur stable et
+    recalculable, pas un « on ne sait pas »."""
+    if not secret_plain:
+        return ""
+    return hashlib.sha256(secret_plain.encode()).hexdigest()
+
+
+def _compute_dedup_hash(*, identity_hash: str, secret_fingerprint: str) -> str:
+    """Clé d'unicité effective : identité + secret."""
+    return hashlib.sha256(f"{identity_hash}|{secret_fingerprint}".encode()).hexdigest()
+
+
+def normalize_finding(endpoint: str, raw: dict) -> dict:
     """Returns a dict of kwargs ready for ``BreachFinding.all_objects.create``
     (minus ``tenant``/``asset``, which the caller already knows) — plus a
     transient ``secret_plain`` key the caller (``services.ingest_raw_findings``)
     must pop and Fernet-encrypt (or discard) before calling ``create()``;
     ``BreachFinding`` has no such field, it exists only to carry the
     in-memory plaintext one call further without a second normalizer pass."""
-    # Comparaison sur des valeurs normalisées des DEUX côtés (casse ET espaces
-    # de bord) : un payload fournisseur arrivant avec une espace parasite
-    # (« " marie@exemple.fr" ») ne doit pas faire échouer la reconnaissance
-    # d'un membre du tenant — l'identifiant serait alors masqué à tort, et le
-    # tenant perdrait la capacité d'agir directement dessus (ADR-014 §4).
-    tenant_emails = {email.strip().lower() for email in (tenant_emails or set())}
     masked_payload, secret_seen, secret_masked, secret_plain = mask_payload(raw)
 
+    # V2-2 (ADR-027) : l'adresse compromise n'est plus masquee au stockage.
+    #
+    # ADR-014 §4 ne conservait en clair que l'email professionnel d'un membre
+    # du tenant ; toute autre adresse etait reduite a une forme NON REVERSIBLE.
+    # Cette prudence privait le RSSI de la seule information qui permet
+    # d'agir : QUI est concerne. Or les adresses qui comptent le plus sont
+    # justement celles qui ne sont pas membres — un ancien salarie, une adresse
+    # personnelle utilisee au bureau, un prestataire.
+    #
+    # Les DEUX formes sont desormais conservees. Le clair sert aux roles qui
+    # doivent agir (administrateur, contributeur) ; la forme masquee reste
+    # servie au role lecteur. Le choix se fait a la restitution, pas au
+    # stockage : masquer en base revenait a decider une fois pour toutes, sans
+    # retour possible, ce qui se decide legitimement par role.
+    #
+    # La liste des membres du tenant n'entre plus dans ce calcul : elle n'y
+    # servait qu'a decider qui avait droit au clair. Elle reste utilisee la ou
+    # elle garde un sens, la correlation des reutilisations (ADR-017).
     identifier = _extract_identifier(endpoint, raw)
     identifier_plain = ""
     identifier_masked = ""
     if identifier:
         identifier = identifier.strip()
     if identifier:
-        if identifier.lower() in tenant_emails:
-            identifier_plain = identifier
-        else:
-            identifier_masked = mask_identifier(identifier)
+        identifier_plain = identifier
+        identifier_masked = mask_identifier(identifier)
 
     breach_date = _extract_breach_date(endpoint, raw)
     severity = _compute_severity(endpoint, raw)
     finding_type = _extract_finding_type(endpoint, raw)
+
+    # Calculés sur l'endpoint RÉEL, pas sur `source_endpoint` : celui-ci
+    # retombe sur "webhook" pour un endpoint inconnu, et deux endpoints
+    # inconnus différents partageraient alors la même identité.
+    identity_hash = _compute_identity_hash(endpoint=endpoint, payload=raw)
+    secret_fingerprint = _compute_secret_fingerprint(secret_plain)
 
     return {
         "source_endpoint": endpoint if endpoint in SEVERITY_BY_ENDPOINT else "webhook",
@@ -377,7 +456,9 @@ def normalize_finding(endpoint: str, raw: dict, *, tenant_emails: set[str] | Non
         "secret_plain": secret_plain,
         "breach_date": breach_date,
         "raw_data": masked_payload,
+        "identity_hash": identity_hash,
+        "secret_fingerprint": secret_fingerprint,
         "dedup_hash": _compute_dedup_hash(
-            endpoint=endpoint, payload=raw, secret_masked=secret_masked
+            identity_hash=identity_hash, secret_fingerprint=secret_fingerprint
         ),
     }

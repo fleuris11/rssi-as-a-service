@@ -8,7 +8,10 @@ import AdminBreachsensePage from './pages/AdminBreachsensePage'
 import PlatformAdminPage from './pages/admin/PlatformAdminPage'
 import AssistantPage from './pages/AssistantPage'
 import CompromisesPage from './pages/CompromisesPage'
+import WatchedAccountsPage from './pages/WatchedAccountsPage'
+import RequestsPage from './pages/RequestsPage'
 import DashboardPage from './pages/DashboardPage'
+import ReportingPage from './pages/ReportingPage'
 import DiagnosticPage from './pages/DiagnosticPage'
 import DocumentsPage from './pages/DocumentsPage'
 import ExposurePage from './pages/ExposurePage'
@@ -39,7 +42,10 @@ export default function AppRoutes() {
           <Route path="/plan-action" element={<ActionPlanPage />} />
           <Route path="/surveillance" element={<SurveillancePage />} />
           <Route path="/exposition" element={<ExposurePage />} />
+          <Route path="/rapports" element={<ReportingPage />} />
           <Route path="/compromissions" element={<CompromisesPage />} />
+          <Route path="/comptes-surveilles" element={<WatchedAccountsPage />} />
+          <Route path="/mes-demandes" element={<RequestsPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/assistant" element={<AssistantPage />} />
           <Route path="/preferences" element={<NotificationPreferencesPage />} />

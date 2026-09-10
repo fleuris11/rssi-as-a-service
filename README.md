@@ -5,8 +5,12 @@ n'ont ni RSSI ni budget pour en recruter un.
 
 Le produit répond à une question que ces entreprises se posent sans pouvoir y répondre seules :
 **« sommes-nous exposés, et par quoi devons-nous commencer ? »** Il combine un diagnostic de
-maturité (référentiel ANSSI, 42 mesures), un plan d'action priorisé, la surveillance continue des
+maturité (ANSSI, ISO 27001, NIST CSF ou un référentiel propre au client), un plan d'action priorisé,
+une bibliothèque documentaire (politique de sécurité, charte, procédure et registre d'incidents,
+plan de continuité, sensibilisation, rapport de comité), la surveillance continue des
 actifs déclarés (disponibilité, TLS, en-têtes, SPF/DMARC), la détection de fuites de données,
+la surveillance de comptes désignés (dirigeants, comptes sensibles),
+une veille sur les publications officielles qui font évoluer les référentiels,
 et une assistance par IA.
 
 ## Ce qui le distingue
@@ -147,6 +151,12 @@ Prérequis : Docker Desktop.
    ```bash
    docker compose exec web python manage.py load_anssi_referential
    ```
+   C'est le seul référentiel embarqué dans le dépôt (Licence Ouverte / Etalab). Les autres
+   (ISO 27001, NIST CSF, CIS Controls, référentiel propre à un client) s'importent avec
+   `manage.py import_referential` depuis un fichier JSON ou un tableur que fournit celui qui
+   détient les droits — voir [docs/format_import_referentiel.md](docs/format_import_referentiel.md).
+   Un référentiel n'est visible d'un client que s'il lui est **attribué** depuis la console
+   d'administration (onglet *Référentiels*).
 
 4. Optionnel — peupler le tenant de démonstration :
    ```bash

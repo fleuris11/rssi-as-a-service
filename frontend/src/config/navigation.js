@@ -4,10 +4,12 @@ import {
   Crosshair,
   KanbanSquare,
   LayoutDashboard,
+  FileBarChart,
   MessageSquareText,
   Radar,
   ScrollText,
   ShieldAlert,
+  UserRoundSearch,
 } from 'lucide-react'
 
 // Single source of truth for the sidebar links AND the topbar's page
@@ -23,6 +25,14 @@ export const NAV_ITEMS = [
   // avérées (la chemise de résultats) — d'où cet ordre.
   { to: '/exposition', label: 'Exposition', icon: Crosshair },
   { to: '/compromissions', label: 'Compromissions', icon: ShieldAlert },
+  // V2-6 : des comptes que le client DÉSIGNE, distincts de ses actifs. Le
+  // lien est dans la navigation principale et non rangé sous « Exposition » :
+  // ce sont deux périmètres différents, et les confondre dans le menu
+  // reviendrait à les confondre tout court.
+  { to: '/comptes-surveilles', label: 'Comptes surveillés', icon: UserRoundSearch },
+  // V2-3 : la page qu'on ouvre pour PRÉPARER un comité, distincte du
+  // tableau de bord qu'on ouvre pour savoir où on en est aujourd'hui.
+  { to: '/rapports', label: 'Rapports', icon: FileBarChart },
   { to: '/documents', label: 'Documents', icon: ScrollText },
   { to: '/assistant', label: 'Assistant', icon: MessageSquareText },
 ]
@@ -31,6 +41,7 @@ export const NAV_ITEMS = [
 // still need a topbar title.
 const SECONDARY_TITLES = {
   '/resultats': 'Résultats',
+  '/mes-demandes': 'Mes demandes',
   '/preferences': 'Préférences',
   '/securite': 'Sécurité',
   '/admin/breachsense': 'Administration — Renseignement sur la menace',

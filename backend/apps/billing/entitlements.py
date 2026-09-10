@@ -112,12 +112,35 @@ def ensure_operational(tenant, *, action="Cette action") -> None:
 # --- Quotas -----------------------------------------------------------------
 
 
+#: Marqueur d'usage des analyses de comptes désignés (V2-6). Elles consomment
+#: la même licence fournisseur, mais PAS le même quota client : le quota VIP
+#: est vendu à part, et le confondre avec les analyses d'actifs ferait payer
+#: deux fois la même chose au client — ou, pire, viderait son quota général
+#: sans qu'il comprenne pourquoi.
+WATCHED_ACCOUNT_ENDPOINT = "watched_account"
+
+
+def _period_start():
+    return timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
 def monthly_scans_used(tenant) -> int:
     from apps.threat_intelligence.models import BreachIntelligenceUsage
 
-    period_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return (
+        BreachIntelligenceUsage.all_objects.filter(tenant=tenant, created_at__gte=_period_start())
+        .exclude(endpoint=WATCHED_ACCOUNT_ENDPOINT)
+        .count()
+    )
+
+
+def watched_account_scans_used(tenant) -> int:
+    from apps.threat_intelligence.models import BreachIntelligenceUsage
+
     return BreachIntelligenceUsage.all_objects.filter(
-        tenant=tenant, created_at__gte=period_start
+        tenant=tenant,
+        endpoint=WATCHED_ACCOUNT_ENDPOINT,
+        created_at__gte=_period_start(),
     ).count()
 
 
@@ -133,6 +156,53 @@ def ensure_scan_quota(tenant) -> None:
         raise EntitlementError(
             f"Vous avez utilisé les {quota} analyses comprises dans votre offre ce mois-ci. "
             "Le compteur repart au premier jour du mois prochain.",
+            reason="quota",
+        )
+
+
+def ensure_watched_account_quota(tenant) -> None:
+    """Combien de comptes ce client peut DÉCLARER (V2-6). Un stock, pas un
+    flux : le compteur ne repart pas au premier du mois."""
+    from apps.threat_intelligence.models import WatchedAccount
+
+    subscription = get_subscription(tenant)
+    if subscription is None:
+        raise EntitlementError("Aucun abonnement actif.", reason="no_subscription")
+    quota = subscription.watched_accounts_quota
+    if quota == 0:
+        # 0 ne veut PAS dire « illimité » ici, contrairement aux autres
+        # quotas : la fonctionnalité se vend, et son défaut est de ne pas
+        # être vendue. La garde de fonctionnalité (watched_accounts) est
+        # posée avant celle-ci et donne le vrai message ; ce refus-ci n'est
+        # atteint que par une offre qui inclut la fonctionnalité sans donner
+        # d'emplacement, ce qui est une erreur de saisie de catalogue.
+        raise EntitlementError("Votre offre ne comprend aucun compte à surveiller.", reason="quota")
+    used = WatchedAccount.all_objects.filter(tenant=tenant, is_active=True).count()
+    if used >= quota:
+        raise EntitlementError(
+            f"Vous surveillez déjà les {quota} comptes compris dans votre offre. "
+            "Retirez-en un, ou demandez une offre supérieure.",
+            reason="quota",
+        )
+
+
+def ensure_watched_account_scan_quota(tenant) -> None:
+    """Combien d'analyses de comptes désignés ce client peut LANCER ce
+    mois-ci. Distinct du quota d'analyses d'actifs (voir
+    ``WATCHED_ACCOUNT_ENDPOINT``)."""
+    subscription = get_subscription(tenant)
+    if subscription is None:
+        raise EntitlementError("Aucun abonnement actif.", reason="no_subscription")
+    quota = subscription.monthly_watched_account_scans_quota
+    if quota == 0:
+        raise EntitlementError(
+            "Votre offre ne comprend aucune analyse de comptes désignés.", reason="quota"
+        )
+    used = watched_account_scans_used(tenant)
+    if used >= quota:
+        raise EntitlementError(
+            f"Vous avez utilisé les {quota} analyses de comptes comprises dans votre offre "
+            "ce mois-ci. Le compteur repart au premier jour du mois prochain.",
             reason="quota",
         )
 
@@ -203,7 +273,7 @@ def summary(tenant) -> dict:
     """Ce que le frontend consomme pour afficher les fonctionnalités hors
     offre en **désactivé** plutôt que masquées : il lui faut la liste
     complète, ce qui est inclus, et le plan requis pour le reste."""
-    from apps.threat_intelligence.models import MonitoredAsset
+    from apps.threat_intelligence.models import MonitoredAsset, WatchedAccount
 
     subscription = get_subscription(tenant)
     included = set(subscription.effective_features) if subscription else set()
@@ -245,6 +315,14 @@ def summary(tenant) -> dict:
             "monthly_scans": {
                 "quota": subscription.monthly_scans_quota,
                 "used": monthly_scans_used(tenant),
+            },
+            "watched_accounts": {
+                "quota": subscription.watched_accounts_quota,
+                "used": WatchedAccount.all_objects.filter(tenant=tenant, is_active=True).count(),
+            },
+            "watched_account_scans": {
+                "quota": subscription.monthly_watched_account_scans_quota,
+                "used": watched_account_scans_used(tenant),
             },
         },
         "features": features,

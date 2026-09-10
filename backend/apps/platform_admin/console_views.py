@@ -1065,3 +1065,145 @@ class ExportView(ConsoleView):
             ip_address=_client_ip(request),
         )
         return response
+
+
+# --- Référentiels attribués à un client (V2-4, ADR-029) ---------------------
+
+
+class ReferentialCatalogView(ConsoleView):
+    """Le catalogue complet, pour la console.
+
+    ``kind`` distingue ce qu'on a le droit d'embarquer de ce qui doit être
+    importé par le détenteur de la licence : la console l'affiche, parce que
+    c'est la question qu'on se pose en attribuant ISO 27001 à un client.
+    """
+
+    def get(self, request):
+        from apps.assessments import services as assessments_services
+
+        catalogue = []
+        for referential in assessments_services.list_catalog(include_inactive=True):
+            catalogue.append(
+                {
+                    "id": referential.id,
+                    "slug": referential.slug,
+                    "name": referential.name,
+                    "version": referential.version,
+                    "publisher": referential.publisher,
+                    "kind": referential.kind,
+                    "kind_label": referential.get_kind_display(),
+                    "licence_notice": referential.licence_notice,
+                    "is_active": referential.is_active,
+                    "owner_tenant": (
+                        str(referential.owner_tenant_id) if referential.owner_tenant_id else None
+                    ),
+                    "owner_tenant_name": (
+                        referential.owner_tenant.name if referential.owner_tenant_id else None
+                    ),
+                    "measure_count": referential.measures.count(),
+                    "assigned_tenants": referential.assignments.filter(
+                        revoked_at__isnull=True
+                    ).count(),
+                }
+            )
+        return Response(catalogue)
+
+
+class ClientReferentialView(ConsoleView):
+    """Attribuer un ou plusieurs référentiels à un client, et les retirer.
+
+    Le retrait est logique : la vue le dit explicitement dans sa réponse
+    (``kept_readable``), parce que c'est la question que se pose celui qui
+    clique — « est-ce que je viens de lui effacer son diagnostic ? ». Non.
+    """
+
+    def get(self, request, tenant_id):
+        from apps.assessments import services as assessments_services
+
+        tenant = get_object_or_404(Tenant, id=tenant_id)
+        attributions = assessments_services.list_assignments(tenant)
+        attribues = {a.referential_id for a in attributions if a.revoked_at is None}
+        evalues = {r.id for r in assessments_services.readable_referentials(tenant)}
+
+        return Response(
+            {
+                "assigned": [
+                    {
+                        "referential_id": a.referential_id,
+                        "slug": a.referential.slug,
+                        "name": a.referential.name,
+                        "granted_at": a.granted_at,
+                        "revoked_at": a.revoked_at,
+                        # Retiré mais toujours lisible : le client garde ses
+                        # évaluations passées.
+                        "readable": a.referential_id in evalues,
+                        "note": a.note,
+                    }
+                    for a in attributions
+                ],
+                "available": [
+                    {"id": r.id, "slug": r.slug, "name": r.name, "kind": r.kind}
+                    for r in assessments_services.assignable_referentials(tenant)
+                    if r.id not in attribues
+                ],
+            }
+        )
+
+    def post(self, request, tenant_id):
+        from apps.assessments import services as assessments_services
+
+        tenant = get_object_or_404(Tenant, id=tenant_id)
+        slug = (request.data.get("referential") or "").strip()
+        referential = assessments_services.get_referential(slug=slug)
+        if referential is None:
+            return Response(
+                {"detail": "Référentiel introuvable."}, status=status.HTTP_404_NOT_FOUND
+            )
+        try:
+            assessments_services.assign_referential(
+                tenant=tenant,
+                referential=referential,
+                granted_by=request.user,
+                note=(request.data.get("note") or "")[:300],
+            )
+        except assessments_services.AssessmentsError as exc:
+            return self.refused(exc, status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        self.audit(
+            request,
+            AdminAuditLog.Action.REFERENTIAL_ASSIGNED,
+            tenant=tenant,
+            target=referential.name,
+            detail=f"Référentiel « {referential.name} » attribué à {tenant.name}.",
+        )
+        return self.get(request, tenant_id)
+
+    def delete(self, request, tenant_id):
+        from apps.assessments import services as assessments_services
+
+        tenant = get_object_or_404(Tenant, id=tenant_id)
+        slug = (request.data.get("referential") or "").strip()
+        referential = assessments_services.get_referential(slug=slug)
+        if referential is None:
+            return Response(
+                {"detail": "Référentiel introuvable."}, status=status.HTTP_404_NOT_FOUND
+            )
+        assessments_services.revoke_referential(
+            tenant=tenant, referential=referential, revoked_by=request.user
+        )
+        self.audit(
+            request,
+            AdminAuditLog.Action.REFERENTIAL_REVOKED,
+            tenant=tenant,
+            target=referential.name,
+            detail=(
+                f"Référentiel « {referential.name} » retiré à {tenant.name}. "
+                "Les évaluations déjà produites restent consultables."
+            ),
+        )
+        return Response(
+            {
+                **self.get(request, tenant_id).data,
+                "kept_readable": True,
+            }
+        )

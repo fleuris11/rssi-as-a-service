@@ -17,4 +17,9 @@ known-first-party = ["apps", "config"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = ["test_*.py"]
-addopts = "--reuse-db"
+addopts = "--reuse-db -m 'not slow'"
+# Les tests marques `slow` fabriquent des volumes reels (28 450 fuites) pour
+# mesurer le cout du tableau de bord. Exclus par defaut : ils mesurent, ils ne
+# gardent rien qu'un autre test ne garde deja. Les lancer explicitement :
+#     pytest -m slow -s
+markers = ["slow: mesure sur volume reel, exclu de la passe par defaut"]

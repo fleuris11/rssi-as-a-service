@@ -37,6 +37,14 @@ app.conf.beat_schedule = {
     # fois par jour suffit : le délai se compte en dizaines de jours, et la
     # tâche est idempotente (une seconde passe ne trouve plus rien).
     # Heure creuse volontairement, la purge fait un UPDATE de masse.
+    # Veille réglementaire (V2-7). Une fois par semaine, le lundi matin :
+    # les autorités publient à la journée, pas à la minute, et promettre du
+    # temps réel serait mentir (ADR-034 §6). Un passage hebdomadaire suffit
+    # à ne rien manquer et coûte cinq requêtes HTTP.
+    "regulatory-watch-poll-sources": {
+        "task": "apps.regulatory_watch.tasks.poll_sources_task",
+        "schedule": crontab(day_of_week="1", hour="6", minute="15"),
+    },
     "threat-intelligence-purge-expired-secrets": {
         "task": "apps.threat_intelligence.tasks.purge_expired_secrets_task",
         "schedule": crontab(hour="3", minute="30"),

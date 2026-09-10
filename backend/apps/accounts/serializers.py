@@ -20,12 +20,23 @@ class UserSerializer(serializers.ModelSerializer):
             "last_name",
             "date_joined",
             "is_staff",
+            # Réglage de RESTITUTION, pas de droits (ADR-031). Il voyage avec
+            # l'identité parce que le frontend en a besoin dès la connexion,
+            # avant d'avoir choisi une entreprise.
+            "display_profile",
             "memberships",
         ]
         read_only_fields = fields
 
     def get_memberships(self, user):
         return MembershipSummarySerializer(list_user_memberships(user), many=True).data
+
+
+class DisplayProfileSerializer(serializers.Serializer):
+    """Le seul champ de l'identité qu'on laisse changer à tout moment, sans
+    mot de passe ni vérification : il ne donne accès à rien."""
+
+    display_profile = serializers.ChoiceField(choices=User.DisplayProfile.choices)
 
 
 class RegisterSerializer(serializers.Serializer):

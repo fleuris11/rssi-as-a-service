@@ -9,15 +9,20 @@ from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.billing import api_guards, entitlements, features
 from apps.billing import capacity as platform_capacity
-from apps.billing import entitlements, features
 from apps.monitoring import services as monitoring_services
 from apps.tenants.models import Membership
 from apps.tenants.permissions import IsTenantAdmin, IsTenantMember, IsTenantMemberReadOnlyForReader
 
 from . import quota as quota_module
 from . import services
-from .models import BreachFinding, BreachIntelligenceUsage, SecretRevealAudit
+from .models import (
+    BreachFinding,
+    BreachIntelligenceUsage,
+    IdentifierAccessAudit,
+    SecretRevealAudit,
+)
 from .reveal_throttle import RevealIPRateThrottle, RevealUserRateThrottle
 from .serializers import (
     BreachFindingSerializer,
@@ -26,6 +31,7 @@ from .serializers import (
     BreachScanJobSerializer,
     BreachScanTriggerSerializer,
     ExposureFeedSerializer,
+    IdentifierAccessAuditSerializer,
     MonitoredAssetCreateSerializer,
     MonitoredAssetSerializer,
     PreIncidentSummarySerializer,
@@ -33,8 +39,13 @@ from .serializers import (
     SecretRevealAuditAdminSerializer,
     SecretRevealAuditSerializer,
     SecretRevealRequestSerializer,
+    WatchedAccountCreateSerializer,
+    WatchedAccountFindingSerializer,
+    WatchedAccountFindingUpdateSerializer,
+    WatchedAccountScanTriggerSerializer,
+    WatchedAccountSerializer,
 )
-from .tasks import run_breach_scan_task
+from .tasks import run_breach_scan_task, run_watched_account_scan_task
 from .webhook_auth import is_valid_basic_auth
 
 logger = logging.getLogger(__name__)
@@ -50,13 +61,48 @@ def _client_ip(request) -> str:
     return request.META.get("REMOTE_ADDR", "") or ""
 
 
-class BreachFindingListView(generics.ListAPIView):
+class IdentifierAwareMixin:
+    """Sert les adresses selon le rôle, et trace ce qui a été servi en clair.
+
+    Regroupé dans un mixin plutôt que recopié dans chaque vue : la garde de
+    rôle et la trace vont ensemble, et une vue qui n'appliquerait que la
+    première servirait des adresses sans laisser d'empreinte — exactement le
+    reproche que la V2-2 corrige.
+    """
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["viewer_role"] = getattr(self.request.membership, "role", None)
+        return context
+
+    def _tracer_acces(self, findings):
+        services.record_identifier_access(
+            tenant=self.request.tenant,
+            user=self.request.user,
+            context=IdentifierAccessAudit.Context.CONSULTATION,
+            findings=findings,
+            role=getattr(self.request.membership, "role", None),
+            ip_address=_client_ip(self.request),
+            user_agent=self.request.META.get("HTTP_USER_AGENT", ""),
+        )
+
+
+class BreachFindingListView(IdentifierAwareMixin, generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated, IsTenantMember]
     serializer_class = BreachFindingSerializer
 
     def get_queryset(self):
         status_filter = self.request.query_params.get("status")
         return services.list_findings(self.request.tenant, status=status_filter)
+
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        # Tracé APRÈS la sérialisation, sur la page réellement servie : tracer
+        # le queryset entier compterait des adresses que le client n'a pas
+        # reçues, et la trace cesserait de dire ce qui a été vu.
+        page = self.paginate_queryset(self.filter_queryset(self.get_queryset()))
+        self._tracer_acces(page if page is not None else [])
+        return response
 
 
 class BreachFindingDetailView(APIView):
@@ -68,8 +114,24 @@ class BreachFindingDetailView(APIView):
             raise NotFound("Fuite introuvable.")
         return finding
 
+    def _contexte(self, request):
+        return {"viewer_role": getattr(request.membership, "role", None)}
+
+    def _tracer(self, request, finding):
+        services.record_identifier_access(
+            tenant=request.tenant,
+            user=request.user,
+            context=IdentifierAccessAudit.Context.CONSULTATION,
+            findings=[finding],
+            role=getattr(request.membership, "role", None),
+            ip_address=_client_ip(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        )
+
     def get(self, request, finding_id):
-        return Response(BreachFindingSerializer(self._get_or_404(request, finding_id)).data)
+        finding = self._get_or_404(request, finding_id)
+        self._tracer(request, finding)
+        return Response(BreachFindingSerializer(finding, context=self._contexte(request)).data)
 
     def patch(self, request, finding_id):
         finding = self._get_or_404(request, finding_id)
@@ -78,7 +140,7 @@ class BreachFindingDetailView(APIView):
         finding = services.set_finding_status(
             finding, status=serializer.validated_data["status"], user=request.user
         )
-        return Response(BreachFindingSerializer(finding).data)
+        return Response(BreachFindingSerializer(finding, context=self._contexte(request)).data)
 
 
 class BreachFindingRevealView(APIView):
@@ -250,7 +312,21 @@ class ExposureFeedView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsTenantMember]
 
     def get(self, request):
-        feed = services.build_exposure_feed(request.tenant)
+        role = getattr(request.membership, "role", None)
+        feed = services.build_exposure_feed(request.tenant, role=role)
+        # Le fil sert des adresses en clair comme la liste : même garde, même
+        # trace. Une seule ligne pour toute la page, avec les actifs concernés.
+        services.record_identifier_access(
+            tenant=request.tenant,
+            user=request.user,
+            context=IdentifierAccessAudit.Context.CONSULTATION,
+            findings=services.list_findings(
+                request.tenant, status=BreachFinding.Status.OPEN, include_pre_incident=True
+            ),
+            role=role,
+            ip_address=_client_ip(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        )
         synthesis = services.get_exposure_synthesis(request.tenant)
         feed["synthesis"] = (
             {
@@ -316,6 +392,23 @@ class SecretRevealAuditListView(generics.ListAPIView):
 
     def get_queryset(self):
         return services.list_reveal_audits(self.request.tenant)
+
+
+class IdentifierAccessAuditListView(generics.ListAPIView):
+    """Journal des consultations d'adresses — consultable par l'admin du
+    tenant (ADR-027).
+
+    Même principe que le journal des révélations : une trace que seul
+    l'éditeur peut lire ne prouve rien à celui qui en aurait besoin. C'est le
+    client qui doit pouvoir répondre « voici qui a consulté, et quand » — à un
+    salarié, à un délégué à la protection des données, à un auditeur.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantAdmin]
+    serializer_class = IdentifierAccessAuditSerializer
+
+    def get_queryset(self):
+        return services.list_identifier_access_audits(self.request.tenant)
 
 
 class MonitoredAssetListCreateView(generics.ListAPIView):
@@ -564,3 +657,157 @@ class BreachsenseWebhookView(APIView):
 
         result = services.ingest_webhook_payload(payload)
         return Response(result, status=status.HTTP_200_OK)
+
+
+# --- Comptes désignés (V2-6, ADR-033) ---------------------------------------
+
+
+class WatchedAccountListCreateView(APIView):
+    """L'espace des comptes désignés : ce que le client a déclaré surveiller.
+
+    Séparé des actifs et de l'exposition générale — ce ne sont pas ses actifs,
+    ce sont des comptes qu'il surveille. La séparation est structurelle : ces
+    lignes vivent dans leur propre table et n'entrent ni dans le score
+    d'exposition, ni dans les indicateurs de comité.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader]
+
+    def get(self, request):
+        # LECTURE non gardée par l'offre : un client qui perd la
+        # fonctionnalité doit continuer de voir ce qu'il a déclaré — et
+        # pouvoir le retirer. Reprendre la liste lui interdirait d'arrêter une
+        # surveillance qu'il a lui-même mise en place, ce qui serait le
+        # contraire de ce que veut ADR-033.
+        comptes = services.list_watched_accounts(
+            request.tenant, include_removed=request.query_params.get("include_removed") == "1"
+        )
+        return Response(
+            {
+                "declaration_text": services.DECLARATION_TEXT,
+                "declaration_version": services.DECLARATION_VERSION,
+                "summary": services.watched_accounts_summary(request.tenant),
+                "results": WatchedAccountSerializer(
+                    comptes.prefetch_related("findings"), many=True
+                ).data,
+            }
+        )
+
+    def post(self, request):
+        api_guards.ensure_feature(request.tenant, features.WATCHED_ACCOUNTS)
+
+        serializer = WatchedAccountCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            entitlements.ensure_operational(
+                request.tenant, action="La surveillance de comptes désignés"
+            )
+            compte = services.declare_watched_account(
+                tenant=request.tenant,
+                user=request.user,
+                value=data["value"],
+                label=data["label"],
+                category=data["category"],
+                legal_basis=data["legal_basis"],
+                purpose=data["purpose"],
+                declaration_accepted=data["declaration_accepted"],
+            )
+        except entitlements.EntitlementError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_402_PAYMENT_REQUIRED)
+        except services.DeclarationRequiredError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except services.WatchedAccountError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+
+        return Response(WatchedAccountSerializer(compte).data, status=status.HTTP_201_CREATED)
+
+
+class WatchedAccountDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader]
+
+    def delete(self, request, account_id):
+        """Arrête la surveillance. Jamais gardé par l'offre : arrêter de
+        traiter les données d'un tiers ne doit dépendre d'aucun abonnement."""
+        compte = services.get_watched_account(tenant=request.tenant, account_id=account_id)
+        if compte is None:
+            raise NotFound("Compte introuvable.")
+        services.remove_watched_account(
+            compte, user=request.user, reason=request.data.get("reason", "")
+        )
+        return Response(WatchedAccountSerializer(compte).data)
+
+
+class WatchedAccountFindingListView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
+
+    def get(self, request):
+        compte = None
+        account_id = request.query_params.get("account")
+        if account_id:
+            compte = services.get_watched_account(tenant=request.tenant, account_id=account_id)
+            if compte is None:
+                raise NotFound("Compte introuvable.")
+        resultats = services.list_watched_account_findings(
+            request.tenant, account=compte, status=request.query_params.get("status")
+        )
+        return Response(WatchedAccountFindingSerializer(resultats, many=True).data)
+
+
+class WatchedAccountFindingDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader]
+
+    def patch(self, request, finding_id):
+        resultat = services.get_watched_account_finding(
+            tenant=request.tenant, finding_id=finding_id
+        )
+        if resultat is None:
+            raise NotFound("Résultat introuvable.")
+        serializer = WatchedAccountFindingUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        services.update_watched_account_finding_status(
+            resultat, serializer.validated_data["status"]
+        )
+        return Response(WatchedAccountFindingSerializer(resultat).data)
+
+
+class WatchedAccountScanTriggerView(APIView):
+    """Analyse à la demande, sur un ou plusieurs comptes."""
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader]
+
+    def post(self, request):
+        api_guards.ensure_feature(request.tenant, features.WATCHED_ACCOUNTS)
+
+        serializer = WatchedAccountScanTriggerSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        comptes = services.resolve_scan_targets(
+            request.tenant, account_ids=serializer.validated_data["account_ids"] or None
+        )
+        if not comptes:
+            return Response(
+                {"detail": "Aucun compte à analyser."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Trois ressources, vérifiées dans cet ordre, comme pour les actifs :
+        # l'abonnement doit être opérationnel, le quota VIP du client non
+        # épuisé — c'est un quota À PART, il ne consomme pas celui des actifs
+        # — et le budget mensuel de la PLATEFORME disponible.
+        try:
+            entitlements.ensure_operational(request.tenant, action="Le lancement d'une analyse")
+            entitlements.ensure_watched_account_scan_quota(request.tenant)
+            platform_capacity.ensure_scan_budget_available(additional=len(comptes))
+        except entitlements.EntitlementError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_402_PAYMENT_REQUIRED)
+        except platform_capacity.PlatformCapacityError as exc:
+            logger.warning("Capacité plateforme atteinte : %s", exc)
+            return Response(
+                {"detail": exc.client_message}, status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+        job = services.create_watched_account_scan_job(
+            tenant=request.tenant, user=request.user, accounts=comptes
+        )
+        run_watched_account_scan_task.delay(tenant_id=str(request.tenant.id), job_id=job.id)
+        return Response(BreachScanJobSerializer(job).data, status=status.HTTP_202_ACCEPTED)

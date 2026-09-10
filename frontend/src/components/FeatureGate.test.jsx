@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EntitlementsProvider } from '../context/EntitlementsContext'
 import FeatureGate, { FeatureLockedNotice } from './FeatureGate'
@@ -29,8 +30,16 @@ const FEATURES = [
   },
 ]
 
+// `MemoryRouter` depuis V2-6 : l'encart porte un lien « Demander cette
+// fonctionnalité » (consigne V2-6, point 6). Voir la fonctionnalité sans
+// pouvoir rien en faire est frustrant — le lien mène là où on la demande et
+// où on suit la demande.
 function renderGate(ui) {
-  return render(<EntitlementsProvider>{ui}</EntitlementsProvider>)
+  return render(
+    <MemoryRouter>
+      <EntitlementsProvider>{ui}</EntitlementsProvider>
+    </MemoryRouter>
+  )
 }
 
 describe('FeatureGate', () => {
@@ -139,6 +148,10 @@ describe('FeatureLockedNotice', () => {
     expect(
       screen.getByText(/Compris à partir de l’offre Pilotage\./)
     ).toBeInTheDocument()
+    // Le chemin de sortie : sans lui, l'encart ne fait que constater.
+    expect(
+      screen.getByRole('link', { name: 'Demander cette fonctionnalité' })
+    ).toHaveAttribute('href', '/mes-demandes')
   })
 
   it('ne s’affiche pas quand la fonctionnalité est comprise', async () => {

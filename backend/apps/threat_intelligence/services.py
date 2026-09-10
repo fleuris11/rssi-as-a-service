@@ -8,12 +8,15 @@ filter, since Celery tasks have no ambient request context.
 
 import hashlib
 import logging
+from dataclasses import dataclass, field
 from datetime import timedelta
-from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from django.conf import settings
 from django.core.cache import cache
+from django.db import IntegrityError, transaction
+from django.db.models import Avg, Count, F, Q
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from apps.accounts import services as accounts_services
@@ -21,14 +24,16 @@ from apps.billing import api_guards, features
 from apps.monitoring import services as monitoring_services
 from apps.monitoring.models import Alert, Asset
 from apps.tenants import services as tenants_services
+from apps.tenants.models import Membership
 
-from . import client_messages, correlation, exposure, plain_language
+from . import client_messages, correlation, exposure, finding_details, plain_language
 from . import quota as quota_module
 from .models import (
     BreachFinding,
     BreachIntelligenceUsage,
     BreachScanJob,
     ExposureSynthesis,
+    IdentifierAccessAudit,
     MonitoredAsset,
     SecretPurgeRun,
     SecretRevealAudit,
@@ -69,6 +74,16 @@ class PoolFullError(ThreatIntelligenceError):
 
 class AssetAlreadyMonitoredError(ThreatIntelligenceError):
     pass
+
+
+class OwnershipNotProvenError(ThreatIntelligenceError):
+    """La possession du domaine n'est pas prouvée (ADR-026).
+
+    Traduite depuis ``monitoring`` plutôt que laissée telle quelle : une vue
+    de ce module attrape ``ThreatIntelligenceError``, et une erreur venue
+    d'une autre app la traversait donc jusqu'en 500 — un refus de règle
+    métier présenté au client comme une panne du produit.
+    """
 
 
 class WebhookNotConfiguredError(ThreatIntelligenceError):
@@ -216,29 +231,222 @@ def list_reveal_audits_all_tenants(limit: int = 100):
 
 
 def derive_scan_domain(asset: Asset) -> str:
-    if asset.type == Asset.Type.WEBSITE:
-        return urlparse(asset.value).hostname or asset.value
-    return asset.value
+    """Délègue : le domaine d'un actif est une notion de ``monitoring``, qui
+    possède le modèle. En avoir deux définitions, c'est s'exposer à ce
+    qu'elles divergent le jour où un troisième type d'actif apparaît."""
+    return monitoring_services.asset_domain(asset)
 
 
 def tenant_member_emails(tenant) -> set[str]:
     return set(tenants_services.list_members(tenant).values_list("user__email", flat=True))
 
 
+# --- Adresses compromises : restitution encadrée (V2-2, ADR-027) -------------
+#
+# Les adresses ne sont plus masquées : sans savoir QUI est concerné, un RSSI
+# ne peut pas agir — il ne peut ni prévenir la personne, ni savoir si le
+# compte est encore actif, ni juger de la gravité.
+#
+# L'encadrement est **volontairement plus léger** que celui de la révélation
+# d'un secret (ADR-014, cinq conditions cumulatives). Une adresse n'est pas un
+# mot de passe : elle ne donne accès à rien. Exiger une ré-authentification
+# pour lire la liste de ses propres fuites rendrait le produit inutilisable au
+# quotidien — et une garde qu'on contourne parce qu'elle gêne ne protège
+# personne. Restent : un rôle, et une trace.
+
+#: Rôles qui voient les adresses en clair. Le rôle lecteur en est exclu : il
+#: est fait pour rendre compte, pas pour agir, et n'a donc pas besoin de
+#: savoir qui est concerné.
+IDENTIFIER_VISIBLE_ROLES = (Membership.Role.ADMIN, Membership.Role.CONTRIBUTOR)
+
+
+def can_view_identifiers(role: str | None) -> bool:
+    return role in IDENTIFIER_VISIBLE_ROLES
+
+
+def identifier_for_viewer(finding: BreachFinding, *, role: str | None) -> str:
+    """L'adresse telle que ce lecteur a le droit de la voir.
+
+    Le lecteur reçoit la forme masquée plutôt que rien : lui retirer la ligne
+    entière lui cacherait l'existence de la fuite, ce qui n'est pas le sujet.
+    Ce qu'on lui retire, c'est l'identité de la personne.
+    """
+    if can_view_identifiers(role):
+        return finding.identifier_plain or finding.identifier_masked
+    return finding.identifier_masked or ""
+
+
+def record_identifier_access(
+    *,
+    tenant,
+    user,
+    context: str,
+    findings,
+    role: str | None = None,
+    ip_address: str = "",
+    user_agent: str = "",
+) -> IdentifierAccessAudit | None:
+    """Trace une consultation ou un export ayant servi des adresses en clair.
+
+    Ne trace RIEN quand rien n'a été servi en clair — ni pour un lecteur, ni
+    pour une page sans aucune adresse. Un journal qui enregistre des accès qui
+    n'ont pas eu lieu perd sa valeur de preuve : il devient un compteur de
+    pages vues.
+
+    Une ligne par consultation, pas par adresse : sur un actif réel de
+    production (28 450 fuites), l'affichage d'une seule page produirait sinon
+    28 450 lignes d'audit.
+    """
+    if role is not None and not can_view_identifiers(role):
+        return None
+
+    concernees = [f for f in findings if f.identifier_plain]
+    if not concernees:
+        return None
+
+    return IdentifierAccessAudit.all_objects.create(
+        tenant=tenant,
+        user=user if getattr(user, "is_authenticated", False) else None,
+        context=context,
+        asset_ids=sorted({f.asset_id for f in concernees}),
+        identifier_count=len(concernees),
+        ip_address=ip_address or None,
+        user_agent=user_agent[:255],
+    )
+
+
+def list_identifier_access_audits(tenant, limit: int = 100):
+    """Journal des consultations d'adresses, pour l'administrateur du tenant.
+
+    Même principe que le journal des révélations : la trace n'a de valeur que
+    si le client peut la lire. Un audit que seul l'éditeur consulte ne prouve
+    rien à celui qui en aurait besoin.
+    """
+    return IdentifierAccessAudit.all_objects.filter(tenant=tenant).select_related("user")[:limit]
+
+
 # --- Ingestion (partagée scan + webhook) ------------------------------------
+#
+# Une fuite déjà traitée par le client ne doit PAS réapparaître parce qu'un
+# nouveau scan la remonte. C'est le défaut que la V2-1 corrige : le client ne
+# pouvait pas progresser, il retraitait les mêmes lignes à chaque analyse.
+#
+# La règle tient en une phrase : **on met à jour la date de dernière
+# observation, on ne touche jamais au statut**. Ni réouverture, ni nouvelle
+# entrée, ni alerte rouverte. Le statut appartient au client ; le fournisseur
+# n'a pas à le lui reprendre.
+
+# Préfixe des empreintes de secret des fuites ingérées AVANT la V2-1 : leur
+# secret en clair n'a jamais été empreint, seule sa forme masquée est en base.
+# Elles se raccrochent sur cette forme masquée, une fois, à leur première
+# réobservation (voir ``_reconcile_legacy_finding``).
+LEGACY_FINGERPRINT_PREFIX = "legacy:"
+
+
+@dataclass
+class IngestionReport:
+    """Ce qu'une ingestion a fait — au-delà de ce qu'elle a créé.
+
+    Passé par l'appelant qui en a besoin plutôt que renvoyé : une vingtaine
+    d'appelants (scan, webhook, jeu de démonstration, tests) attendent une
+    liste de fuites créées, et changer ce contrat pour transporter un
+    compteur les casserait tous sans rien leur apporter.
+
+    ``seen_again_treated`` porte les fuites que le client avait déjà
+    **traitées ou ignorées** et que ce scan a revues : c'est ce qui alimente
+    le compteur discret de l'écran. On masque, on ne cache pas — une fuite
+    silencieusement retenue serait un mensonge par omission, la même faute
+    que la liste tronquée sans son total.
+    """
+
+    created: list[int] = field(default_factory=list)
+    seen_again: list[int] = field(default_factory=list)
+    seen_again_treated: list[int] = field(default_factory=list)
+
+    def note_created(self, finding: BreachFinding) -> None:
+        self.created.append(finding.id)
+
+    def note_seen_again(self, finding: BreachFinding) -> None:
+        self.seen_again.append(finding.id)
+        if finding.status in _CLOSED_FINDING_STATUSES:
+            self.seen_again_treated.append(finding.id)
+
+
+_CLOSED_FINDING_STATUSES = (BreachFinding.Status.TREATED, BreachFinding.Status.IGNORED)
+
+# Nombre d'identifiants de fuites déjà traitées transportés dans le résultat
+# d'un scan. Le compte, lui, n'est jamais borné.
+MAX_REPORTED_TREATED_IDS = 50
+
+
+def _reconcile_legacy_finding(*, tenant, normalized: dict) -> BreachFinding | None:
+    """Retrouve une fuite ingérée avant la V2-1 que la clé actuelle ne peut
+    pas atteindre, et la met à jour pour qu'elle le soit désormais.
+
+    Ces fuites ont été empreintes avec l'ancienne formule, dont la moitié
+    « secret » était la forme MASQUÉE. On les rejoint donc exactement comme
+    l'ancienne formule les distinguait : à identité égale, forme masquée
+    égale. Le raccrochage a lieu une seule fois par fuite — après quoi elle
+    porte la clé actuelle et repasse par le chemin normal.
+
+    Sans cette étape, la toute première analyse suivant la mise en service de
+    la V2-1 recréerait en double **toutes** les fuites existantes, dont celles
+    que le client venait de traiter : le défaut que cette version corrige,
+    rejoué une dernière fois, sur l'intégralité de l'historique.
+    """
+    identity_hash = normalized["identity_hash"]
+    if not identity_hash:
+        # Endpoint d'origine non reconstituable pour les fuites d'avant la
+        # V2-1 (voir migration 0006). Rien à quoi se raccrocher : la fuite
+        # sera recréée une fois, et portera dès lors la clé actuelle.
+        return None
+
+    legacy = BreachFinding.all_objects.filter(
+        tenant=tenant,
+        identity_hash=identity_hash,
+        secret_fingerprint__startswith=LEGACY_FINGERPRINT_PREFIX,
+        secret_masked=normalized["secret_masked"],
+    ).first()
+    if legacy is None:
+        return None
+
+    legacy.secret_fingerprint = normalized["secret_fingerprint"]
+    legacy.dedup_hash = normalized["dedup_hash"]
+    legacy.save(update_fields=["secret_fingerprint", "dedup_hash"])
+    return legacy
+
+
+def _find_existing_finding(*, tenant, normalized: dict) -> BreachFinding | None:
+    existing = BreachFinding.all_objects.filter(
+        tenant=tenant, dedup_hash=normalized["dedup_hash"]
+    ).first()
+    if existing is not None:
+        return existing
+    return _reconcile_legacy_finding(tenant=tenant, normalized=normalized)
 
 
 def ingest_raw_findings(
-    *, tenant, asset: Asset, raw_findings: list[RawFinding], tenant_emails: set[str] | None = None
+    *,
+    tenant,
+    asset: Asset,
+    raw_findings: list[RawFinding],
+    report: IngestionReport | None = None,
 ) -> list[BreachFinding]:
     """Normalizes (masking secrets — ADR-014), deduplicates, persists, and
     opens/escalates the corresponding monitoring alert for every non-test
     raw finding. Used identically by the query scan path and the webhook
     path — the single place downstream of a provider that any finding
     passes through, so both are held to the same masking/dedup/alerting
-    discipline."""
-    tenant_emails = tenant_emails if tenant_emails is not None else tenant_member_emails(tenant)
+    discipline.
+
+    Renvoie les fuites **créées**. Une fuite déjà connue voit seulement sa
+    date de dernière observation avancer : son statut, son alerte et sa date
+    de détection ne bougent pas. Passer un ``report`` donne accès à ce que ce
+    retour ne dit pas — notamment les fuites déjà traitées qui viennent
+    d'être revues.
+    """
     created: list[BreachFinding] = []
+    now = timezone.now()
 
     for raw in raw_findings:
         if raw.is_test:
@@ -249,24 +457,51 @@ def ingest_raw_findings(
             )
             continue
 
-        normalized = normalizer.normalize_finding(
-            raw.endpoint, raw.payload, tenant_emails=tenant_emails
-        )
+        normalized = normalizer.normalize_finding(raw.endpoint, raw.payload)
         # Popped immediately, never logged, never passed to create() as-is
         # (BreachFinding has no such field) — encrypted in memory right
         # here, the one hop between the normalizer and the encrypted
         # column (ADR-014 update).
         secret_plain = normalized.pop("secret_plain", "")
         normalized["secret_encrypted"] = encrypt_secret(secret_plain) if secret_plain else b""
-        finding, was_created = BreachFinding.all_objects.get_or_create(
-            tenant=tenant,
-            dedup_hash=normalized["dedup_hash"],
-            defaults={"asset": asset, **normalized},
-        )
-        if not was_created:
+
+        existing = _find_existing_finding(tenant=tenant, normalized=normalized)
+        if existing is not None:
+            # Déjà connue. On avance la date de dernière observation, et RIEN
+            # d'autre : ni le statut, ni l'alerte, ni la date de détection.
+            # C'est ici, et seulement ici, que se joue « une fuite traitée ne
+            # réapparaît pas ».
+            existing.last_seen_at = now
+            existing.save(update_fields=["last_seen_at"])
+            if report is not None:
+                report.note_seen_again(existing)
+            continue
+
+        try:
+            # `atomic` autour de l'insertion : sans lui, l'IntegrityError
+            # rattrapée ci-dessous laisserait la transaction courante marquée
+            # comme rompue, et toutes les fuites suivantes du lot échoueraient
+            # sur une erreur sans rapport.
+            with transaction.atomic():
+                finding = BreachFinding.all_objects.create(
+                    tenant=tenant, asset=asset, last_seen_at=now, **normalized
+                )
+        except IntegrityError:
+            # Deux ingestions concurrentes sur la même fuite (webhook redélivré
+            # pendant un scan) : la contrainte d'unicité a tranché, on relit ce
+            # que l'autre vient d'écrire plutôt que de faire échouer le lot.
+            existing = BreachFinding.all_objects.filter(
+                tenant=tenant, dedup_hash=normalized["dedup_hash"]
+            ).first()
+            if existing is None:
+                raise
+            if report is not None:
+                report.note_seen_again(existing)
             continue
 
         created.append(finding)
+        if report is not None:
+            report.note_created(finding)
         alert_severity = _FINDING_SEVERITY_TO_ALERT_SEVERITY[finding.severity]
         alert = monitoring_services.open_or_update_alert(
             asset=asset,
@@ -451,11 +686,13 @@ def execute_scan(*, tenant, assets: list[Asset], triggered_by: str) -> dict:
     d'appel réseau dans le cycle requête/réponse HTTP)."""
     provider = get_provider()
     manager = quota_module.QuotaManager()
-    tenant_emails = tenant_member_emails(tenant)
 
     total_created = 0
     total_requests = 0
     assets_en_echec: list[str] = []
+    # Un seul rapport pour tout le lot : le compteur affiché parle de
+    # « ce scan », pas de tel ou tel actif.
+    report = IngestionReport()
 
     # Chaque actif est isolé. Un client peut en déclarer plusieurs, et le
     # 06/09/2026 un seul d'entre eux a fait échouer l'analyse ENTIÈRE d'un
@@ -475,7 +712,7 @@ def execute_scan(*, tenant, assets: list[Asset], triggered_by: str) -> dict:
                 tenant=tenant,
                 asset=asset,
                 raw_findings=scan_result.findings,
-                tenant_emails=tenant_emails,
+                report=report,
             )
             total_created += len(created)
         except Exception:  # noqa: BLE001 - un actif ne fait pas tomber les autres
@@ -514,6 +751,16 @@ def execute_scan(*, tenant, assets: list[Asset], triggered_by: str) -> dict:
         "findings_created": total_created,
         "requests_consumed": total_requests,
         "assets_en_echec": assets_en_echec,
+        # Ce que l'écran doit pouvoir dire sans mentir : « ce scan a revu N
+        # fuites que vous aviez déjà traitées ». Elles ne sont pas
+        # réapparues dans la liste — mais les taire complètement laisserait
+        # croire que le fournisseur ne les remonte plus.
+        "already_treated_seen": len(report.seen_again_treated),
+        # Bornée : sur un actif réel de production, un scan revoit des
+        # dizaines de milliers de fuites. Le COMPTE ci-dessus est exact ;
+        # cette liste ne sert qu'à pointer vers quelques-unes.
+        "already_treated_ids": report.seen_again_treated[:MAX_REPORTED_TREATED_IDS],
+        "findings_seen_again": len(report.seen_again),
     }
 
 
@@ -551,6 +798,22 @@ def list_monitored_assets(tenant):
 def register_monitored_asset(*, tenant, asset: Asset) -> MonitoredAsset:
     if asset.tenant_id != tenant.id:
         raise ThreatIntelligenceError("Cet actif n'appartient pas à cette entreprise.")
+    # ADR-026 : la surveillance continue exige une PREUVE de possession, pas
+    # une déclaration. Placée avant toute autre garde, et avant tout appel au
+    # fournisseur : un domaine dont on ne sait pas s'il appartient au client
+    # ne doit pas consommer un emplacement de la licence, ni faire l'objet
+    # d'une requête sortante à son sujet.
+    #
+    # La garde appelle `monitoring` par son services.py — c'est lui qui
+    # possède l'actif et la preuve ; le sens de dépendance
+    # (threat_intelligence -> monitoring) reste celui de l'ADR-013.
+    try:
+        monitoring_services.ensure_ownership_proven(asset)
+    except monitoring_services.OwnershipNotProvenError as exc:
+        # Traduite dans le vocabulaire de ce module, comme l'est déjà le refus
+        # du fournisseur : c'est la frontière de l'app, c'est ici que les
+        # erreurs étrangères prennent une forme que ses vues savent traiter.
+        raise OwnershipNotProvenError(str(exc)) from exc
     if MonitoredAsset.all_objects.filter(asset=asset, is_active=True).exists():
         raise AssetAlreadyMonitoredError(client_messages.ASSET_ALREADY_MONITORED)
     if not settings.BREACHSENSE_WEBHOOK_CALLBACK_URL:
@@ -650,7 +913,6 @@ def ingest_webhook_payload(payload: list[dict]) -> dict:
             tenant=monitored.tenant,
             asset=monitored.asset,
             raw_findings=findings,
-            tenant_emails=tenant_member_emails(monitored.tenant),
         )
         total_created += len(created)
         _notify_pre_incident_signals(created)
@@ -713,9 +975,20 @@ def get_finding(*, tenant, finding_id):
 
 def set_finding_status(finding: BreachFinding, *, status: str, user=None) -> BreachFinding:
     finding.status = status
+    # V2-3 : la date de clôture est posée pour « traité » ET pour « ignoré ».
+    #
+    # Elle ne l'était que pour « traité », ce qui suffisait tant que personne
+    # ne regardait l'historique : une fuite ignorée était close dans la liste
+    # et sans date en base. Dès qu'on reconstruit « combien de fuites étaient
+    # ouvertes en juin ? », cette absence fait compter comme ouvertes des
+    # fuites que le client avait fermées.
+    #
+    # `treated_by` reste réservé à « traité » : ignorer n'est pas traiter, et
+    # attribuer un traitement à quelqu'un qui a écarté la ligne serait faux.
+    if status in _CLOSED_FINDING_STATUSES:
+        finding.treated_at = timezone.now()
     if status == BreachFinding.Status.TREATED:
         finding.treated_by = user
-        finding.treated_at = timezone.now()
     finding.save(update_fields=["status", "treated_by", "treated_at"])
     # Traiter une fuite change le score et donc la lecture d'ensemble.
     mark_synthesis_stale(finding.tenant)
@@ -726,6 +999,154 @@ def count_critical_open_findings(tenant) -> int:
     return BreachFinding.all_objects.filter(
         tenant=tenant, status=BreachFinding.Status.OPEN, severity=BreachFinding.Severity.CRITICAL
     ).count()
+
+
+# --- Indicateurs pour le comité (V2-3, ADR-028) -----------------------------
+#
+# Tout ce qui suit est calculé EN BASE. La règle vient d'une mesure, pas d'un
+# principe : le 06/09/2026, matérialiser 28 450 instances Django coûtait
+# 3,79 s, et un `defer()` sur les colonnes larges n'y changeait rien — le coût
+# est celui des objets, pas des données. Un tableau de bord qui les
+# matérialiserait à plusieurs dates serait inutilisable sur le seul client qui
+# en a vraiment besoin.
+#
+# La série temporelle est le point le plus délicat. Compter les fuites
+# ouvertes jour par jour demanderait une requête par jour. On fait autrement :
+# UNE requête pour les détections par jour, UNE pour les clôtures par jour, et
+# le compte d'ouvertes au début de la période. Le reste est une somme
+# cumulée en mémoire, sur des seaux quotidiens — quelques dizaines de lignes,
+# quelle que soit la taille du tenant.
+
+
+def _open_at(tenant, moment):
+    """Fuites ouvertes à un instant donné.
+
+    « Ouverte à D » se lit : détectée avant D, et pas encore close à D. Une
+    fuite close SANS date de clôture est comptée comme close depuis toujours —
+    ce sont les fuites ignorées avant la V2-3, dont la date n'a jamais été
+    enregistrée. Le choix minore légèrement le passé plutôt que de gonfler le
+    présent : entre deux erreurs, celle qui n'inquiète pas à tort.
+    """
+    return BreachFinding.all_objects.filter(tenant=tenant, detected_at__lte=moment).filter(
+        Q(status=BreachFinding.Status.OPEN) | Q(treated_at__gt=moment)
+    )
+
+
+def _seaux_quotidiens(queryset, champ, debut, fin):
+    """``{date: compte}`` pour un champ de date, en UNE requête."""
+    lignes = (
+        queryset.filter(**{f"{champ}__gte": debut, f"{champ}__lte": fin})
+        .annotate(jour=TruncDate(champ))
+        .values("jour")
+        .annotate(n=Count("id"))
+    )
+    return {ligne["jour"]: ligne["n"] for ligne in lignes}
+
+
+def exposure_score_at(tenant, moment) -> int:
+    """Score d'exposition tel qu'il était à un instant donné.
+
+    Passe par ``values_list`` et ``exposure.score_from_rows`` : la formule est
+    la même que celle du fil d'exposition, sans matérialiser d'objets.
+    """
+    lignes = exposure.annotate_revealable(_open_at(tenant, moment)).values_list(
+        *exposure.SCORE_ROW_FIELDS
+    )
+    return exposure.score_from_rows(lignes, now=moment)
+
+
+def breach_indicators(tenant, *, start, end, previous_start=None) -> dict:
+    """Fuites : état à la fin de la période, mouvements pendant, et série.
+
+    ``previous_start`` sert la comparaison à la période précédente : le point
+    de comparaison est l'état à ``start``, c'est-à-dire la fin de la période
+    d'avant.
+    """
+    ouvertes = _open_at(tenant, end)
+    par_gravite = {
+        ligne["severity"]: ligne["n"]
+        for ligne in ouvertes.values("severity").annotate(n=Count("id"))
+    }
+
+    du_tenant = BreachFinding.all_objects.filter(tenant=tenant)
+    nouvelles = du_tenant.filter(detected_at__gte=start, detected_at__lte=end).count()
+    closes = du_tenant.filter(treated_at__gte=start, treated_at__lte=end)
+    traitees = closes.filter(status=BreachFinding.Status.TREATED).count()
+    ignorees = closes.filter(status=BreachFinding.Status.IGNORED).count()
+
+    # Délai moyen de traitement, calculé par la base : une soustraction de
+    # deux colonnes et une moyenne, jamais une boucle Python sur des milliers
+    # de lignes.
+    delai = closes.aggregate(moyen=Avg(F("treated_at") - F("detected_at")))["moyen"]
+
+    return {
+        "open_total": ouvertes.count(),
+        "open_by_severity": {
+            "critical": par_gravite.get(BreachFinding.Severity.CRITICAL, 0),
+            "high": par_gravite.get(BreachFinding.Severity.HIGH, 0),
+            "attention": par_gravite.get(BreachFinding.Severity.ATTENTION, 0),
+        },
+        "open_at_period_start": _open_at(tenant, start).count(),
+        "new_in_period": nouvelles,
+        "treated_in_period": traitees,
+        "ignored_in_period": ignorees,
+        "closed_in_period": traitees + ignorees,
+        "average_treatment_days": round(delai.total_seconds() / 86400, 1) if delai else None,
+        "exposure_score": exposure_score_at(tenant, end),
+        "exposure_score_at_period_start": exposure_score_at(tenant, start),
+        "series": open_findings_series(tenant, start=start, end=end),
+    }
+
+
+def open_findings_series(tenant, *, start, end) -> list[dict]:
+    """Nombre de fuites ouvertes, jour par jour, en TROIS requêtes au total.
+
+    Un compte par jour demanderait une requête par jour. On part du compte à
+    l'ouverture de la période, puis on applique les détections et les clôtures
+    quotidiennes : la base agrège, Python ne fait qu'additionner des seaux.
+    """
+    du_tenant = BreachFinding.all_objects.filter(tenant=tenant)
+    detections = _seaux_quotidiens(du_tenant, "detected_at", start, end)
+    clotures = _seaux_quotidiens(du_tenant, "treated_at", start, end)
+
+    courant = _open_at(tenant, start).count()
+    serie = []
+    jour = start.date()
+    dernier = end.date()
+    while jour <= dernier:
+        courant += detections.get(jour, 0) - clotures.get(jour, 0)
+        serie.append({"date": jour, "open": max(0, courant)})
+        jour += timedelta(days=1)
+    return serie
+
+
+def exposure_by_asset(tenant, *, at) -> list[dict]:
+    """Score d'exposition par actif, à un instant donné.
+
+    Un seul passage sur les fuites ouvertes : on regroupe en mémoire des
+    n-uplets, pas des objets. Trié par score décroissant — ce qu'un comité
+    regarde en premier.
+    """
+    lignes = exposure.annotate_revealable(_open_at(tenant, at)).values_list(
+        "asset_id", "asset__value", *exposure.SCORE_ROW_FIELDS
+    )
+
+    par_actif: dict[int, dict] = {}
+    for asset_id, asset_value, *reste in lignes:
+        entree = par_actif.setdefault(asset_id, {"asset_value": asset_value, "rows": []})
+        entree["rows"].append(tuple(reste))
+
+    resultat = [
+        {
+            "asset_id": asset_id,
+            "asset_value": entree["asset_value"],
+            "findings_count": len(entree["rows"]),
+            "score": exposure.score_from_rows(entree["rows"], now=at),
+        }
+        for asset_id, entree in par_actif.items()
+    ]
+    resultat.sort(key=lambda ligne: (-ligne["score"], -ligne["findings_count"]))
+    return resultat
 
 
 # --- Radar pré-incident (Phase 8A) ------------------------------------------
@@ -886,9 +1307,24 @@ def pre_incident_definition(signal_type: str) -> dict:
 # fuite, ce que ça veut dire et ce qu'il faut faire.
 
 
-def serialize_finding_for_feed(finding: BreachFinding, reuse_signals: list | None = None) -> dict:
+def _signal_pour_lecteur(signal: dict, *, role: str | None) -> dict:
+    """Un signal de réutilisation porte l'adresse concernée : elle doit suivre
+    la même règle de rôle que partout ailleurs.
+
+    Sans cette reprise, l'adresse masquée dans la fuite serait servie en clair
+    dans le signal juste à côté — la garde tiendrait à l'endroit où on la
+    regarde, et nulle part ailleurs.
+    """
+    if can_view_identifiers(role) or "identifier" not in signal:
+        return signal
+    return {**signal, "identifier": ""}
+
+
+def serialize_finding_for_feed(
+    finding: BreachFinding, reuse_signals: list | None = None, *, role: str | None = None
+) -> dict:
     explanation = plain_language.explain(finding)
-    reuse_signals = reuse_signals or []
+    reuse_signals = [_signal_pour_lecteur(s, role=role) for s in (reuse_signals or [])]
     action = explanation["action"]
     if reuse_signals:
         # C'est ici que la révélation prend son sens : une réutilisation
@@ -901,7 +1337,7 @@ def serialize_finding_for_feed(finding: BreachFinding, reuse_signals: list | Non
         "finding_type": finding.finding_type,
         "severity": finding.severity,
         "severity_label": finding.get_severity_display(),
-        "identifier": finding.identifier_plain or finding.identifier_masked,
+        "identifier": identifier_for_viewer(finding, role=role),
         "secret_masked": finding.secret_masked,
         "has_secret": finding.has_secret,
         "secret_purged_at": finding.secret_purged_at,
@@ -909,7 +1345,10 @@ def serialize_finding_for_feed(finding: BreachFinding, reuse_signals: list | Non
         "detected_at": finding.detected_at,
         # Vulgarisation déterministe (Tâche 2) : immédiate, sans appel IA.
         "meaning": explanation["meaning"],
+        "impact": explanation["impact"],
         "recommended_action": action,
+        # V2-2 : ce que la source renvoie et que le produit taisait.
+        "details": finding_details.details_for(finding),
         "reuse_signals": reuse_signals,
     }
 
@@ -920,7 +1359,7 @@ def serialize_finding_for_feed(finding: BreachFinding, reuse_signals: list | Non
 MAX_FINDINGS_PAR_ACTIF = 100
 
 
-def build_exposure_feed(tenant) -> dict:
+def build_exposure_feed(tenant, *, role: str | None = None) -> dict:
     """Fuites ouvertes groupées par actif, chaque groupe portant son score
     d'exposition et ses composantes, groupes triés par score décroissant.
 
@@ -979,7 +1418,9 @@ def build_exposure_feed(tenant) -> dict:
         # au reste. Le compte total, lui, est conservé et affiché — c'est lui
         # qui porte l'information « il y en a beaucoup ».
         visibles = asset_findings[:MAX_FINDINGS_PAR_ACTIF]
-        serialized = [serialize_finding_for_feed(f, reuse_by_finding.get(f.id)) for f in visibles]
+        serialized = [
+            serialize_finding_for_feed(f, reuse_by_finding.get(f.id), role=role) for f in visibles
+        ]
         groups.append(
             {
                 "asset_id": asset.id,
@@ -1002,7 +1443,9 @@ def build_exposure_feed(tenant) -> dict:
                 # d'une liste tronquée : borner l'affichage ne doit jamais
                 # borner l'analyse.
                 "reuse_signals": [
-                    signal for f in asset_findings for signal in reuse_by_finding.get(f.id, [])
+                    _signal_pour_lecteur(signal, role=role)
+                    for f in asset_findings
+                    for signal in reuse_by_finding.get(f.id, [])
                 ],
             }
         )
@@ -1159,3 +1602,26 @@ def refresh_exposure_synthesis(tenant) -> ExposureSynthesis:
 
     content = ai_services.generate_exposure_synthesis(tenant=tenant)
     return save_exposure_synthesis(tenant, content)
+
+
+# --- Comptes désignés (V2-6) ------------------------------------------------
+# Le code vit dans ``watched_accounts.py`` — services.py fait déjà 1 200 lignes
+# et parle des actifs — mais l'interface publique de l'app reste CE module :
+# les autres apps n'ont pas à savoir en combien de fichiers il est découpé.
+from .watched_accounts import (  # noqa: E402,F401
+    DECLARATION_TEXT,
+    DECLARATION_VERSION,
+    DeclarationRequiredError,
+    WatchedAccountError,
+    create_watched_account_scan_job,
+    declare_watched_account,
+    execute_watched_account_scan,
+    get_watched_account,
+    get_watched_account_finding,
+    list_watched_account_findings,
+    list_watched_accounts,
+    remove_watched_account,
+    resolve_scan_targets,
+    update_watched_account_finding_status,
+    watched_accounts_summary,
+)

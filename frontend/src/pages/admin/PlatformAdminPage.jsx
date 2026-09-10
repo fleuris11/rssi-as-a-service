@@ -1,10 +1,14 @@
 import {
   Activity,
+  BookOpen,
   Building2,
+  Inbox,
   ClipboardList,
   Gauge,
+  Newspaper,
   Settings,
   ShieldCheck,
+  ShieldQuestion,
   Tags,
   Trash2,
   Users,
@@ -18,15 +22,23 @@ import { SkeletonCard } from '../../components/ui/Skeleton'
 import Tabs from '../../components/ui/Tabs'
 import { useToast } from '../../components/ui/Toast'
 import ClientsPanel from './panels/ClientsPanel'
+import OwnershipReviewPanel from './panels/OwnershipReviewPanel'
 import PlansPanel from './panels/PlansPanel'
 import { AdminsPanel, SettingsPanel, TrashPanel } from './panels/PlatformPanel'
 import ProspectsPanel from './panels/ProspectsPanel'
+import ReferentialsPanel from './panels/ReferentialsPanel'
+import RequestsPanel from './panels/RequestsPanel'
+import WatchPanel from './panels/WatchPanel'
 
 const TABS = [
   { id: 'capacity', label: 'Ressources', icon: Gauge },
   { id: 'tenants', label: 'Clients', icon: Building2 },
   { id: 'prospects', label: 'Prospects', icon: Users },
   { id: 'plans', label: 'Offres', icon: Tags },
+  { id: 'referentials', label: 'Référentiels', icon: BookOpen },
+  { id: 'requests', label: 'Demandes', icon: Inbox },
+  { id: 'watch', label: 'Veille', icon: Newspaper },
+  { id: 'ownership', label: 'Possession', icon: ShieldQuestion },
   { id: 'admins', label: 'Administrateurs', icon: ShieldCheck },
   { id: 'settings', label: 'Réglages', icon: Settings },
   { id: 'trash', label: 'Corbeille', icon: Trash2 },
@@ -301,6 +313,14 @@ export default function PlatformAdminPage() {
   const [capacity, setCapacity] = useState(null)
   const [tenants, setTenants] = useState([])
   const [plans, setPlans] = useState([])
+  // Le catalogue de référentiels sert au formulaire d'intégration de la
+  // veille : on ne peut pas rattacher une mesure à un référentiel dont on
+  // n'a pas la liste. Chargé À LA DEMANDE, à l'ouverture de cet onglet, et
+  // non avec le socle : le mettre dans le `Promise.all` de `loadCore` faisait
+  // dépendre TOUTE la console d'un appel dont un seul écran a besoin. Si cet
+  // appel tombait, l'exploitant perdait aussi la vue de ses ressources rares
+  // — un rayon de panne élargi sans contrepartie (revue V2-7).
+  const [referentials, setReferentials] = useState([])
   const [health, setHealth] = useState(null)
   const [config, setConfig] = useState(null)
   const [audit, setAudit] = useState(null)
@@ -341,6 +361,21 @@ export default function PlatformAdminPage() {
     loadHealth().catch(() => setHealth(null))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Le catalogue n'est chargé qu'à l'ouverture de l'onglet Veille, et une
+  // seule fois. Son échec n'affecte que cet écran : le formulaire
+  // d'intégration s'y montre alors sans référentiel à proposer, le reste de
+  // la console reste debout.
+  useEffect(() => {
+    if (activeTab !== 'watch' || referentials.length > 0) return
+    platformApi
+      .listReferentials()
+      .then((response) => setReferentials(response.data))
+      .catch(() =>
+        showToast({ type: 'error', message: 'Impossible de charger les référentiels.' })
+      )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
 
   /** Conversion d'un prospect : on bascule sur l'écran Clients avec le
    *  formulaire déjà rempli, et le lien prospect → client est conservé. */
@@ -413,7 +448,11 @@ export default function PlatformAdminPage() {
       {!loading && activeTab === 'plans' && (
         <PlansPanel plans={plans} featureCatalog={config?.features || []} onRefresh={loadCore} />
       )}
-      {!loading && activeTab === 'admins' && <AdminsPanel />}
+      {!loading && activeTab === 'referentials' && <ReferentialsPanel clients={tenants} />}
+      {!loading && activeTab === 'requests' && <RequestsPanel />}
+      {!loading && activeTab === 'watch' && <WatchPanel referentiels={referentials} />}
+          {!loading && activeTab === 'ownership' && <OwnershipReviewPanel />}
+  {!loading && activeTab === 'admins' && <AdminsPanel />}
       {!loading && activeTab === 'settings' && <SettingsPanel configuration={config} />}
       {!loading && activeTab === 'trash' && <TrashPanel onRefresh={loadCore} />}
       {!loading && activeTab === 'health' && (health ? <HealthPanel health={health} /> : <SkeletonCard />)}

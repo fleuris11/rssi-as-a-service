@@ -8,15 +8,46 @@ from .views import (
     BreachScanTriggerView,
     ExposureFeedView,
     ExposureSynthesisRefreshView,
+    IdentifierAccessAuditListView,
     MonitoredAssetDetailView,
     MonitoredAssetListCreateView,
     PreIncidentRadarView,
     SecretRevealAuditListView,
     ThreatIntelligenceAdminStatusView,
     ThreatIntelligenceStatusView,
+    WatchedAccountDetailView,
+    WatchedAccountFindingDetailView,
+    WatchedAccountFindingListView,
+    WatchedAccountListCreateView,
+    WatchedAccountScanTriggerView,
 )
 
 urlpatterns = [
+    path(
+        "watched-accounts/",
+        WatchedAccountListCreateView.as_view(),
+        name="ti-watched-account-list",
+    ),
+    path(
+        "watched-accounts/<int:account_id>/",
+        WatchedAccountDetailView.as_view(),
+        name="ti-watched-account-detail",
+    ),
+    path(
+        "watched-accounts/findings/",
+        WatchedAccountFindingListView.as_view(),
+        name="ti-watched-account-finding-list",
+    ),
+    path(
+        "watched-accounts/findings/<int:finding_id>/",
+        WatchedAccountFindingDetailView.as_view(),
+        name="ti-watched-account-finding-detail",
+    ),
+    path(
+        "watched-accounts/scans/",
+        WatchedAccountScanTriggerView.as_view(),
+        name="ti-watched-account-scan",
+    ),
     path("findings/", BreachFindingListView.as_view(), name="breach-finding-list"),
     path(
         "findings/<int:finding_id>/",
@@ -36,6 +67,11 @@ urlpatterns = [
     ),
     path("pre-incident/", PreIncidentRadarView.as_view(), name="breach-pre-incident"),
     path("audit/reveals/", SecretRevealAuditListView.as_view(), name="breach-reveal-audit-list"),
+    path(
+        "audit/identifiers/",
+        IdentifierAccessAuditListView.as_view(),
+        name="breach-identifier-audit-list",
+    ),
     path("monitored-assets/", MonitoredAssetListCreateView.as_view(), name="monitored-asset-list"),
     path(
         "monitored-assets/<int:asset_id>/",

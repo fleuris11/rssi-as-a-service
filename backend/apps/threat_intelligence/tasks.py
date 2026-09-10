@@ -86,3 +86,51 @@ def run_breach_scan_task(self, tenant_id, asset_id=None, triggered_by="manual", 
     if job is not None:
         services.mark_job_done(job, result)
     return result
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+def run_watched_account_scan_task(self, tenant_id, job_id):
+    """Analyse a la demande des comptes designes (V2-6).
+
+    Meme forme que ``run_breach_scan_task`` : le job porte l'etat, la tache
+    orchestre, ``watched_accounts.execute_watched_account_scan`` contient la
+    logique. Les comptes a analyser sont dans ``result_ref`` du job — un job
+    qui ne sait pas ce qu'il analyse ne serait pas rejouable.
+    """
+    tenant = tenants_services.get_tenant(tenant_id)
+    if tenant is None:
+        return None
+
+    job = BreachScanJob.all_objects.filter(id=job_id).first()
+    if job is None or job.status in (BreachScanJob.Status.DONE, BreachScanJob.Status.FAILED):
+        return None
+    services.mark_job_running(job)
+
+    comptes = services.resolve_scan_targets(
+        tenant, account_ids=job.result_ref.get("account_ids") or None
+    )
+    if not comptes:
+        # Les comptes ont pu etre retires entre la demande et l'execution.
+        # Ce n'est pas un echec : il n'y avait rien a analyser.
+        services.mark_job_done(job, {"findings_created": 0, "accounts_scanned": 0})
+        return None
+
+    try:
+        result = services.execute_watched_account_scan(tenant=tenant, accounts=comptes)
+    except Exception as exc:  # noqa: BLE001 - retry on anything unexpected
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc) from exc
+        logger.warning(
+            "Echec definitif de l'analyse des comptes designes pour le tenant %s : %s",
+            tenant_id,
+            exc,
+            exc_info=True,
+        )
+        # Message client, jamais l'exception brute : meme regle que le scan
+        # d'actifs, apprise en voyant « Breachsense a repondu 400 » s'afficher
+        # dans un espace client.
+        services.mark_job_failed(job, client_messages.SCAN_FAILED)
+        return None
+
+    services.mark_job_done(job, result)
+    return result

@@ -1,11 +1,11 @@
-import { CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, Lock, Send } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { assessmentsApi } from '../api/endpoints'
+import { accessRequestsApi, assessmentsApi } from '../api/endpoints'
 import { FeatureLockedNotice } from '../components/FeatureGate'
 import { useEntitlements } from '../context/EntitlementsContext'
 import Button from '../components/ui/Button'
-import Card from '../components/ui/Card'
+import Card, { CardHeader } from '../components/ui/Card'
 import SegmentedControl from '../components/ui/SegmentedControl'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
@@ -44,68 +44,248 @@ function CompletionCelebration({ assessmentId }) {
   )
 }
 
+/**
+ * Les référentiels qui ne sont PAS attribués, affichés en désactivé plutôt que
+ * masqués — même parti pris que les fonctionnalités hors offre : le client
+ * doit savoir que le produit sait le faire avant de le demander.
+ */
+function ReferentielsADemander({ referentiels, demandes, onDemander, enCours }) {
+  const [ouvert, setOuvert] = useState(null)
+  const [motif, setMotif] = useState('')
+  if (referentiels.length === 0) return null
+
+  const enAttente = new Set(
+    demandes.filter((d) => d.status === 'pending').map((d) => d.subject_key)
+  )
+
+  return (
+    <Card>
+      <CardHeader
+        title="Autres référentiels"
+        description="Ceux-ci ne vous sont pas attribués. Vous pouvez en faire la demande."
+      />
+      <ul className="mt-2 divide-y divide-ink-100">
+        {referentiels.map((ref) => (
+          <li key={ref.slug} className="py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-sm font-medium text-ink-700">
+                  <Lock className="size-3.5 shrink-0 text-ink-400" aria-hidden="true" />
+                  {ref.name}
+                </p>
+                <p className="mt-0.5 text-xs text-ink-500">
+                  {ref.publisher ? `${ref.publisher} — ` : ''}
+                  {ref.measure_count > 0
+                    ? `${ref.measure_count} mesures`
+                    : 'structure prête, contenu à importer'}
+                </p>
+              </div>
+              {enAttente.has(ref.slug) ? (
+                <span className="text-xs text-ink-500">Demande en cours d’examen</span>
+              ) : (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setOuvert(ouvert === ref.slug ? null : ref.slug)
+                    setMotif('')
+                  }}
+                >
+                  Demander l’accès
+                </Button>
+              )}
+            </div>
+            {ouvert === ref.slug && (
+              <div className="mt-3 rounded-md border border-ink-200 bg-canvas p-3">
+                <label className="text-xs font-medium text-ink-600" htmlFor={`motif-${ref.slug}`}>
+                  Pourquoi en avez-vous besoin ? (facultatif)
+                </label>
+                <textarea
+                  id={`motif-${ref.slug}`}
+                  className="mt-1.5 w-full rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm"
+                  rows={2}
+                  value={motif}
+                  onChange={(event) => setMotif(event.target.value)}
+                  placeholder="Exemple : notre donneur d’ordre l’exige dans son cahier des charges."
+                />
+                <div className="mt-2 flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => setOuvert(null)}>
+                    Annuler
+                  </Button>
+                  <Button
+                    variant="primary"
+                    icon={Send}
+                    loading={enCours === ref.slug}
+                    onClick={async () => {
+                      await onDemander(ref, motif)
+                      setOuvert(null)
+                    }}
+                  >
+                    Envoyer la demande
+                  </Button>
+                </div>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  )
+}
+
 export default function DiagnosticPage() {
   const { showToast } = useToast()
+  const [referentiels, setReferentiels] = useState([])
+  const [choisi, setChoisi] = useState(null)
+  const [demandes, setDemandes] = useState([])
+  const [demandeEnCours, setDemandeEnCours] = useState(null)
   const [referential, setReferential] = useState(null)
   const [assessment, setAssessment] = useState(null)
   const [answers, setAnswers] = useState({})
   const [savingMeasureId, setSavingMeasureId] = useState(null)
   const [completing, setCompleting] = useState(false)
+  const [starting, setStarting] = useState(false)
   const [loading, setLoading] = useState(true)
   const [justCompleted, setJustCompleted] = useState(false)
   const [currentDomainIndex, setCurrentDomainIndex] = useState(0)
   const initializedIndex = useRef(false)
+  // `showToast` par référence, et non en dépendance d'effet : le fournisseur
+  // en rend une nouvelle fonction à chaque rendu, et un effet qui en dépend
+  // se relance en boucle — l'écran reste alors sur son squelette de
+  // chargement. Le défaut est invisible tant qu'on ne regarde que la page
+  // finie ; il se voit au premier test.
+  const toastRef = useRef(showToast)
+  toastRef.current = showToast
   const { hasFeature } = useEntitlements()
   const diagnosticInclus = hasFeature('anssi_assessment')
 
-  const loadAssessment = useCallback(async () => {
-    let response
+  const attribues = referentiels.filter((r) => r.granted)
+  const aDemander = referentiels.filter((r) => !r.granted && !r.readable)
+
+  const chargerEvaluation = useCallback(async (slug, { demarrer = false } = {}) => {
     try {
-      response = await assessmentsApi.current()
+      const response = await assessmentsApi.current(slug)
+      return response.data
     } catch (err) {
-      if (err.response?.status === 404) {
-        response = await assessmentsApi.start()
-      } else {
-        throw err
-      }
+      if (err.response?.status !== 404) throw err
+      // Pas de diagnostic en cours. On n'en crée un tout seul que lorsqu'il
+      // n'y a rien à choisir : avec plusieurs référentiels, se promener d'un
+      // onglet à l'autre ouvrirait autant d'évaluations vides.
+      if (!demarrer) return null
+      const created = await assessmentsApi.start(slug)
+      return created.data
     }
-    setAssessment(response.data)
-    const answerMap = {}
-    for (const answer of response.data.answers) {
-      answerMap[answer.measure] = answer.value
-    }
-    setAnswers(answerMap)
   }, [])
 
+  const appliquerEvaluation = useCallback((donnees) => {
+    setAssessment(donnees)
+    const parMesure = {}
+    for (const answer of donnees?.answers ?? []) parMesure[answer.measure] = answer.value
+    setAnswers(parMesure)
+  }, [])
+
+  // 1. Le catalogue : ce que cette entreprise peut évaluer, et ce qu'elle
+  //    pourrait demander.
   useEffect(() => {
     async function load() {
       setLoading(true)
       try {
-        const referentialRes = await assessmentsApi.referential()
-        setReferential(referentialRes.data)
-        await loadAssessment()
+        const [catalogue, mesDemandes] = await Promise.all([
+          assessmentsApi.listReferentials(),
+          accessRequestsApi.list().catch(() => ({ data: [] })),
+        ])
+        setReferentiels(catalogue.data)
+        setDemandes(mesDemandes.data)
+        setChoisi(catalogue.data.find((r) => r.granted)?.slug ?? null)
       } catch (err) {
-        // 402 = hors offre. Ce n'est pas une panne, et l'annoncer comme telle
-        // ferait croire le produit cassé là où il refuse poliment. L'encart
-        // plus bas explique et nomme l'offre qui débloque.
         if (err.response?.status !== 402) {
-          showToast({ type: 'error', message: 'Impossible de charger le diagnostic.' })
+          toastRef.current({ type: 'error', message: 'Impossible de charger le diagnostic.' })
         }
       } finally {
         setLoading(false)
       }
     }
     load()
-  }, [loadAssessment, showToast])
+  }, [])
 
-  // Resume where the tenant left off (first domain with an unanswered
-  // measure) instead of always restarting the wizard at domain 1.
+  // 2. Le questionnaire du référentiel choisi.
+  useEffect(() => {
+    if (!choisi) return
+    let annule = false
+    async function load() {
+      setLoading(true)
+      initializedIndex.current = false
+      setCurrentDomainIndex(0)
+      try {
+        const structure = await assessmentsApi.referential(choisi)
+        // Démarrage automatique conservé quand il n'y a qu'un référentiel :
+        // c'est le parcours d'avant V2-4, et il n'y a rien à choisir.
+        const evaluation = await chargerEvaluation(choisi, {
+          demarrer: attribues.length <= 1,
+        })
+        if (annule) return
+        setReferential(structure.data)
+        appliquerEvaluation(evaluation)
+      } catch (err) {
+        if (!annule && err.response?.status !== 402) {
+          toastRef.current({ type: 'error', message: 'Impossible de charger le référentiel.' })
+        }
+      } finally {
+        if (!annule) setLoading(false)
+      }
+    }
+    load()
+    return () => {
+      annule = true
+    }
+    // `attribues.length` et non `attribues` : la liste est reconstruite à
+    // chaque rendu, la mettre en dépendance relancerait le chargement en
+    // boucle.
+  }, [choisi, attribues.length, chargerEvaluation, appliquerEvaluation])
+
   useEffect(() => {
     if (initializedIndex.current || !referential || !assessment) return
     initializedIndex.current = true
     const firstIncomplete = assessment.progress.by_domain.findIndex((d) => d.answered < d.total)
     if (firstIncomplete > 0) setCurrentDomainIndex(firstIncomplete)
   }, [referential, assessment])
+
+  async function handleDemander(ref, motif) {
+    setDemandeEnCours(ref.slug)
+    try {
+      const response = await accessRequestsApi.create({
+        subject_type: 'referential',
+        subject_key: ref.slug,
+        reason: motif,
+      })
+      setDemandes((prev) => [response.data, ...prev])
+      showToast({
+        type: 'success',
+        message: 'Demande envoyée. Nous revenons vers vous rapidement.',
+      })
+    } catch (err) {
+      showToast({
+        type: 'error',
+        message: err.response?.data?.detail || 'La demande n’a pas pu être envoyée.',
+      })
+    } finally {
+      setDemandeEnCours(null)
+    }
+  }
+
+  async function handleStart() {
+    setStarting(true)
+    try {
+      const response = await assessmentsApi.start(choisi)
+      appliquerEvaluation(response.data)
+    } catch (err) {
+      showToast({
+        type: 'error',
+        message: err.response?.data?.detail || 'Impossible de démarrer le diagnostic.',
+      })
+    } finally {
+      setStarting(false)
+    }
+  }
 
   async function handleAnswer(measureId, value) {
     setAnswers((prev) => ({ ...prev, [measureId]: value }))
@@ -163,11 +343,100 @@ export default function DiagnosticPage() {
       </div>
     )
   }
-  if (!referential || !assessment) {
-    return <p className="text-critical-strong">Diagnostic indisponible.</p>
+
+  const selecteur =
+    attribues.length > 1 ? (
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Référentiels">
+        {attribues.map((ref) => (
+          <button
+            key={ref.slug}
+            type="button"
+            role="tab"
+            aria-selected={ref.slug === choisi}
+            onClick={() => setChoisi(ref.slug)}
+            className={`transition-smooth rounded-full border px-3 py-1.5 text-sm ${
+              ref.slug === choisi
+                ? 'border-brand-600 bg-brand-600 text-white'
+                : 'border-ink-200 bg-surface text-ink-600 hover:border-brand-600'
+            }`}
+          >
+            {ref.name}
+          </button>
+        ))}
+      </div>
+    ) : null
+
+  // Aucun référentiel attribué : ce n'est pas une panne, c'est une situation
+  // qui se règle par une demande.
+  if (attribues.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="font-display text-xl font-semibold text-ink-900">
+            Diagnostic de maturité
+          </h1>
+          <p className="mt-1 text-sm text-ink-500">
+            Aucun référentiel ne vous est attribué pour le moment.
+          </p>
+        </div>
+        <ReferentielsADemander
+          referentiels={aDemander}
+          demandes={demandes}
+          onDemander={handleDemander}
+          enCours={demandeEnCours}
+        />
+      </div>
+    )
   }
+
   if (justCompleted) {
     return <CompletionCelebration assessmentId={assessment.id} />
+  }
+
+  if (!referential) {
+    return <p className="text-critical-strong">Diagnostic indisponible.</p>
+  }
+
+  // Référentiel choisi, aucun diagnostic ouvert dessus : on demande le geste
+  // plutôt que d'ouvrir une évaluation que personne n'a demandée.
+  if (!assessment) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="font-display text-xl font-semibold text-ink-900">
+            Diagnostic de maturité
+          </h1>
+          <p className="mt-1 text-sm text-ink-500">
+            Choisissez le référentiel sur lequel vous souhaitez vous évaluer.
+          </p>
+        </div>
+        {selecteur}
+        <Card>
+          <CardHeader
+            title={referential.name}
+            description={referential.description || referential.publisher}
+          />
+          <p className="mt-2 text-sm text-ink-500">
+            {referential.domains.reduce((total, d) => total + d.measures.length, 0)} mesures,{' '}
+            {referential.domains.length} domaines.
+          </p>
+          {referential.licence_notice && (
+            <p className="mt-2 text-xs text-ink-400">{referential.licence_notice}</p>
+          )}
+          <div className="mt-4">
+            <Button variant="primary" loading={starting} onClick={handleStart}>
+              Démarrer ce diagnostic
+            </Button>
+          </div>
+        </Card>
+        <ReferentielsADemander
+          referentiels={aDemander}
+          demandes={demandes}
+          onDemander={handleDemander}
+          enCours={demandeEnCours}
+        />
+      </div>
+    )
   }
 
   const { progress } = assessment
@@ -185,7 +454,9 @@ export default function DiagnosticPage() {
               Diagnostic de maturité
             </h1>
             <p className="mt-0.5 text-sm text-ink-500">
-              Domaine {currentDomainIndex + 1} / {referential.domains.length} — {domain.name}
+              {referential.name}
+              {assessment.subset_name ? ` — ${assessment.subset_name}` : ''} · Domaine{' '}
+              {currentDomainIndex + 1} / {referential.domains.length} — {domain.name}
             </p>
           </div>
           <span className="shrink-0 text-sm font-medium text-ink-500">
@@ -193,6 +464,7 @@ export default function DiagnosticPage() {
           </span>
         </div>
         <ProgressBar answered={progress.answered} total={progress.total} className="mt-3" />
+        {selecteur && <div className="mt-3">{selecteur}</div>}
       </div>
 
       <Card>
@@ -209,8 +481,14 @@ export default function DiagnosticPage() {
         <ul className="mt-4 divide-y divide-ink-100">
           {domain.measures.map((measure) => (
             <li key={measure.id} className="py-4 first:pt-0 last:pb-0">
-              <p className="text-sm font-medium text-ink-800">{measure.plain_language}</p>
+              {/* `statement` et non `plain_language` : c'est l'énoncé du
+                  client quand il a reformulé la mesure, l'énoncé d'origine
+                  sinon. */}
+              <p className="text-sm font-medium text-ink-800">{measure.statement}</p>
               <p className="mt-0.5 text-xs text-ink-500">{measure.official_title}</p>
+              {measure.context_note && (
+                <p className="mt-1 text-xs italic text-ink-500">{measure.context_note}</p>
+              )}
               <SegmentedControl
                 className="mt-3"
                 disabled={savingMeasureId === measure.id}
@@ -222,6 +500,16 @@ export default function DiagnosticPage() {
           ))}
         </ul>
       </Card>
+
+      {/* Aussi ici, et pas seulement sur l'écran de choix : un client qui n'a
+          qu'un référentiel entre directement dans le questionnaire et ne
+          verrait jamais qu'il peut en demander un autre. */}
+      <ReferentielsADemander
+        referentiels={aDemander}
+        demandes={demandes}
+        onDemander={handleDemander}
+        enCours={demandeEnCours}
+      />
 
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-ink-200 bg-surface px-4 py-3 sm:px-6 md:pl-20 lg:pl-64 lg:px-10">
         <div className="flex items-center justify-between gap-4">

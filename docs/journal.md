@@ -4259,3 +4259,1594 @@ correctif de panne.
   qui rend le point précédent visible : aucun autre actif n'approche ce volume.
 - Le webhook Breachsense n'a toujours jamais reçu de notification réelle.
 - Aucun appel humain à CRRH.
+
+---
+
+## 8 septembre 2026 — Un point de retour, avant d'ouvrir la V2
+
+Les travaux de V2 vont toucher des parties centrales du produit, qui tourne
+en production pour un vrai client depuis le 3 septembre. Séance consacrée
+uniquement à pouvoir revenir en arrière **sans réfléchir**.
+
+### Ce qui a été fait
+
+**Un tag annoté `v1.0-production` sur `eecd03a`**, poussé sur le distant. Tag
+annoté et non simple : il porte un message qui répond seul à la question qu'on
+se pose un soir d'incident — date de mise en production (6 septembre, 17h44
+UTC, exécution n°14 du workflow), client servi (CRRH, offre Souverain), tests
+verts sur ce commit (CI n°55 : 1089 backend, 145 frontend, 19 parcours de bout
+en bout), et sauvegarde de référence associée.
+
+**Une branche `maintenance/v1`** partie de ce tag, poussée elle aussi : de quoi
+corriger un incident de production pendant que la V2 avance sur `main`.
+
+**Une procédure de repli** au §6 bis de `docs/deploiement_production.md`,
+écrite pour quelqu'un qui découvre le projet.
+
+### La sauvegarde : ce que « vérifier » voulait dire
+
+L'objectif était de contrôler la sauvegarde de la nuit précédente — pas
+seulement sa présence. `rssi_2026-09-08_03h30.tar.gz`, 186 224 octets,
+horodatée du 8 à 03h30 UTC, dans une série dont la taille croît régulièrement
+depuis le 24 août (22 Ko → 186 Ko) : rien qui ressemble à une sauvegarde
+brutalement tronquée.
+
+Taille et horodatage ne disent pourtant pas qu'une archive est **récupérable**.
+Trois niveaux ont donc été franchis :
+
+1. **Intégrité** : `gzip -t` passe, et le marqueur `PostgreSQL database dump
+   complete` est présent — le dump n'est pas coupé en plein milieu.
+2. **Complétude** : 11 905 lignes de SQL, 51 `CREATE TABLE`, 51 blocs `COPY`,
+   et le `.env` avec ses 33 variables dont les **trois clés Fernet**
+   (`AI_PSEUDONYMIZATION_KEY`, `TOTP_ENCRYPTION_KEY`,
+   `BREACH_SECRET_ENCRYPTION_KEY`). C'est le point que l'on oublie : sans ces
+   clés, la base restaurée serait en partie définitivement illisible
+   (ADR-014).
+3. **Restauration réelle** : le dump a été rejoué dans une base **jetable**
+   (`verif_restauration_20260908`) sur le Postgres de production, avec
+   `ON_ERROR_STOP=1`. Une seconde. 51 tables, le compte administrateur, et
+   des effectifs identiques à la production sur les cinq tables témoins
+   (7 entreprises, 10 comptes, 4 diagnostics, 7 actifs, 65 migrations). Base
+   supprimée derrière ; la production n'a pas été touchée.
+
+Le troisième niveau est le seul qui prouve quelque chose. Les deux premiers
+disent qu'un fichier a la bonne forme.
+
+### Le workflow acceptait déjà un tag — ce qu'il fallait vérifier était ailleurs
+
+La tâche prévoyait d'ajouter le déploiement d'un tag si le workflow ne le
+permettait pas. Il le permettait : `actions/checkout` résout un tag exactement
+comme une branche, et le reste du workflow ne travaille que sur le SHA résolu.
+
+Le vrai risque était ailleurs, et invisible depuis le dépôt : **les
+environnements GitHub peuvent restreindre les refs déployables**. Un
+environnement `production` réglé sur « branches sélectionnées » aurait refusé
+le tag — au moment précis où l'on en aurait eu besoin. Vérifié par l'API :
+`deployment_branch_policy: null`, aucune restriction. C'est noté en commentaire
+dans le workflow, pour que le réglage ne soit pas resserré par mégarde un jour.
+
+Deux ajouts modestes, tournés vers l'usage réel :
+
+- l'intitulé du champ dit désormais « **TAG** » et souffle `v1.0-production` ;
+- le résumé d'exécution affiche la **ref demandée** et le **tag exact**
+  (`git describe --exact-match`) à côté du SHA. Sous la pression, lire
+  « v1.0-production » vaut mieux que relire quarante caractères hexadécimaux
+  pour se convaincre qu'on n'a pas redéployé `main`.
+
+### Une panne de retour arrière datée, et son recours
+
+La garde qui refuse de déployer du rouge interroge l'API pour trouver une CI
+verte **sur le commit visé**. Les exécutions de workflow finissent par
+disparaître : dans quelques mois, cette garde ne trouvera plus rien sur
+`eecd03a` et **refusera le retour arrière**. Le tag ne protège pas de ça.
+
+Le recours existe déjà, et il n'a pas fallu l'inventer : `ci.yml` porte un
+`workflow_dispatch` ajouté en août, après un push sur `main` resté sans run
+de CI, qui avait rendu la production inatteignable. Relancer la CI sur le tag
+(le sélecteur de ref liste les tags) régénère un run vert et débloque le
+déploiement. C'est documenté au §6 bis.4.
+
+### Le piège qui a coûté le plus de temps
+
+Le script de vérification s'arrêtait après sa **première** commande, sans
+erreur, sans message. `docker compose exec -T` lit l'entrée standard : lancé
+par `ssh … bash -s`, il héritait du script lui-même et en **dévorait la
+suite**. Un `< /dev/null` sur chaque appel règle le problème. Le piège est
+noté dans la procédure, parce que le symptôme n'oriente vers rien.
+
+### La relecture a trouvé deux commandes fausses
+
+Relire une procédure ne suffit pas : il faut lancer ce qu'on y a écrit. Deux
+commandes rédigées de mémoire échouaient.
+
+`ssh ubuntu@152.228.136.251`, la forme qui figurait déjà ailleurs dans le
+document, répond `Permission denied (publickey,password)` : la clé
+d'administration doit être désignée (`-i ~/.ssh/rssi_vps`). Huit occurrences
+corrigées dans tout le fichier, y compris dans la procédure de révocation de
+clé — c'est-à-dire au pire endroit possible pour une commande qui ne marche
+pas. Un §6 bis.2 dit désormais quelle clé ouvre le serveur, laquelle ne
+l'ouvre pas, et propose l'entrée `~/.ssh/config` qui rend la forme courte
+valide.
+
+`git ls-remote --tags <url> v1.0-production` ne rend **que** l'objet du tag,
+pas la ligne `^{}` qui désigne le commit — la sortie annoncée dans le document
+en montrait deux. Il faut le motif `'v1.0-production*'`.
+
+Aucune des deux n'est grave prise isolément. Les deux le deviennent un soir
+d'incident, dans une procédure censée être suivie sans réfléchir.
+
+### Décisions
+
+- **Deux cas de retour, pas un seul.** Ramener le code de la v1 sur une base
+  au schéma V2 est le seul scénario où le repli abîme plus que l'incident. La
+  procédure commence donc par une commande de trente secondes qui compare les
+  migrations appliquées en base à celles présentes dans le tag, et oriente
+  vers le cas A (code seul, ~2 min) ou le cas B (code + base, ~10 min).
+  Exécutée ce jour : 33 contre 33, aucun écart.
+- **Les durées annoncées sont mesurées, pas estimées** : 50 s pour le
+  déploiement (exécution n°14, dont 35 s de bascule et 9 s de contrôle
+  externe), 5 min 01 s pour la CI (n°55), 1 s pour la restauration du dump.
+- **La procédure distingue ce qui a été exécuté de ce qui ne l'a pas été**
+  (§6 bis.10). Les commandes du cas B écrasent la production : elles ont été
+  vérifiées sur la base jetable, à un argument près, et c'est écrit noir sur
+  blanc. Une procédure qui se prétend vérifiée sans l'être est pire qu'une
+  procédure honnêtement annotée.
+
+### Correction en passant
+
+Le §10 annonçait encore « correctif de la course aux migrations à déployer ».
+Il est appliqué depuis le déploiement du 6 septembre : `docker compose ps -a`
+montre le service `migrate` en `Exited (0)`. Ligne remplacée par le point qui,
+lui, reste ouvert : rejouer le retour arrière à froid.
+
+### Reste à faire
+
+- **Jouer le retour arrière en vraie grandeur, hors incident.** Ses éléments
+  ont été vérifiés un à un, la bascule complète non. Une procédure de repli
+  jamais exécutée est une hypothèse, pas un filet — exactement le raisonnement
+  qui avait conduit à restaurer la sauvegarde plutôt qu'à la contempler.
+- Aucune page de maintenance : pendant un cas B, le visiteur voit des erreurs.
+- La copie hors serveur des sauvegardes reste manuelle (point ouvert depuis le
+  24 août).
+- Les points ouverts de la séance du 6 septembre restent ouverts : temps de
+  réponse du flux d'exposition (~4 s sur `ratp.fr`), webhook Breachsense
+  jamais déclenché pour de vrai, aucun appel humain à CRRH.
+
+---
+
+## 9 septembre 2026 — V2-1 : ce qu'on retraite sans fin, et ce qu'on surveille sans droit
+
+Deux corrections sans rapport apparent, traitées ensemble parce qu'elles
+partagent une racine : **le produit tenait pour acquis ce qu'il n'avait
+jamais vérifié.** Qu'une fuite remontée deux fois soit la même. Qu'un actif
+déclaré appartienne à celui qui le déclare.
+
+### Partie A — Une fuite traitée revenait, et l'empreinte disait pourquoi
+
+Le constat client : les analyses successives remontent les mêmes lignes, y
+compris celles qu'il vient de traiter. Il ne peut pas avancer.
+
+**Ce que le code faisait vraiment.** Contre-intuitivement, l'ingestion ne
+rouvrait rien : `get_or_create` sur `(tenant, dedup_hash)` sortait sans
+toucher au statut. Le défaut n'était pas dans la décision, il était dans
+l'**empreinte** : deux remontées de la même fuite n'obtenaient pas toujours la
+même. Elles créaient alors une seconde ligne, ouverte, à côté de celle que le
+client avait traitée.
+
+Trois causes, mesurées et non supposées :
+
+1. **Les dates du fournisseur entraient dans l'empreinte** (`fnd`, `inf`,
+   `found`). Or son schéma réel pose que *tous* les champs sont optionnels.
+   Vérifié en rejouant l'ancienne formule sur une même fuite, avec et sans sa
+   date : deux empreintes différentes. Une fuite remontée sans sa date était
+   une fuite neuve.
+2. **La moitié « secret » de l'empreinte était la forme masquée** —
+   `••••••` suivi des **deux derniers caractères**. « Ete2024! » et
+   « Hiver2024! » donnent tous deux `••••••4!` : deux mots de passe distincts,
+   une seule empreinte. Ce défaut-là ne produisait pas des doublons mais
+   l'inverse, et c'est le plus grave des trois : **une compromission réelle et
+   nouvelle était silencieusement avalée par la précédente.** Jamais signalée.
+3. **Les champs absents étaient pris par position**, remplacés par une chaîne
+   vide.
+
+**Réponse à la question posée — l'empreinte actuelle suffit-elle ?** Non. Elle
+distinguait un secret changé *par accident*, dans la mesure où les deux
+derniers caractères différaient. Ce n'est pas une distinction, c'est une
+coïncidence favorable.
+
+**Ce qui remplace.** L'empreinte se scinde en deux moitiés nommées :
+
+    identity_hash      : QUI a fuité et d'où — endpoint + champs non secrets,
+                         dates exclues, champs présents NOMMÉS
+    secret_fingerprint : QUEL secret — sha256 du secret en clair, "" si aucun
+
+et `dedup_hash` devient leur combinaison. La règle demandée tient alors sans
+exception : même compte + même secret → la même fuite, statut intouché ; même
+compte + secret différent → une nouvelle fuite, qui apparaît même si la
+précédente est traitée.
+
+Empreindre le secret en clair ne franchit aucune ligne de l'ADR-014 : le
+produit détient déjà ce secret sous une forme **réversible** (Fernet). Une
+empreinte à sens unique est strictement moins sensible que ce qui est en base
+— et elle survit à la purge du secret, ce qui est exactement ce qu'il faut
+pour que le dédoublonnage continue de fonctionner après.
+
+**Les dates hors de l'identité, est-ce trop large ?** C'est le vrai
+arbitrage. Fusionner deux fuites distinctes serait pire que d'en dupliquer
+une : une compromission non signalée coûte plus qu'une ligne en double. Ce
+qui rend le retrait acceptable, c'est que le secret est désormais une moitié
+à part entière : deux remontées du même compte, même source, ne se
+confondent que si le secret est identique — ce qui est précisément la
+définition de « la même fuite ».
+
+**Migration.** Purement additive : trois colonnes, aucune retirée, aucune
+contrainte touchée, `dedup_hash` conservé tel quel. C'est délibéré — la
+procédure de repli vers `v1.0-production` (§6 bis) distingue le retour du
+code seul du retour avec restauration de base, et une migration qui casserait
+le code d'avant ferait basculer tout retour arrière dans le second cas.
+
+Le remplissage **ne déchiffre rien** : une migration qui dépend d'un secret
+d'environnement échoue le jour où il manque, et elle échoue pendant un
+déploiement. Les fuites existantes reçoivent une empreinte préfixée
+`legacy:`, et `_reconcile_legacy_finding` les raccroche une par une, à leur
+première réobservation, sur exactement le critère que l'ancienne formule
+utilisait. Sans ce raccrochage, la première analyse suivant la mise en
+service recréerait en double **tout** l'historique — dont les fuites que le
+client vient de traiter. Le défaut corrigé, rejoué une dernière fois, à
+grande échelle.
+
+**Le compteur.** Une fuite traitée revue n'entre plus dans la liste, mais
+l'écran le dit : « la dernière analyse a revu N compromissions que vous aviez
+déjà traitées », avec un lien vers l'onglet où elles sont. On masque, on ne
+cache pas. Le compte est exact, pas dérivé d'une heuristique de date : il
+vient d'un rapport passé à l'ingestion.
+
+**Le score.** Vérifié, et c'était déjà le cas : `build_exposure_feed` filtre
+sur `status=OPEN` avant de calculer. Rien à corriger — mais rien ne
+l'empêchait de se perdre au prochain remaniement. C'est maintenant verrouillé
+par deux tests.
+
+### Partie B — On ne surveille en continu que ce qu'on possède
+
+Le point était ouvert depuis le 3 septembre : **CRRH a déclaré `ratp.fr`**.
+Le 4, le rapprochement du pool fournisseur en a montré un autre,
+`afinhab.org`, qui n'était même pas un actif déclaré.
+
+ADR-010 posait « un actif n'est vérifié que s'il est déclaré ». C'était la
+bonne règle contre le mauvais risque : elle empêche la plateforme de sonder
+au hasard, elle ne dit rien de la légitimité du déclarant. **Déclarer n'est
+pas posséder.**
+
+**Ce qui a tranché, c'est la durée.** Une analyse ponctuelle est un geste
+unique, daté, dont le client répond. Une surveillance continue est
+invisible du dehors, occupe un emplacement de la licence et fait partir des
+alertes pendant des mois. Le risque n'est pas technique — aucune des deux ne
+sonde le domaine d'un tiers, ce sont des lectures de bases déjà constituées —
+il est juridique : constituer et notifier un dossier de compromissions sur
+une organisation qui n'a rien demandé.
+
+D'où deux régimes, et non un seul (ADR-026) :
+
+- **surveillance continue → preuve** : DNS TXT, fichier à la racine, ou email
+  à une adresse d'administration prise dans une **liste fermée**. Trois
+  méthodes parce qu'une seule aurait déplacé le blocage vers les clients les
+  moins outillés — ceux qui n'ont pas la main sur leur zone DNS — c'est-à-dire
+  la cible du produit ;
+- **analyse ponctuelle → déclaration sur l'honneur tracée** : qui, quand,
+  quel actif, quelle adresse IP, et le texte exact accepté. La case
+  `ownership_confirmed` existait déjà ; elle n'enregistrait rien. Un booléen
+  ne répond à aucune des trois questions qu'on pose le jour où un tiers
+  demande des comptes.
+
+**L'email dit au tiers comment refuser.** Il nomme l'entreprise demandeuse et
+précise que ne pas transmettre le code suffit à tout empêcher. Sans cette
+porte de sortie, la méthode ne serait qu'une formalité — elle ne vaut que
+parce que le destinataire peut dire non.
+
+**Rien n'est coupé.** Les actifs déclarés avant cette règle continuent d'être
+surveillés ; ils apparaissent dans un onglet « Possession » de la console,
+avec le sous-ensemble urgent en rouge : ceux qui sont *déjà* en surveillance
+continue. L'état est **dérivé** des tables, jamais stocké — un drapeau aurait
+dû être posé par une migration puis maintenu à chaque preuve validée, soit
+deux occasions de mentir.
+
+### Deux défauts trouvés en écrivant les tests
+
+**Le refus remontait en 500.** `OwnershipNotProvenError` venait de
+`monitoring` et traversait le `except ThreatIntelligenceError` de la vue sans
+être vue : un refus de règle métier présenté au client comme une panne, avec
+un message que personne ne lisait. L'erreur est désormais traduite à la
+frontière de l'app, comme l'est déjà le refus du fournisseur.
+
+**Un de mes tests ne prouvait rien.** Le test censé montrer que les champs
+d'identité doivent être nommés passait *aussi* sans les noms — il exerçait une
+collision impossible avec les champs retenus. Découvert en réintroduisant le
+défaut, pas en le relisant. Réécrit sur le cas réel (`eml="collision"` contre
+`src="collision"`), il tombe.
+
+### Vérifications
+
+Chaque garde vérifiée **en réintroduisant son défaut**, une par une, avec
+restauration entre chaque : 8 pour la partie A, 9 pour la partie B, toutes
+tombent quand le défaut revient. C'est la seule preuve qu'un test vert veuille
+dire quelque chose.
+
+Mesure de l'ancienne empreinte, avant correction, pour ne pas travailler sur
+une hypothèse :
+
+    meme fuite, fnd present  : cb663bf8cab1757f
+    meme fuite, fnd absent   : 7236d21387fce529
+    => meme empreinte ? False
+
+Suites : **1139 tests backend verts** (contre 1086 avant cette session), plus
+les 3 échecs WeasyPrint habituels — environnementaux sous Windows, verts en CI
+Linux, vérifiés inchangés. Frontend : **155 tests verts** (contre 145).
+`ruff` et `eslint` propres, construction verte.
+
+Un incident de méthode, noté parce qu'il coûterait du temps à quelqu'un
+d'autre : une première passe complète a fait tomber quatre tests de
+`test_lockout.py`. Aucun rapport avec ces changements — j'avais lancé deux
+exécutions pytest simultanées, qui se partageaient les compteurs Redis du
+verrouillage de compte. Relancés seuls : verts. **Deux suites en parallèle sur
+un même Redis ne mesurent rien.**
+
+### Reste à faire
+
+- **Rien n'a été vérifié sur le serveur.** Un filtre web Fortinet sur le
+  réseau du poste bloque `rssiasservice.online` (page « Web Filter Violation »
+  sur le port 80, ports 22 et 443 filtrés) ; GitHub et le reste d'Internet
+  répondent normalement. La migration 0006 n'a donc **pas** été jouée sur les
+  volumes réels — un actif de production porte 28 450 fuites, et le
+  remplissage les parcourt toutes. À faire depuis un réseau non filtré, avant
+  déploiement.
+- **Le raccrochage des fuites antérieures n'a été exercé que sur des données
+  de test.** C'est le chemin le plus risqué de cette livraison : il s'exécute
+  une fois, sur tout l'historique, et une erreur y produirait exactement le
+  défaut qu'on corrige.
+- La re-vérification périodique de possession n'existe pas : une preuve
+  acquise le reste, un domaine qui change de mains ne serait pas détecté.
+- `ratp.fr` : la décision empêche désormais d'en activer la surveillance
+  continue et l'écran de régularisation le fait apparaître. Elle ne dit pas ce
+  qu'il faut en dire au client — cela reste à faire, humainement.
+- Les deux domaines orphelins côté fournisseur (`afinhab.org`,
+  `crrhuemoa.org` sans `MonitoredAsset`) : problème de rapprochement distinct,
+  toujours ouvert depuis le 4 septembre.
+
+---
+
+## 9 septembre 2026 (suite) — V2-2 : le produit stockait tout et ne montrait rien
+
+Une session de restitution, pas d'ajout. Rien de ce qui est affiché
+aujourd'hui n'a été collecté aujourd'hui : tout était déjà en base.
+
+### L'inventaire, d'abord
+
+La consigne demandait la liste de ce qui est ignoré. Elle a été produite par
+un script qui croise les schémas des neuf points d'entrée avec une cassette
+enregistrée en production, plutôt que par une lecture à l'œil. Résultat :
+
+    TOTAL de champs documentes et aujourd'hui ignores : 42
+
+Répartition : 8 pour `stealer`, 9 pour `nhi`, 8 pour `docs`, 7 pour
+`sessions`, 5 pour `darkweb`, 2 pour `combo`, 2 pour `creds`, 1 pour `radar`,
+0 pour `asm`. Et ce compte est optimiste : plusieurs champs marqués « retenus »
+ne servaient qu'au dédoublonnage (`src`, `dom`, `doc_id`, `platform`…) et
+n'étaient pas affichés davantage.
+
+**Tous étaient en base.** Dans `raw_data`, la charge du fournisseur déjà
+masquée, conservée depuis la première migration et délibérément exclue du
+sérialiseur au nom de la minimisation (ADR-014). L'intention était bonne et le
+résultat exactement inverse : la donnée la plus utile au client était stockée
+sans jamais lui être montrée, pendant que le stockage, lui, ne minimisait
+rien.
+
+Conséquence de conception : **ne rien stocker de nouveau**. Un module lit
+`raw_data` et en tire une liste de champs présentables. Les 28 450 fuites de
+l'actif le plus chargé deviennent complètes sans migration ni nouveau scan.
+
+### Liste blanche, et pourquoi pas l'inverse
+
+Exposer `raw_data` aurait été une ligne de code. Rejeté : tout ce que la
+source ajouterait demain sortirait sans décision, y compris ce qu'elle ne
+devrait pas transmettre. La liste blanche déclare, endpoint par endpoint, ce
+qui sort — et c'est ce qui rend **structurelle** l'interdiction de servir un
+lien vers un document volé : `url_main_post` et `url_for_breach` existent dans
+la charge, ne sont dans aucune liste, ne peuvent donc pas sortir. Pas une
+règle de vigilance : une impossibilité.
+
+Trois champs par ligne affichée, et les trois comptent : le libellé dit de
+quoi il s'agit, la valeur dit ce que c'est, l'implication dit pourquoi ça
+compte. « Raccoon » n'informe personne. « C'est un logiciel qui recopie les
+mots de passe enregistrés dans le navigateur » fait décider.
+
+**Ce qui a été volontairement écarté** : `iip`, `ip`, `mac` — l'adresse réseau
+et l'adresse matérielle du poste infecté. Données personnelles, valeur
+d'action nulle : on ne fait rien d'une adresse IP domestique, et les afficher
+aurait élargi la surface de données personnelles au moment précis où l'on
+démasque les adresses email. Écarté aussi `atr`, dont la sémantique n'est pas
+confirmée par le fournisseur — inventer un libellé pour un champ qu'on ne
+comprend pas est pire que de le taire, parce que le dirigeant croirait savoir.
+
+### Démasquer les adresses : protéger la bonne donnée
+
+L'ADR-014 §4 ne gardait en clair que l'adresse d'un membre de l'espace. Toute
+autre devenait `j.••••@ex••••.com`, forme non réversible. C'était protéger la
+mauvaise donnée : les adresses qui comptent sont justement celles qui
+n'appartiennent à aucun membre — un ancien salarié, une adresse personnelle
+utilisée au bureau, un prestataire. Sans elles, un RSSI ne peut ni prévenir la
+personne, ni vérifier si le compte est actif, ni juger de la gravité.
+
+Ce qui **ne bouge pas** : mots de passe et cookies de session restent
+chiffrés, masqués, et soumis aux cinq conditions de la révélation. La
+différence n'est pas de degré mais de nature — une adresse ne donne accès à
+rien, un mot de passe ouvre un compte.
+
+L'encadrement des adresses est donc plus léger, et assumé comme tel : un rôle
+(administrateur et contributeur oui, lecteur non), une trace (qui, quand,
+quels actifs), un journal que le client peut lire lui-même, une mention dans
+la politique de confidentialité. Exiger une ré-authentification pour lire la
+liste de ses propres fuites rendrait le produit inutilisable — et une garde
+qu'on contourne parce qu'elle gêne ne protège personne.
+
+Les deux formes restent en base. **Le choix se fait à la restitution, pas au
+stockage** : masquer en base revenait à trancher une fois pour toutes, sans
+retour possible, ce qui se décide légitimement par rôle.
+
+### Deux effets de bord, dont un sérieux
+
+**La pseudonymisation.** C'est le point qui aurait coûté cher. Ces adresses
+entrent dans le contexte envoyé au modèle — et le collecteur de valeurs
+sensibles ne ramassait que les adresses des **membres**. C'était suffisant
+tant que les autres étaient masquées avant stockage ; ça ne l'était plus une
+heure après le changement. Une adresse de tiers serait partie en clair chez le
+fournisseur d'IA.
+
+Le collecteur couvre maintenant les identifiants des fuites. Et le lot de
+vingt fuites qui entre dans le contexte est désormais défini par **une seule
+fonction**, avec un tri déterministe : deux requêtes renvoyant deux lots
+différents auraient laissé passer une adresse, et c'est exactement ainsi que
+ce genre de garde cède. Deux tests le tiennent : l'adresse ne fuit pas, et
+elle arrive quand même sous forme de jeton — une adresse simplement supprimée
+passerait le premier test en privant l'assistant de sa matière.
+
+**La corrélation** s'élargit d'elle-même. L'ADR-017 refusait les identifiants
+masqués comme clé de croisement, donc ne croisait en pratique que les membres.
+Elle couvre maintenant toutes les adresses : la réutilisation entre le compte
+personnel d'un salarié et son accès professionnel est précisément le cas que
+l'ADR-017 voulait rendre visible, et c'était celui que le masquage empêchait
+de voir. Un test l'atteste, un autre garantit qu'une fuite d'avant la V2-2,
+qui n'a que sa forme masquée, reste hors du croisement.
+
+### Le balayage : deux listes, pas une
+
+Le nom du fournisseur était déjà interdit — mais balayé **uniquement sur les
+constantes de message d'erreur**. Rien ne regardait le chemin normal : liste
+des fuites, fil d'exposition, vulgarisation, libellés des champs. La plus
+grande surface, la moins gardée.
+
+Le balayage porte désormais sur la charge réellement servie : chaque chaîne de
+chaque réponse est parcourue récursivement, avec son chemin (« racine.assets
+[0].findings[2].details[1].implication ») pour que l'échec désigne la ligne à
+corriger. Les emails aussi.
+
+Deux listes, et c'est le point de conception : la liste d'origine est large
+(« pool », « http », les chiffres) et convient aux messages d'erreur ;
+l'appliquer à tout aurait échoué à la première adresse de site contenant
+« http ». Une seconde liste, étroite, ne contient que les noms de
+fournisseurs, et s'applique partout. **Une garde qu'on désactive parce qu'elle
+crie trop ne garde rien.**
+
+### Ce que les tests ont trouvé
+
+Deux défauts, tous deux dans mon propre travail :
+
+1. **Une implication trop pauvre.** Le test qui exige que chaque champ dise ce
+   qu'il implique a fait tomber `asm.dom` : « L'adresse internet
+   inventoriée. » — 31 caractères qui constatent sans rien apprendre. Dix
+   implications réécrites dans la foulée, toutes du même genre : elles
+   décrivaient le champ au lieu de dire ce qu'il change.
+2. **Une assertion trop laxiste.** Mon test sur la traduction du type MIME
+   passait *aussi* sans la traduction, à cause d'un `or` qui rendait la
+   condition vraie dans les deux cas. Découvert en neutralisant la garde, pas
+   en relisant le test.
+
+### Vérifications
+
+Dix gardes vérifiées **en les neutralisant**, une par une, avec restauration
+entre chaque : nom du fournisseur servi au client, URL de document ajoutée à
+la liste blanche, garde de rôle levée, champ brut réexposé, consultation non
+tracée, trace posée à tort, signal de réutilisation non repris, adresses
+tierces non pseudonymisées, type de fuite privé de son implication, type MIME
+servi brut. Les dix tombent.
+
+Suites : **1194 tests backend verts** (contre 1139 en début de session), plus
+les 3 échecs WeasyPrint habituels, environnementaux sous Windows. **159 tests
+frontend** (contre 155). `ruff` et `eslint` propres, construction verte.
+
+Jeu de démonstration mis à jour : `src` valait « RedLine Stealer log » et
+s'affichait sous le libellé « Identifiant enregistré sur » — la démonstration
+montrait un champ faux. Remplacé par de vrais services, et complété d'un
+identifiant de machine. Le glossaire couvre RedLine et Vidar, les deux
+logiciels du jeu de démonstration : un client verra donc l'explication, pas la
+formule générique.
+
+### Reste à faire
+
+- **Rien n'a été vérifié sur le serveur**, pour la même raison qu'en début de
+  journée : le filtre web du réseau bloque toujours le domaine. Les migrations
+  0007 et 0008 n'ont donc pas été jouées sur les volumes réels.
+- **Le remplissage de `identifier_plain` n'a été exercé que sur des données de
+  test.** Il relit `raw_data` sur toutes les fuites sans clair — sur un actif
+  à 28 450 fuites, c'est la partie la plus longue de la livraison.
+- **Aucun export client de compromissions n'existe.** Le journal des accès
+  distingue déjà consultation et export ; la seconde branche est en place et
+  jamais exercée. À rebrancher le jour où un export existe — c'est le genre de
+  garde qui s'oublie précisément parce qu'elle attend.
+- Le glossaire des logiciels malveillants couvre huit familles. Au-delà, la
+  formule générique s'applique ; elle est correcte mais moins parlante.
+- `raw_data` continue de tout stocker, y compris les champs non restitués.
+  Réduire le stockage à ce qui est affiché serait une décision de rétention
+  distincte, et irréversible.
+
+---
+
+## 9 septembre 2026 (fin) — V2-3 : supprimer une soirée de travail par mois
+
+L'objectif n'était pas d'ajouter des graphiques. Un RSSI qui prépare son
+comité rouvre quatre écrans, recopie des chiffres dans un tableur et
+reconstruit à la main une évolution que le produit possède déjà. Le produit
+avait quatre mesures justes, toutes **instantanées** ; il manquait une
+période, une comparaison et un document.
+
+### La décision la plus structurante est un refus
+
+Pas de « score global de sécurité ». Une moyenne de la maturité et de
+l'exposition monterait quand l'entreprise remplit un questionnaire et
+descendrait quand un fournisseur se fait pirater — deux variations qu'aucune
+action commune n'explique. Un dirigeant qui la voit baisser ne saurait pas
+s'il doit former ses équipes ou changer des mots de passe. Et elle rendrait
+les **deux** mesures injustifiables, puisqu'aucune ne pourrait plus être
+défendue séparément.
+
+L'écran et le rapport le disent au lecteur plutôt que de compter sur son bon
+sens : la moyenne se fabriquerait sinon dans le tableur d'à côté. Un test
+structurel refuse toute clé de la forme `global_score` / `security_score`
+dans la charge servie.
+
+### Le passé se reconstruit, il ne se stocke pas
+
+Deux façons de dater un indicateur. Une table d'instantanés quotidiens, ou un
+calcul depuis les horodatages existants.
+
+La table a été écartée pour une raison de calendrier, pas de technique : elle
+ne produirait aucun historique avant un mois de fonctionnement, or le premier
+comité a lieu avant. Elle ajouterait aussi une source qui peut diverger du
+réel — une tâche qui n'a pas tourné laisse un trou silencieux.
+
+Les données portent déjà leur histoire : `detected_at`, `treated_at`,
+`completed_at`, `score_global`, `checked_at`. « Ouvert au 15 juin » se
+calcule. **L'historique existe donc dès la mise en service**, sur toute la
+profondeur des données.
+
+Deux trous à boucher pour que cette reconstruction soit juste, et tous deux
+trouvés en écrivant les indicateurs, pas en les imaginant :
+
+1. **une fuite ignorée ne datait pas sa clôture.** Seul « traité » posait
+   `treated_at`. Reconstruire l'état de juin aurait compté comme ouvertes des
+   fuites que le client avait fermées. `treated_by` reste réservé à
+   « traité » : ignorer n'est pas traiter, et attribuer ce geste à quelqu'un
+   qui a écarté la ligne serait faux ;
+2. **une action du plan n'avait ni échéance ni date de fin.** « Actions en
+   retard » était demandé et ne pouvait pas exister : sans échéance, rien
+   n'est en retard. Et « terminées ce trimestre » se serait appuyé sur
+   `updated_at`, qui bouge à la moindre correction de note.
+
+Ce qui n'est pas reconstructible est dit : les fuites ignorées **avant** cette
+version n'ont pas de date de clôture et sont comptées closes depuis toujours.
+Le choix minore le passé plutôt que de gonfler le présent — entre deux
+erreurs, celle qui n'inquiète pas à tort.
+
+### Les mesures, dont une qui m'a contredit
+
+Le 06/09, le fil d'exposition s'était effondré sur 28 450 fuites : 3,79 s rien
+qu'à matérialiser les objets, et un `defer()` sur les colonnes larges n'y
+changeait rien. Un tableau de bord qui interroge plusieurs dates referait la
+même faute, multipliée. J'ai donc mesuré avant de choisir, sur un jeu
+reproduisant le volume réel.
+
+    volume                      : 28450 fuites
+    score par objets Django     : 4,56 s
+    score par n-uplets bruts    : 0,85 s      -> x5,4
+
+    colonne chiffree rapatriee  : 0,92 s (5,0 Mo transportes)
+    booleen calcule en base     : 0,72 s      -> x1,3
+
+    serie de 91 jours           : 3 requetes
+    tableau de bord complet     : 35 requetes, 1,77 s
+
+**Mon hypothèse de départ était fausse.** Je pensais que le transport de la
+colonne chiffrée dominait le coût — c'est la donnée la plus volumineuse. La
+mesure dit ×1,3 : réel, mais secondaire. Le gain vient presque entièrement du
+refus de matérialiser des objets (×5,4), exactement ce que le 06/09 avait déjà
+montré et que j'avais oublié en cours de route.
+
+Pire : **la première version du banc ne contenait aucun secret**, et concluait
+donc que rapatrier la colonne ne coûtait rien du tout. Un banc qui ne mesure
+pas la donnée qui coûte donne une réponse fausse avec la même assurance qu'une
+vraie. Corrigé — 75 % des fuites du jeu portent maintenant un secret, la
+proportion relevée en production le 04/09.
+
+### La série quotidienne, et le piège qu'elle contient
+
+« Combien de fuites ouvertes chaque jour ? » se traduit spontanément par une
+boucle sur les jours : 91 requêtes pour un trimestre. On fait autrement — une
+requête pour les détections par jour, une pour les clôtures par jour, un
+compte au début de la période, puis une somme cumulée sur des seaux
+quotidiens. **Trois requêtes**, quel que soit le volume.
+
+C'est d'ailleurs la propriété que le test fixe, et non un temps : un budget de
+temps échoue selon la machine, un budget de requêtes décrit une propriété du
+code.
+
+### Une app sans modèle
+
+`apps/reporting` s'ajoute à la liste de CLAUDE.md, ce qui mérite d'être
+justifié. La restitution traverse le diagnostic, le plan d'action, la
+surveillance et le renseignement : la loger dans l'une des quatre aurait été
+arbitraire et y aurait fait entrer les trois autres.
+
+Elle ne possède **aucun modèle**. Chaque app calcule ses indicateurs sur ses
+propres tables, par son `services.py` ; `reporting` compose. C'est ce qui
+tient les deux contraintes ensemble : la règle d'architecture (une app
+n'atteint jamais les modèles d'une autre) et les agrégats en base (le SQL est
+écrit là où vivent les tables).
+
+### Deux graphiques, et la question qu'ils posent
+
+La consigne interdisait le décoratif : si la question n'est pas formulable, le
+graphique ne se fait pas.
+
+- **Ouvertes jour par jour** → *est-ce que le stock baisse ?* Un chiffre isolé
+  ne peut pas y répondre : 14 fuites ouvertes est une bonne nouvelle si on
+  partait de 40, une mauvaise si on partait de 3. Une seule courbe, sans
+  découpage par gravité — trois courbes répondraient à une question que
+  personne ne pose en comité.
+- **Exposition par actif** → *sur quel actif agir en premier ?* En barres
+  alignées plutôt qu'en graphique : avec trois à dix actifs, une barre
+  n'apporte rien qu'un nombre aligné ne dise déjà.
+
+**Écarté : le graphique de maturité.** Avec un à deux diagnostics par an, une
+courbe à deux points est une décoration. Le chiffre et l'écart suffisent.
+
+### Le document
+
+Écrit pour une direction, pas pour un RSSI : la personne qui le reçoit n'a pas
+le vocabulaire, n'ouvrira pas le produit, et décide quand même. Chaque chiffre
+porte ce qu'il veut dire, l'évolution est écrite en toutes lettres (un PDF n'a
+pas d'infobulle : une flèche verte sans phrase laisse deviner si monter est
+une bonne nouvelle), et le document est autonome — aucune image, aucune police
+téléchargée, il doit s'ouvrir hors ligne dans dix ans.
+
+Faits marquants et reste-à-faire sont **déterministes** : des règles, pas une
+IA. Un document présenté à une direction doit être reproductible, et chaque
+phrase justifiable par un chiffre du tableau.
+
+Construction et rendu sont séparés (`build_html` / `render_pdf`) : le fond du
+rapport est testé sur toute machine, y compris celles où le moteur système
+manque. Une seule assertion touche WeasyPrint.
+
+### La moitié manquante, rattrapée en cours de route
+
+En rédigeant le journal, j'ai écrit que l'échéance n'était saisissable nulle
+part : la colonne et le service existaient, l'API du plan d'action ne les
+exposait pas. « Actions en retard » serait donc resté à zéro pour tout le
+monde — un indicateur qui ne peut jamais être non nul est exactement le
+« graphique décoratif » que la consigne interdit, sous une autre forme.
+
+Corrigé : `due_date` passe par l'API du plan, `is_overdue` est calculé côté
+serveur (l'écran ne refait pas la comparaison de dates dans son coin), et un
+champ de date apparaît sur chaque carte, en rouge quand l'échéance est passée.
+Retirer une échéance est un geste légitime, pas une erreur de saisie : le
+champ accepte le vide.
+
+### Le risque propre à cette version
+
+Introduire un second chemin de calcul sur des données qui en avaient déjà un.
+Si le tableau de bord annonce 14 compromissions ouvertes et que la liste en
+montre 12, le RSSI cesse de croire aux deux — ce serait pire que pas de
+tableau de bord.
+
+Quatre tests de cohérence l'interdisent : le score du tableau égale celui du
+fil d'exposition, le compte égale celui de la liste, la somme par actif égale
+le total, et le dernier point de la série égale le compteur du jour. Le cas
+piège est couvert séparément : `has_secret` vrai avec une colonne vide ne doit
+donner le bonus d'aucun des deux côtés.
+
+L'export tableur reprend exactement les chiffres de l'écran, pour la même
+raison : s'ils divergeaient, le RSSI recommencerait à tout recalculer à la
+main, et cette version n'aurait servi à rien.
+
+### Vérifications
+
+**1253 tests backend verts** (contre 1194), **167 frontend** (contre 159).
+Quatre échecs WeasyPrint, environnementaux sous Windows — les trois habituels
+plus celui du nouveau rapport, même cause, verts en CI Linux. `ruff` et
+`eslint` propres, construction verte.
+
+Les mesures de performance vivent dans un test marqué `slow`, exclu de la
+passe par défaut : il fabrique 28 450 fuites et mesure, il ne garde rien qu'un
+autre test ne garde déjà. `pytest -m slow -s` pour le rejouer.
+
+### Reste à faire
+
+- **Toujours rien vérifié sur le serveur** : le filtre web du réseau bloque
+  encore le domaine. Les migrations de cette version (échéance et date de fin
+  des actions) n'ont pas tourné sur les données réelles.
+- **Le rapport n'est ni planifié ni envoyé.** Il se produit à la demande. Un
+  envoi mensuel automatique est une évidence de produit, mais il suppose de
+  décider à qui, à quelle date, et ce qu'on fait d'une période vide.
+- Le remplissage de `completed_at` approxime par `updated_at` pour les actions
+  déjà terminées. Dit dans la migration, à ne pas oublier si l'on présente un
+  historique antérieur à cette version.
+
+---
+
+## 9 septembre 2026 (suite) — V2-4 : le diagnostic ne connaissait qu'un référentiel
+
+### Ce qui existait, et ce qui n'existait pas
+
+Le modèle portait `Referential`, `Domain`, `Measure` : trois entités qui
+ressemblaient à un catalogue. En les relisant, quatre hypothèses ANSSI étaient
+gravées dans le schéma, pas seulement dans les données.
+
+`Measure.number` était un **entier unique sur toute la base**. L'ANSSI numérote
+de 1 à 42 ; ISO 27001 nomme ses contrôles `A.5.1`, le NIST `PR.AA-01`. Ni l'un
+ni l'autre n'entre dans un `PositiveSmallIntegerField`, et l'unicité globale
+interdisait même à deux référentiels d'avoir chacun une mesure n°1.
+
+Le **poids d'une mesure vivait dans le code** : `{standard: 1.0, renforcé: 0.5}`,
+les deux niveaux du guide d'hygiène. Un référentiel sans niveaux n'avait aucune
+place où exister.
+
+`get_active_referential()` renvoyait **« le » référentiel actif**, le même pour
+tous. Il n'y avait pas d'idée d'attribution. Et « l'évaluation en cours » était
+unique **par client**, pas par référentiel : deux diagnostics de front étaient
+impossibles.
+
+Rien de tout cela n'était un défaut à l'époque. C'était une hypothèse juste,
+devenue fausse.
+
+### Les décisions, et celle qu'il fallait ne pas prendre en silence
+
+Deux ADR. [ADR-029](adr/029-referentiels-multiples-et-attribution.md) pour le
+modèle : code en chaîne unique **par** référentiel, poids porté par la donnée,
+attribution par client, sous-ensembles et surcharges d'énoncé.
+[ADR-030](adr/030-consolidation-multi-referentiels.md) pour la question que la
+fiche demandait explicitement de ne pas trancher en silence : que vaut le score
+d'un client qui suit deux référentiels ?
+
+La règle retenue : **moyenne non pondérée des scores par référentiel** — chacun
+compte pour un. Une moyenne pondérée par le nombre de mesures aurait laissé les
+93 contrôles de l'annexe A d'ISO décider de 69 % du chiffre face aux 42 mesures
+de l'ANSSI, sans que personne l'ait choisi. Une déduplication des exigences qui
+se recouvrent aurait été plus juste, mais elle demande une table de
+correspondance entre référentiels que nous n'avons pas et qu'inventer
+reviendrait à décider nous-mêmes que telle mesure de l'ANSSI et tel contrôle
+d'ISO sont la même exigence — ce que ni l'un ni l'autre n'affirme.
+
+La règle est arbitraire. Elle est surtout **explicable en une phrase**, ce qui
+est le seul critère qui tienne devant un comité. Le consolidé ne circule donc
+jamais seul : le détail par référentiel, le nom de la méthode et la liste des
+référentiels non encore évalués voyagent avec lui, dans l'API comme à l'écran.
+
+Corollaire qu'on aurait pu manquer : la progression du comité n'est calculée
+que si **chaque** référentiel du consolidé courant a un diagnostic antérieur.
+Sinon, un client qui évalue ISO pour la première fois verrait bouger une
+« progression » qui n'a eu lieu nulle part — le chiffre aurait varié parce que
+l'ensemble comparé a changé.
+
+Le **plan d'action**, lui, se consolide sans arbitrage : un score est une
+opinion sur un ensemble, une action est une chose à faire. Deux référentiels
+qui demandent la même chose donnent deux lignes, côte à côte, chacune portant
+son référentiel. Les fusionner demanderait la table qu'on a refusé d'inventer.
+
+### Le contenu qu'on n'a pas le droit d'embarquer
+
+ISO 27001 et les CIS Controls sont sous droits. Le dépôt n'embarque que
+l'ANSSI (Licence Ouverte / Etalab). Le produit fournit donc la **structure
+d'accueil** : le modèle, un format d'import documenté et stable
+([docs/format_import_referentiel.md](format_import_referentiel.md)), un gabarit
+de tableur vide, et une commande `import_referential` qui lit du JSON ou du CSV.
+C'est l'exploitant ou le client, détenteur de la licence, qui importe le
+contenu, en déclarant sa mention de droits — affichée ensuite avec le
+référentiel, dans le produit et dans la console.
+
+`Referential.kind` porte cette distinction (`open` / `licensed` / `custom`), et
+la console l'affiche en évidence : c'est la question qu'on se pose au moment
+d'attribuer ISO à un client.
+
+### La surcharge vit à côté, jamais à la place
+
+Reformuler une mesure pour un client se fait dans une table séparée. La
+surcharge est appliquée **en mémoire, à la lecture**, sur un attribut privé —
+pas dans `Measure.plain_language`. Écrire dans le champ lui-même aurait
+fonctionné jusqu'au jour où une instance ainsi modifiée serait sauvegardée par
+mégarde, corrompant le référentiel pour tous les autres clients. Un test tient
+la garantie dans les deux sens : le voisin lit l'énoncé d'origine, et retirer
+la surcharge le fait réapparaître intact.
+
+Ce qui n'est **pas** surchargeable : l'intitulé officiel. C'est la citation du
+référentiel ; le réécrire ferait dire à l'ANSSI ce qu'elle ne dit pas.
+
+### La demande d'accès : un mécanisme, pas une fonctionnalité
+
+Le point 10 de la fiche demandait un mécanisme générique, réutilisable en V2-6.
+`AccessRequest` porte donc un `subject_type` et un `subject_key`, et un registre
+déclaré en code dit pour chaque type comment le décrire, comment savoir s'il est
+déjà détenu, et ce qu'« accorder » veut dire.
+
+Deux sujets aujourd'hui. `referential` : accorder attribue immédiatement.
+`feature` : accorder **n'attribue rien**, et c'est délibéré — changer l'offre
+d'un client est un acte commercial avec des conséquences de facturation, pas la
+conséquence silencieuse d'un clic. La console le dit alors explicitement au lieu
+de laisser croire que c'est réglé. Les tests portent sur les deux sujets, pas
+seulement sur les référentiels : un test qui ne connaîtrait que le cas de V2-4
+laisserait passer un couplage.
+
+### Ce qu'une entreprise reçoit à l'inscription
+
+Conséquence qu'on pouvait manquer : après V2-4, un client ne voit que ce qui
+lui est attribué — y compris un client **créé après** le déploiement. Sans
+rien de plus, une inscription aurait débouché sur « aucun référentiel ne vous
+est attribué », alors que personne n'avait décidé ça.
+
+`create_tenant_with_owner` attribue donc d'office les référentiels **libres de
+droits** — l'ANSSI, aujourd'hui — et eux seuls. Un contenu sous licence ne
+s'attribue pas tout seul : c'est l'exploitant qui sait ce qu'il a le droit de
+servir, et à qui. Deux tests le tiennent, et ils appellent le service
+directement plutôt que la fixture d'entreprise, qui attribue tout le catalogue
+pour préserver le monde d'avant et masquerait précisément ce qu'on vérifie.
+
+### La migration, répétée sur une copie de base réelle
+
+C'était le vrai risque de cette version : des diagnostics en cours et terminés,
+avec leurs réponses et leurs plans d'action, sur un schéma qu'on change sous
+eux.
+
+Écrite à la main plutôt qu'auto-générée. Expand/contract sur `code` et
+`referential` — on ajoute le champ permissif, on le remplit, on le resserre ;
+jamais un `NOT NULL` posé sur une table pleine. Aucune suppression : `number`
+perd son unicité globale mais garde sa valeur, `level` s'élargit sans se vider.
+
+Et surtout, une rétro-création des attributions. **Avant** cette migration, tout
+client voyait le référentiel actif ; **après**, il ne voit que ce qui lui est
+attribué. Sans cette étape, tous les clients existants auraient perdu leur
+diagnostic au déploiement — y compris les deux qui en ont un en cours.
+
+Répétée sur une copie restaurée de la base de développement (42 mesures,
+3 diagnostics dont un terminé, 42 réponses, 9 clients) : rien perdu, 9
+attributions créées, aucun score démenti. `manage.py check_referential_migration`
+vérifie tout cela après coup et sort en erreur au premier constat bloquant — il
+recalcule notamment chaque score déjà figé et le compare à ce qui a été présenté
+au client.
+
+Ce que cette répétition **ne** prouve pas : elle n'a pas tourné sur la base de
+production, à laquelle je n'ai pas accès depuis ce poste (le filtre réseau du
+06/09 vaut toujours). La commande est faite pour être lancée là-bas, après
+`migrate`, avant de rendre la main.
+
+### Vérifications
+
+**1348 tests backend verts** (contre 1253) : 22 sur l'importateur, 52 sur les
+référentiels multiples, 21 sur les demandes d'accès. **172 frontend** (contre
+167), dont 5 nouveaux sur l'écran de diagnostic. Les quatre échecs WeasyPrint
+habituels, environnementaux sous Windows. `ruff` et `eslint` propres.
+
+Le test qui compte le plus : `test_le_score_anssi_est_celui_d_avant_v2_4`. Il
+recalcule le score attendu à partir des poids et vérifie que le remplacement de
+la table de niveaux figée par un poids en base ne déplace pas le chiffre d'un
+dixième.
+
+### Un défaut trouvé en écrivant les tests de l'écran
+
+Le premier test de `DiagnosticPage` restait bloqué sur son squelette de
+chargement. Cause : l'effet de chargement dépendait de `showToast`, dont le
+fournisseur rend une nouvelle fonction à chaque rendu — l'effet se relançait en
+boucle. La page « marchait » parce que le rechargement était assez rapide pour
+que l'œil ne le voie pas. Corrigé par une référence stable ; le défaut serait
+resté invisible tant qu'on ne regarde que la page finie.
+
+### Reste à faire
+
+- **La migration n'a pas tourné sur la production.** Rien de cette version n'a
+  été vérifié sur le serveur, pour la même raison qu'en V2-1 à V2-3.
+- **Aucune interface de composition de sous-ensemble dans la console.** La
+  composition passe par l'API. Un exploitant qui veut préparer « ANSSI — les 10
+  essentielles » pour un client doit appeler l'endpoint ; l'écran viendra.
+- **Aucune interface de reformulation non plus.** L'API est là, testée, exposée
+  aux administrateurs d'entreprise ; l'écran manque.
+- **Aucune notification** au client quand sa demande est traitée : la réponse
+  l'attend dans son espace, elle ne va pas le chercher. Même dette que le
+  rapport de comité, qui ne s'envoie pas non plus.
+- Pas de table de correspondance entre référentiels. C'est ce qui interdit de
+  dédoublonner un plan d'action consolidé, et c'est dit dans ADR-030 plutôt que
+  contourné.
+
+---
+
+## 10 septembre 2026 — V2-5 : à qui on parle, et ce qu'on lui donne
+
+### Partie A — deux lecteurs, un seul écran
+
+Le produit s'adresse à deux personnes qui regardent les mêmes pages : le
+dirigeant, et celui qui gère son informatique. Jusqu'ici il tranchait pour tout
+le monde, en faveur du premier — vocabulaire vulgarisé partout, détails
+techniques absents. Conséquence, le prestataire devait aller chercher dans
+l'API ce que l'écran ne lui montrait pas.
+
+`User.display_profile` vaut désormais `executive` ou `technical`. Sur
+l'utilisateur et non sur l'entreprise : dans une même PME, les deux ont chacun
+un compte, et un réglage d'entreprise obligerait l'un à subir la lecture de
+l'autre.
+
+**La décision qui structure tout est un refus** ([ADR-031](adr/031-profil-d-affichage.md)) :
+*aucune réponse d'API ne dépend du profil.* Le serveur le stocke et l'ignore.
+C'était tentant de faire l'inverse — le serveur sait déjà rédiger, il aurait pu
+renvoyer un libellé vulgarisé ou technique selon le lecteur. Rejeté pour trois
+raisons, dont une décisive : dès que la réponse dépend du profil, plus rien ne
+garantit que le dirigeant *peut* voir ce que voit le technicien. La consigne
+« un même fait doit rester le même fait » deviendrait une intention ; ici c'est
+une propriété, vérifiée par un test qui compare les charges utiles des deux
+profils sur quatre endpoints et exige qu'elles soient identiques.
+
+Deux autres tests disent ce que ce réglage n'est pas : un lecteur en profil
+technique reste refusé au démarrage d'un diagnostic, un administrateur en
+profil dirigeant garde ses droits. Ce n'est pas un rôle.
+
+Côté écran, trois primitives plutôt que des `if (isTechnical)` disséminés —
+une condition finit toujours par *supprimer* quelque chose. `TechnicalDetail`
+masque par l'attribut `hidden` et ne retire jamais du DOM : le contenu reste
+trouvable par une recherche dans la page, et le dirigeant qui déplie voit
+exactement ce que voit son prestataire. `Term` affiche **toujours les deux**
+formulations : masquer « SPF » au dirigeant l'empêcherait de reconnaître le mot
+dans le courriel de son prestataire, c'est-à-dire au moment précis où il en a
+besoin.
+
+Le basculement vit dans la barre du haut. La consigne dit « à tout moment », et
+un réglage qu'il faut aller chercher dans un menu ne se change jamais.
+
+### Partie B — l'inventaire, puis ce qui manquait
+
+Ce qui existait : la charte informatique (rédigée par l'IA, versionnée,
+exportable) et le rapport de comité (déterministe, mais ni stocké ni
+versionné). Rien d'autre.
+
+Ce qui a été ajouté : politique de sécurité, procédure de gestion des
+incidents, registre des incidents, plan de continuité simplifié, fiche de
+sensibilisation. Et le rapport de comité entre dans la bibliothèque, archivé et
+versionné.
+
+### La décision de fond : composés, pas rédigés
+
+Six documents sur sept sont **composés** par du code à partir des données de la
+plateforme. Seule la charte reste rédigée par l'IA.
+
+C'est le contraire de ce qu'on attendrait d'une version qui parle de génération
+documentaire, et c'est la consigne de vérification qui l'impose : *« un
+document qu'il faut réécrire entièrement ne sert à rien »*. Un LLM à qui l'on
+demande une politique de sécurité produit un texte plausible et générique. Un
+modèle que nous écrivons une fois, qui cite les dix domaines du guide
+d'hygiène, l'état constaté de chacun et les mesures en écart avec leur
+échéance, est plus précis — et il l'est pour tous les clients à la fois, parce
+qu'on l'améliore une fois. S'y ajoutent la reproductibilité (deux générations
+donnent le même texte, ce qui se défend devant un auditeur — même raisonnement
+qu'ADR-028) et la sobriété.
+
+La charte fait exception parce que son contenu doit réellement s'adapter au
+contexte : un artisan et un cabinet de conseil n'ont pas les mêmes usages à
+encadrer. La consigne 7 reste donc vraie et ne concerne qu'elle : rien de
+nouveau n'appelle l'API Anthropic. Raisonnement complet dans
+[ADR-032](adr/032-bibliotheque-documentaire.md).
+
+### Trois règles, et ce qu'elles interdisent
+
+**On n'invente rien.** Ce que la plateforme ne sait pas est écrit
+`[à compléter]`. Un plan de continuité qui annonce un délai de reprise que
+personne n'a décidé est pire qu'une case vide. Un test l'exige dans chacun des
+six documents.
+
+**Un document générique le dit en tête.** Sans diagnostic terminé, un bandeau
+l'annonce — y compris pour celui qui reçoit le fichier sans avoir vu l'écran.
+Et le catalogue prévient **avant** la génération : « sera générique : aucun
+actif déclaré ».
+
+**Le registre ne recopie aucun identifiant fuité**, pas même masqué. Ce
+document s'imprime, se transmet, finit en pièce jointe. La ligne existe — c'est
+un incident à documenter — mais elle dit « un compte lié à tel domaine », pas
+l'adresse.
+
+### Ce que j'ai trouvé en relisant les documents produits
+
+J'ai composé les six documents pour un client fictif complet et je les ai lus
+comme les lirait une PME. Trois défauts, invisibles dans les tests :
+
+- l'état de possession des actifs s'affichait en anglais brut — « declared »
+  dans un document lu par un dirigeant. Un test pin désormais la traduction ;
+- les cinq lignes vierges du registre étaient toutes numérotées « 1 » ;
+- les tableaux **à remplir** affichaient un tiret dans chaque case vide : un
+  formulaire qui a l'air déjà rempli, de rien. `_tableau` distingue maintenant
+  les tableaux de restitution (tiret, sinon la colonne s'effondre) des
+  tableaux à remplir (case vide).
+
+Un quatrième contrôle est devenu un test : la politique de sécurité choisit son
+texte d'engagement **par nom de domaine**. Si un nom du fichier ANSSI change,
+le document retombe silencieusement sur une phrase générique — il reste
+plausible et perd exactement ce qui en faisait un document d'entreprise. Le
+test compare les dix noms aux dix clés, plutôt que d'espérer.
+
+### « Éditable » veut dire Word
+
+L'export Markdown existait et reste, non gardé : c'est la garantie que le
+client récupère son contenu quoi qu'il arrive. Mais une PME n'édite pas du
+Markdown. Le format éditable est donc le `.docx`, produit par `python-docx` —
+une dépendance pure Python, sans bibliothèque système, contrairement à
+WeasyPrint. L'export Word fonctionne donc là où le PDF échoue, ce qui est
+précisément le cas de ce poste.
+
+### Deux gardes déplacées, et un défaut corrigé au passage
+
+Tant qu'il n'existait qu'un document, garder la vue de création revenait à
+garder la charte. Un commentaire de la phase 12 l'anticipait ; c'est fait. La
+clé `charter_generation` ne garde plus que la charte : la retirer d'une offre
+ne retire plus le registre des incidents.
+
+`IsAIEnabled` quitte les vues documentaires. L'interrupteur d'IA doit
+désactiver **ce qui appelle l'IA**, pas reprendre au client ce qu'aucune IA ne
+rédige. Cela corrige un défaut antérieur : avant V2-5, un client qui coupait
+l'IA ne pouvait plus relire la charte générée la veille. Le test
+`TestAIDisabledReturns403Everywhere` a été resserré et son intention réécrite,
+avec en regard `TestBibliothequeSansIA` qui dit ce que l'interrupteur ne doit
+pas emporter.
+
+### Un vrai défaut de production, trouvé par l'heure qu'il était
+
+La suite a rougi sur trois tests de restitution qui passaient la veille. Ce
+n'était ni une régression de V2-5, ni un test instable : `periods.resolve`
+prenait la date sur `timezone.now()`, **en UTC**, et posait les bornes dans le
+fuseau d'affichage (Europe/Paris). Entre minuit et deux heures du matin, la
+date UTC est encore celle de la veille : la période « en cours » se terminait
+hier à 23 h 59 heure de Paris — **dans le passé**. Le tableau de bord du comité
+perdait silencieusement tout ce qui s'était produit dans les deux dernières
+heures.
+
+Personne ne l'aurait vu, sauf un RSSI ouvrant sa page à minuit et demi. Il a
+fallu lancer la suite à 1 h 50 pour que ça se voie. Correction d'une ligne
+(`timezone.localdate`), et un test paramétré sur trois instants — 1 h 50 heure
+d'été, 0 h 30 heure d'hiver, midi — qui exige que la période contienne
+toujours l'instant courant.
+
+### Vérifications
+
+**1420 tests backend verts** (contre 1348), **178 frontend** (contre 172). Les
+quatre échecs WeasyPrint habituels, environnementaux sous Windows. `ruff` et
+`eslint` propres, construction verte.
+
+Docker Desktop a lâché en cours de session — la panne connue de ce poste. Une
+première passe avait produit un mur d'erreurs qui n'était que la base disparue,
+et non une régression.
+
+### Reste à faire
+
+- **Le profil d'affichage n'est appliqué qu'à deux écrans** (plan d'action,
+  surveillance). Les primitives existent ; les autres pages les ignorent
+  encore. C'est un travail d'écran par écran, à poursuivre.
+- **Rien n'a tourné sur la production**, comme depuis V2-1. Deux migrations
+  cette fois : le champ de profil et les types de documents, toutes deux
+  additives et sans reprise de données.
+- **La politique de sécurité dépend des noms de domaines de l'ANSSI.** Sur un
+  référentiel importé (V2-4) aux domaines différents, elle retombe sur une
+  phrase générique. Une table de correspondance domaine → engagement,
+  alimentable à l'import, serait la suite.
+- **Pas de module de gestion d'incidents.** Le registre part de ce que la
+  plateforme détecte ; la saisie manuelle se fait dans le document. C'était le
+  bon périmètre pour cette version, ce ne le restera pas.
+- Le modèle documentaire vit toujours dans `apps.ai_assistant`, qui contient
+  désormais plus de déterministe que d'IA. Le nom est une dette assumée : le
+  déplacer demanderait de migrer une table portant les documents de vrais
+  clients.
+
+---
+
+## 10 septembre 2026 (suite) — V2-6 : surveiller le compte de quelqu'un d'autre
+
+### Le sujet n'était pas technique
+
+Une entreprise veut faire surveiller des comptes précis : l'adresse de sa
+directrice générale, celle d'un client important, un compte technique sensible.
+Techniquement, c'est peu de chose — le fournisseur expose déjà `scan_email`, et
+l'interface de provider le déclarait depuis la phase 7.
+
+Le vrai sujet est ailleurs. Faire surveiller `directrice@exemple.fr`, c'est
+chercher si **cette personne** apparaît dans des fuites. C'est un traitement de
+données personnelles la concernant, et le responsable en est le client — pas
+nous, qui agissons sur ses instructions.
+
+Trois façons de mal s'en tirer, toutes tentantes : ignorer le problème et
+livrer un champ de saisie ; se protéger par une clause noyée dans les CGU ;
+prétendre vérifier nous-mêmes la légitimité, ce que nous ne pouvons pas faire —
+nous n'avons ni le contrat de travail, ni le contrat client, ni l'accord de la
+personne.
+
+### Ce qu'on a fait : déclarer, figer, conserver
+
+Au moment d'ajouter un compte — pas dans un écran d'après, pas dans les
+conditions générales — le client déclare à quel titre il le surveille et
+**pourquoi**. Cinq champs, figés à la création : la base légale, la finalité,
+le texte exact accepté, sa version, qui et quand.
+
+`declaration_text` conserve le texte **intégral** plutôt qu'un renvoi à la
+version courante. Le jour où l'on reformulera cet engagement, ce qu'a réellement
+accepté ce client-là ne doit pas changer rétroactivement : c'est la différence
+entre une trace et une affirmation.
+
+La finalité est **obligatoire**, alors que le « pourquoi » d'une demande d'accès
+(V2-4) ne l'est pas. La différence est entière : là on demandait une
+fonctionnalité, ici on déclare traiter les données d'un tiers. Une finalité vide
+rendrait la déclaration ininterprétable le jour où quelqu'un la relit — à
+commencer par la personne concernée.
+
+Les bases légales sont formulées dans les termes d'un dirigeant de PME (« c'est
+mon propre compte », « compte professionnel fourni par mon entreprise ») ; le
+rattachement à l'article 6 du RGPD est fait dans [ADR-033](adr/033-comptes-designes.md),
+pas dans une liste déroulante que personne ne comprendrait.
+
+Le produit **ne vérifie pas** le fondement invoqué et ne prétend pas le faire.
+La déclaration ne lui transfère pas la responsabilité — elle était déjà celle du
+client. Elle la lui rend visible au moment où il l'engage.
+
+### Deux règles qui ne se négocient pas
+
+**Le retrait n'est jamais gardé par l'offre.** Arrêter de traiter les données
+d'un tiers ne doit dépendre d'aucun abonnement. La liste non plus : on ne peut
+pas retirer ce qu'on ne voit plus. Deux tests le tiennent.
+
+**Le retrait est logique, jamais une suppression.** Supprimer la ligne
+emporterait la déclaration, et avec elle la preuve de la date à laquelle la
+surveillance a cessé — exactement ce qu'on veut pouvoir montrer si la personne
+concernée le demande. Re-déclarer crée une **nouvelle** déclaration : ce n'est
+pas la même décision.
+
+### Une table séparée, et ce que ça évite
+
+`WatchedAccountFinding` est distinct de `BreachFinding`. L'alternative — rendre
+`asset` nullable — aurait été moins de code et bien pire : la séparation
+demandée serait devenue un filtre que chaque requête existante devrait penser à
+poser.
+
+Avec deux tables, le score d'exposition (ADR-016), le fil d'exposition, les
+indicateurs de comité (ADR-028) et le registre des incidents (ADR-032) ignorent
+ces lignes **sans qu'on ait eu à les modifier**. Quatre tests le vérifient, dont
+un qui compose le registre des incidents et exige que l'adresse surveillée n'y
+figure pas : un compte qui appartient à quelqu'un d'autre n'a rien à faire au
+registre des incidents de l'entreprise.
+
+Ce n'est pas de la duplication : c'est une entité différente qui partage une
+forme, avec un cycle de vie et un régime juridique propres.
+
+### Aucun secret conservé, et c'est un écart assumé
+
+ADR-014 chiffre le secret d'une fuite pour permettre sa révélation tracée après
+ré-authentification. Ici, non : révéler le mot de passe du compte d'un tiers à
+quelqu'un d'autre que lui est une tout autre affaire. Et l'action utile est
+rigoureusement la même sans lui — « ce compte est exposé, faites-le changer ».
+
+Il n'y a donc pas de colonne à révéler, pas de chemin de révélation, et rien à
+purger. `has_secret` dit qu'un mot de passe a circulé, ce qui suffit à décider.
+
+### Le piège du quota, qui aurait été silencieux
+
+`monthly_scans_used` comptait **toutes** les lignes d'usage du tenant. Sans
+précaution, une analyse de comptes désignés aurait vidé le quota d'analyses
+d'actifs du client — qui n'aurait pas compris pourquoi son compteur baissait
+sans qu'il ait rien analysé. Les usages VIP portent donc un endpoint dédié,
+exclu du compteur général et compté dans le sien. Un test compare les deux
+compteurs après une analyse.
+
+Le budget de requêtes de la **plateforme** (ADR-013), lui, reste commun : c'est
+la même licence qui paie.
+
+### Ce qu'une sonde de garde a révélé
+
+Le fichier `test_feature_guards.py` exige qu'une clé du registre soit exercée
+par au moins une sonde. En ajoutant `watched_accounts`, deux sondes — déclarer,
+analyser — ont fait rougir le côté « autorisé » : l'offre comprenait la
+fonctionnalité, et la déclaration était quand même refusée en 402.
+
+Cause : la garde de fonctionnalité passait, le **quota** refusait. Une offre qui
+vend la fonctionnalité sans donner d'emplacement est une erreur de saisie de
+catalogue, et la migration qui ouvre l'offre pose donc les deux quotas plutôt
+que de les laisser à zéro. Le contexte du test équipe le tenant, comme il le
+faisait déjà pour la preuve de possession — sans quoi le test aurait constaté un
+refus en croyant constater une garde.
+
+### Partie B — une demande qui répond
+
+V2-4 avait trois états : en attente, accordée, refusée. Suffisant pour un
+référentiel qu'on attribue d'un clic ; pas pour une fonctionnalité, dont
+l'ouverture passe par une conversation commerciale. Un client qui a demandé il y
+a dix jours et lit toujours « en attente » ne sait pas si quelqu'un l'a vu — et
+la consigne le dit : une demande sans retour est pire que pas de bouton.
+
+Trois états ouverts désormais (nouvelle, client contacté, proposition envoyée) et
+trois conclusifs. `handled_at` n'est posé qu'à la conclusion : c'est la date de
+la **décision**, pas celle du dernier clic.
+
+Défaut corrigé au passage, et il aurait été invisible : la contrainte d'unicité
+portait sur le seul état « pending ». Une demande passée en « client contacté »
+n'y était plus, et le client pouvait en redéposer une deuxième — le commercial
+aurait travaillé deux lignes pour une seule conversation. La contrainte couvre
+maintenant les trois états ouverts.
+
+La file des demandes a quitté l'onglet « Référentiels » de la console : elle ne
+concerne plus les seuls référentiels. Côté client, une page « Mes demandes »
+montre où en est chaque demande avec la réponse écrite, et liste ce que l'offre
+ne comprend pas — visible, jamais masqué, avec un bouton pour le demander.
+L'encart « hors offre » y renvoie désormais.
+
+### Vérifications
+
+**1466 tests backend verts** (contre 1420), **184 frontend** (contre 178) : 29
+sur les comptes désignés, 12 sur le suivi des demandes, 6 sur l'écran de
+déclaration. Les quatre échecs WeasyPrint habituels, environnementaux sous
+Windows. `ruff` et `eslint` propres, construction verte.
+
+### Reste à faire
+
+- **Le contrat de sous-traitance doit être complété par un juriste.** ADR-033 §7
+  liste ce que la clause devrait couvrir — responsable/sous-traitant au sens de
+  l'article 28, catégories de données et de personnes, obligation d'information
+  qui pèse sur le client, durée de conservation, assistance à l'exercice des
+  droits. Ce n'est pas un avis juridique et ne doit pas être présenté comme tel.
+  Reste également non tranché : que faire d'une demande d'effacement adressée
+  directement à nous par une personne concernée qui n'est pas notre client.
+- **Aucune notification** quand un compte désigné apparaît dans une fuite : le
+  client le voit en revenant sur l'écran. Même dette que le rapport de comité
+  (V2-3) et les demandes d'accès (V2-4).
+- **Pas de surveillance continue** de ces comptes : le pool de la licence (quinze
+  emplacements) est déjà contraint, et l'ouvrir demanderait de décider quelle
+  rareté prime. L'analyse est à la demande, ce que la consigne demandait.
+- **Rien vérifié en production**, comme depuis V2-1. Quatre migrations cette
+  fois, toutes additives : deux tables, deux colonnes de quota, l'élargissement
+  du suivi des demandes et l'ouverture des offres.
+
+---
+
+## 10 septembre 2026 (fin) — V2-7 : suivre les textes officiels, sans les réécrire
+
+### Le cadrage d'abord, et il a servi
+
+La fiche imposait de lister les sources avant d'écrire une ligne. J'ai fait
+mieux que les lister : je les ai **vérifiées**, une par une, contre le réseau.
+Trois surprises, qui auraient toutes été des bugs découverts en production.
+
+**L'ANSSI ne publie aucun flux.** `cyber.gouv.fr/publications/feed` répond 404,
+et la page des publications n'expose ni `link rel=alternate` ni lien « flux ».
+La source la plus importante du produit — le référentiel embarqué en vient — a
+donc dû être dégradée en détection de changement de page.
+
+**Le flux EUR-Lex fonctionne et est inutilisable.** Vérifié : RSS 2.0 valide,
+120 entrées. Sur ces 120, l'écrasante majorité sont des décharges budgétaires
+du Parlement européen. Le suivre non filtré aurait noyé la file en une semaine
+et fait abandonner l'écran. La source est livrée **inactive**, avec pour note
+de la brancher sur un flux de recherche ciblée — que je ne peux pas choisir à
+la place de l'exploitant.
+
+**Les flux de l'ENISA sont morts** : les adresses annoncées répondent 404, la
+page qui les recense répond 403. Dégradée en page, plutôt que d'inscrire une
+adresse qui ne répond pas et de croire surveiller.
+
+Et une exclusion qui compte : **le CERT-FR**, dont le flux marche
+parfaitement (40 avis le jour du test). Écarté quand même — il publie des avis
+de vulnérabilité, « Multiples vulnérabilités dans les produits Ivanti ». C'est
+opérationnel, pas normatif : aucun ne deviendra une mesure de référentiel, et
+la file en serait noyée. Une liste de sources sans ses exclusions se relit
+mal : on ne sait pas si un manque est un oubli ou une décision. Elles sont donc
+écrites, avec leur motif, dans `sources.py`.
+
+### La règle, et les six façons de la casser
+
+[ADR-034](adr/034-veille-reglementaire.md) : **la veille produit une
+suggestion, jamais une modification**. Rien n'entre dans un référentiel sans
+qu'un humain l'ait lu, décidé et rédigé.
+
+La fiche demandait de le vérifier. Je l'ai attaqué par les six chemins où la
+règle pouvait céder : la collecte écrit-elle dans `assessments` (non) ; retenir
+une suggestion crée-t-il une mesure (non) ; peut-on trier sans relecteur (non) ;
+intégrer sans relecteur (non) ; poser « intégrée » à la main (non, ni par le
+service, ni par l'API) ; intégrer avec un contenu vide (non).
+
+Ce dernier point n'est pas une validation de formulaire, c'est une règle de
+fond : l'intitulé et l'énoncé sont **saisis**, jamais repris du titre de la
+publication. Une exigence rédigée par copie d'un titre de communiqué est
+illisible pour un dirigeant, et fausse le score. Le seul champ que la machine
+remplit, c'est le lien vers la source.
+
+L'app est séparée pour cette raison précise : un module rangé dans
+`assessments` aurait eu la main sur ses modèles. Ici la veille passe par
+`assessments.services.add_measure` comme n'importe quelle autre app, et cette
+fonction est la seule porte.
+
+### Deux défauts trouvés contre les vrais flux
+
+Les tests unitaires ne les auraient jamais montrés, parce qu'un flux de test
+est un flux idéal.
+
+**Le flux Atom du NIST ne se parsait pas** : « not well-formed, line 1,
+column 1 ». Cause : une marque d'ordre des octets en tête, et un en-tête HTTP
+sans charset — `requests` devine alors ISO-8859-1 pour un document UTF-8, et le
+texte décodé est illisible par le parseur XML. Correction : on analyse les
+**octets**, ce qui laisse ElementTree honorer la déclaration `<?xml
+encoding="utf-8"?>` et absorber le BOM. Le flux de test reproduit désormais le
+BOM et l'encodage menteur.
+
+**Le flux de la CNIL publie des entités doublement échappées** :
+`&amp;amp;nbsp;`. Une passe de déséchappement laissait « &nbsp; » en clair dans
+l'extrait conservé — celui qui est censé être la référence. Deux passes, et on
+s'arrête là : en déséchapper indéfiniment finirait par transformer du texte
+légitime.
+
+### Une page sans flux dit ce qu'elle sait, et rien de plus
+
+Pour l'ANSSI et l'ENISA, on relève l'empreinte du texte de la page. On sait
+alors **que** ça a changé, pas **quoi** — et la file l'écrit tel quel plutôt
+que de laisser croire à une publication identifiée.
+
+Deux précautions apprises en l'écrivant : le balisage et les espaces sont
+normalisés avant l'empreinte, sinon un identifiant de session ferait « changer »
+la page à chaque passage ; et le **premier passage ne signale rien**, il relève
+l'empreinte. Annoncer « cette page a changé » alors qu'on ne l'a jamais lue
+serait faux, et remplirait la file au déploiement.
+
+### L'IA résume, et le prompt le lui interdit de conclure
+
+Facultatif, déclenché à la main, jamais à la collecte : on ne paie pas un
+résumé pour une publication que personne n'ouvrira. Le prompt interdit de dire
+si la publication doit être intégrée, et d'ajouter le moindre fait absent du
+texte. Le texte source reste conservé, à côté, et l'écran présente le résumé
+comme « à vérifier contre le texte source ».
+
+Point technique : c'est le seul appel IA du produit **sans tenant**. Le texte
+est public — il n'y a rien à pseudonymiser, ADR-005 protégeant des données de
+client dont il n'y a pas ici. L'usage est enregistré sur la suggestion plutôt
+que dans `AIUsageLog`, qui est scopé par tenant : y ranger un appel de
+plateforme l'attribuerait à un client qui ne l'a pas demandé.
+
+### La promesse est du code
+
+« Nous suivons les publications officielles […] Cette veille n'est ni
+exhaustive ni instantanée. » La phrase est une constante servie par l'API et
+affichée dans la console, et un test interdit les deux mots qu'on ne tiendrait
+pas. Une formule honnête est déjà plus que ce que font la plupart des
+concurrents ; une formule fausse se retourne au premier client qui découvre une
+exigence ailleurs.
+
+### L'état des sources, aussi visible que la file
+
+Une source qui échoue en silence est pire qu'une source absente : on croit
+surveiller. Le compteur d'échecs et la dernière réussite remontent en tête
+d'écran. Et une source **jamais configurée** (EUR-Lex) est distinguée d'une
+source **en panne** — sinon elle serait comptée comme un incident pendant des
+mois.
+
+### Vérifications
+
+**1510 tests backend verts** (contre 1465), dont 45 sur la veille. **184
+frontend**, inchangés — l'écran de veille est en console et n'a pas de test de
+composant. Les quatre échecs WeasyPrint habituels, environnementaux sous
+Windows. `ruff` et `eslint` propres, construction verte.
+
+### Reste à faire
+
+- **Le flux EUR-Lex reste à brancher.** La source est livrée inactive, avec sa
+  note. Choisir la requête (NIS 2, DORA, IA, cyber-résilience) est une décision
+  éditoriale, pas technique.
+- **Aucune notification** : l'exploitant voit la file en ouvrant la console.
+  Même dette que le rapport de comité (V2-3), les demandes (V2-4) et les
+  comptes désignés (V2-6). Elle commence à peser : quatre fonctionnalités
+  attendent le même mécanisme d'envoi.
+- **Pas de diff sur les pages sans flux** : on signale le changement, pas ce
+  qui a changé. Faisable — garder le texte précédent et calculer l'écart — mais
+  ce n'était pas demandé, et l'extrait conservé permet déjà de s'y retrouver.
+- **Les adresses des sources ont été vérifiées le 10/09/2026.** Elles
+  vieilliront : c'est précisément pourquoi l'état des sources est affiché, et
+  pourquoi elles se corrigent depuis la console sans redéploiement.
+- **Rien vérifié en production**, comme depuis V2-1.
+
+
+## 10 septembre 2026 (soir) — Revue de fin de phase V2-7 : remise au vert
+
+La revue de fin de phase a trouvé un défaut sérieux, deux blocages de CI,
+quatre incohérences et une lacune de test. Cette session les traite. Ce qui
+suit rapporte des **mesures**, pas des intentions.
+
+### D1 — la veille ne veillait pas
+
+`poll_sources_task` était déclarée sans entrée dans `CELERY_TASK_ROUTES`. Elle
+partait donc dans la file `default`, que le worker ne consomme pas
+(`-Q monitoring,emails,ai`). Chaque lundi à 06 h 15, le planificateur publiait
+un message que rien ne dépilait. **La fonctionnalité vedette de la phase ne
+s'exécutait jamais**, et la suite de tests restait verte — parce que les tests
+appellent les tâches directement, jamais à travers le courtier.
+
+La docstring du module affirmait « File `monitoring` ». C'est cette phrase qui
+a empêché d'aller vérifier : *une phrase qui décrit une intention se lit comme
+un constat*.
+
+Mesure avant/après, sur la vraie pile :
+
+| | Avant | Après |
+|---|---|---|
+| File résolue | `default` | `monitoring` |
+| `llen default` après envoi | 1, jamais dépilée | 0 |
+| Exécution | jamais | `succeeded in 2.00s` |
+
+**Le correctif qui compte n'est pas la ligne de route, c'est
+`config/tests/test_files_celery.py`** : il résout la file de *chaque* tâche du
+projet et échoue si l'une atterrit dans une file non consommée. La liste des
+files consommées n'y est pas recopiée — elle est **lue dans la commande du
+worker**, dans les deux fichiers `docker-compose`. Une liste recopiée diverge
+au premier changement, et un contrôle qui décrit un monde périmé ne contrôle
+rien : c'est la leçon de l'`awk` des fins de ligne, apprise une troisième fois.
+
+Ce test ne garde pas la veille. Il garde le prochain module.
+
+Détail utile : sa première version est passée au rouge sur sa propre garde
+« le test ne mesure rien » — le chemin de la racine était faux d'un cran. Le
+garde-fou a servi avant le test lui-même.
+
+### Les deux avis de sécurité
+
+`weasyprint` 69.0 → 70.0 (PYSEC-2026-3940). Les quatre tests d'export PDF ont
+été passés **dans le conteneur** avant et après : 4 verts dans les deux cas.
+Le rendu n'est pas cassé.
+
+`js-yaml` : **corrigé, pas accepté**. `fixAvailable` était vrai,
+`npm audit fix` sans `--force` a suffi (4.3.1 → 4.3.2, trois lignes de
+`package-lock.json`). Inscrire un risque accepté alors qu'un correctif propre
+existe aurait été le mauvais geste — le mécanisme d'exception reste pour les
+cas où il n'y en a pas.
+
+**Signalé, non traité** : weasyprint 70 émet un avertissement neuf,
+`HarfBuzz-Subset will be required by future versions`. Le `Dockerfile`
+n'installe pas cette bibliothèque. Une future montée cassera la génération PDF
+en production. Hors périmètre de cette session.
+
+### Les quatre incohérences
+
+**D2 — « intégrée » est désormais un état terminal.** La garde d'origine ne
+jouait que dans un sens : on ne pouvait pas *poser* ce statut, rien
+n'empêchait de le *retirer*. Une suggestion repassée en « écartée » laissait
+la mesure dans le référentiel, le lien `integrated_measures` en place, et
+`target_referential` effacé au passage. Pas de mécanisme de dé-intégration :
+si l'exploitant s'est trompé, il retire la mesure du référentiel — geste
+distinct, explicite et tracé.
+
+**D3 — `review_update` distingue « non fourni » de « vidé ».** Une sentinelle
+`NON_FOURNI`, parce que `None` est déjà la valeur qui signifie « détacher ».
+Re-trier une suggestion sans re-préciser son référentiel ne l'efface plus.
+
+**D4 — `integrate_as_measure` est transactionnelle.** C'est le seul chemin par
+lequel la veille écrit dans le cœur métier : une mesure orpheline serait
+servie aux clients dans leur questionnaire sans qu'aucune suggestion ne la
+revendique.
+
+**D5 — la liste des sources est figée dans la migration.** Elle importait le
+module vivant : rejouée un jour sur une base neuve, elle aurait installé ce
+que `sources.py` contiendrait *alors*. La liste figée a été **générée** depuis
+`sources.py`, pas retranscrite — cinq sources et une quarantaine de champs
+recopiés à la main auraient introduit des écarts silencieux.
+
+### Ce que la neutralisation a trouvé, et qu'aucune relecture n'aurait vu
+
+Sept gardes neuves, vérifiées en réintroduisant leur défaut. Six rougissent.
+**Une reste verte** : en neutralisant le seul contrôle du sérialiseur,
+`test_l_api_refuse_aussi` continuait de passer — le service refusait, et la
+vue traduisait ce refus en 400. Le test ne prouvait donc pas l'existence de la
+deuxième couche qu'il était censé garder.
+
+D'où `test_le_serialiseur_refuse_seul_sans_passer_par_le_service`, qui
+n'appelle aucun service. Il rougit quand on neutralise le sérialiseur seul.
+
+*Un test qui ne distingue pas la couche qu'il garde ne garde pas cette
+couche.* C'est la troisième fois sur ce projet qu'une garde passe pour une
+raison qui n'est pas la sienne.
+
+### Le rayon de panne de la console
+
+`platformApi.listReferentials()` était dans le `Promise.all` de `loadCore` :
+toute la console dépendait d'un appel dont un seul écran a besoin. Si le
+catalogue tombait, l'exploitant perdait aussi la vue de ses ressources rares —
+la raison première d'ouvrir cette page. Le catalogue est désormais chargé à
+l'ouverture de l'onglet Veille, une seule fois, et son échec n'affecte que cet
+écran.
+
+Découvert en écrivant le test : le fichier de test de la console ne moquait
+pas `watchQueue`/`watchSources`. Dès qu'un test ouvrait l'onglet Veille,
+`WatchPanel` partait en rejet non capturé — et Vitest affichait « 8 passed »
+au-dessus d'une exception non traitée. Les mocks ont été écrits en lisant le
+contrat réel de `WatchQueueView` (`{summary, health, results}`), après qu'une
+première version inventée a fait planter le panneau.
+
+### Les parcours de bout en bout, enfin exercés
+
+C'était le trou principal de la revue : **11 parcours authentifiés n'avaient
+jamais tourné sur cette phase**, l'inscription étant bloquée par la capacité.
+
+| | Avant | Après |
+|---|---|---|
+| Inscription | HTTP 400, « inscriptions fermées » | HTTP 201 |
+| Parcours e2e | 8 verts / 11 rouges | **17 verts / 2 rouges** |
+
+Les deux clients résiduels « Audit » et « Audit Direct » ont été purgés par le
+vrai chemin — archivage (qui résilie l'abonnement et libère les emplacements)
+puis suppression définitive.
+
+**Les 2 échecs restants sont pré-existants, et c'est prouvé, pas supposé** :
+toutes les modifications de la session ont été remisées (`git stash`) et les
+deux spécifications relancées sur la même base — elles échouent à l'identique.
+`h-feature-guards` attend 402 et reçoit 400 sur `POST /api/v1/ai/documents/` :
+depuis la V2-5, la garde d'offre porte sur le *type* de document, donc la
+validation du corps s'exécute avant `ensure_feature`, et le test envoie un
+corps vide. **Le test encode le contrat d'avant la V2-5.** À traiter à part.
+
+### Le jeu de démonstration mange la licence
+
+Question posée pendant la revue, réponse mesurée : **non, le jeu de
+démonstration ne devrait pas engager 13 emplacements.**
+
+| Client de démonstration | Offre | Engagés | Actifs réels |
+|---|---|---|---|
+| Clinique des Tilleuls | souverain | 5 | 0 |
+| Cabinet Comptable Durand | pilotage | 3 | 4 |
+| Transports Vidal | pilotage | 3 | 0 |
+| Agence Novaé | essai | 1 | 0 |
+| Menuiserie Lambert | veille | 1 | 0 |
+| **Total** | | **13** | **4** |
+
+13 des 15 emplacements de la licence — **87 % de la capacité vendable** — pour
+4 actifs réellement surveillés. La cause est structurelle : les emplacements
+sont comptés **engagés** (`monitored_assets_quota` des abonnements
+`trial`/`active`), et les clients de démonstration portent de vrais
+abonnements.
+
+Ce n'est pas une hypothèse de laboratoire : `docs/deploiement_production.md`
+documente `seed_demo_clients --allow-production`. Si la commande a été passée
+en production, la plateforme y dispose de **2 emplacements vendables sur 15**.
+
+**Non corrigé volontairement.** Exclure les clients de démonstration du calcul
+d'engagement touche la garde qui empêche de survendre la licence : cela mérite
+un ADR et une décision, pas un correctif glissé dans une session de remise au
+vert. Le plafond local a simplement été porté à 60 — un réglage de base
+locale, pas une modification de code, sans effet sur la production.
+
+### WatchPanel : de 0 à 8 tests
+
+544 lignes sans aucun test. Huit tests désormais, sur les endroits où une
+régression silencieuse coûterait cher : le tri part avec le bon statut, on ne
+peut pas ajouter une mesure sans avoir rédigé son contenu, l'état des sources
+remonte, et une source jamais configurée n'est pas présentée comme une panne.
+Six mutations du composant, six rouges.
+
+### Reste à faire
+
+- **`c-charter-generation` et `h-feature-guards`** : deux parcours rouges
+  d'origine V2-5, indépendants de la veille. Le second est un test à mettre à
+  jour ; le premier demande un diagnostic.
+- **Le jeu de démonstration et la licence** : arbitrage à prendre, ADR à
+  écrire.
+- **`libharfbuzz-subset` absente du `Dockerfile`** : dette posée par la montée
+  de weasyprint.
+- **Le flux EUR-Lex** reste à brancher (décision éditoriale, inchangée).
+- **Aucune notification** : cinquième fonctionnalité qui attend le même
+  mécanisme d'envoi.
+- **Rien vérifié en production**, toujours.

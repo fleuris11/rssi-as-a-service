@@ -61,6 +61,17 @@ class Plan(models.Model):
     monitored_assets = models.PositiveSmallIntegerField(default=1)
     monthly_scans = models.PositiveSmallIntegerField(default=20)
     max_users = models.PositiveSmallIntegerField(default=3)
+    # V2-6 — l'espace de surveillance de comptes désignés. Deux quotas
+    # distincts parce que ce sont deux rarétés différentes : le nombre de
+    # comptes qu'on peut déclarer (un stock) et le nombre d'analyses qu'on
+    # peut lancer dessus dans le mois (un flux). Vendre l'un sans l'autre
+    # donnerait soit un carnet d'adresses qu'on ne peut pas interroger, soit
+    # des analyses sans rien à analyser.
+    #
+    # Défaut 0 : la fonctionnalité ne s'ouvre pas toute seule en ajoutant la
+    # colonne. Une offre qui la vend le dit explicitement.
+    watched_accounts = models.PositiveSmallIntegerField(default=0)
+    monthly_watched_account_scans = models.PositiveSmallIntegerField(default=0)
     # 0 = illimité (offre « Souverain »). Un champ nullable serait plus
     # explicite mais compliquerait chaque comparaison ; 0 est documenté ici et
     # traité en un seul endroit (entitlements.user_limit_reached).
@@ -126,6 +137,8 @@ class Subscription(models.Model):
     override_monitored_assets = models.PositiveSmallIntegerField(null=True, blank=True)
     override_monthly_scans = models.PositiveSmallIntegerField(null=True, blank=True)
     override_max_users = models.PositiveSmallIntegerField(null=True, blank=True)
+    override_watched_accounts = models.PositiveSmallIntegerField(null=True, blank=True)
+    override_monthly_watched_account_scans = models.PositiveSmallIntegerField(null=True, blank=True)
     override_features = models.JSONField(null=True, blank=True)
 
     # --- Emplacement du paiement futur (ADR-020) ---------------------------
@@ -160,6 +173,18 @@ class Subscription(models.Model):
         if self.override_monthly_scans is not None:
             return self.override_monthly_scans
         return self.plan.monthly_scans
+
+    @property
+    def watched_accounts_quota(self) -> int:
+        if self.override_watched_accounts is not None:
+            return self.override_watched_accounts
+        return self.plan.watched_accounts
+
+    @property
+    def monthly_watched_account_scans_quota(self) -> int:
+        if self.override_monthly_watched_account_scans is not None:
+            return self.override_monthly_watched_account_scans
+        return self.plan.monthly_watched_account_scans
 
     @property
     def max_users_quota(self) -> int:

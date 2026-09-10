@@ -71,5 +71,5 @@ def test_load_anssi_referential_rejects_domain_mismatch(tmp_path):
     bad_file = tmp_path / "broken.json"
     bad_file.write_text(json.dumps(bad_data), encoding="utf-8")
 
-    with pytest.raises(CommandError, match="ne correspond pas au domaine"):
+    with pytest.raises(CommandError, match="n'est pas son domaine parent"):
         call_command("load_anssi_referential", file=bad_file)

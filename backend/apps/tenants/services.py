@@ -71,6 +71,30 @@ def create_tenant_with_owner(
             exc_info=True,
         )
 
+    # Référentiels de départ (V2-4, ADR-029). Sans cette étape, une entreprise
+    # créée après V2-4 n'aurait AUCUN référentiel attribué et lirait « aucun
+    # référentiel ne vous est attribué » à sa première visite du diagnostic —
+    # une régression sur le parcours d'inscription, pour une décision qui n'a
+    # jamais été prise.
+    #
+    # Seuls les référentiels LIBRES DE DROITS sont attribués d'office : les
+    # contenus sous licence (ISO, CIS) et ceux propres à un autre client
+    # demandent un geste de l'exploitant, qui sait ce qu'il a le droit de
+    # servir et à qui.
+    from apps.assessments import services as assessments_services
+
+    try:
+        for referential in assessments_services.default_referentials():
+            assessments_services.assign_referential(tenant=tenant, referential=referential)
+    except Exception:  # noqa: BLE001 - la création d'entreprise prime
+        # Aucun référentiel chargé, par exemple : l'entreprise existe quand
+        # même, et la console peut lui en attribuer un.
+        logger.warning(
+            "Référentiels non attribués à l'entreprise %s : à attribuer depuis la console.",
+            tenant.id,
+            exc_info=True,
+        )
+
     return tenant
 
 

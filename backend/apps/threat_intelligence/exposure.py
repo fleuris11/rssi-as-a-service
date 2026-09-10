@@ -15,6 +15,7 @@ simple total, et on plafonne.
 from dataclasses import dataclass, field
 
 from django.conf import settings
+from django.db.models import BooleanField, Case, Q, Value, When
 from django.utils import timezone
 
 from .models import BreachFinding
@@ -197,6 +198,90 @@ def compute_exposure_score(findings: list[BreachFinding], *, now=None) -> Exposu
     )
 
 
+# --- Score sans matérialiser d'objets (V2-3) --------------------------------
+#
+# Le tableau de bord a besoin du score à plusieurs dates. Le calculer par le
+# chemin habituel supposerait de charger, pour chacune, l'ensemble des fuites
+# ouvertes à cette date-là : sur l'actif réel qui en porte 28 450, la seule
+# matérialisation des instances Django coûtait 3,79 s (mesuré le 06/09/2026,
+# journal du même jour). Deux dates, et le tableau de bord dépasse les huit
+# secondes avant d'avoir affiché quoi que ce soit.
+#
+# La leçon de ce jour-là était que le coût vient des OBJETS, pas des données :
+# un `defer()` sur les colonnes larges n'avait rien changé. Cette fonction
+# prend donc des n-uplets bruts (`values_list`), pas des instances.
+#
+# Elle ne rend que le total et le niveau — pas les composantes, qui n'ont de
+# sens que dans le fil d'exposition où l'on explique fuite par fuite. Un test
+# vérifie qu'elle donne EXACTEMENT le même score que la fonction complète sur
+# les mêmes données : deux calculs qui divergeraient seraient pires que pas de
+# tableau de bord (l'écran de détail et le tableau de bord se contrediraient).
+
+#: Colonnes à demander à la base, dans cet ordre, pour alimenter
+#: ``score_from_rows``. Défini ici pour que l'appelant ne puisse pas se
+#: tromper d'ordre ni en oublier une.
+#:
+#: ``is_revealable`` est une ANNOTATION, pas une colonne — voir
+#: ``annotate_revealable``. Rapatrier ``secret_encrypted`` lui-même coûtait
+#: cher pour rien : le score n'a besoin que de savoir s'il est vide, et ce
+#: sont des blocs chiffrés de plusieurs centaines d'octets. Sur 28 450 fuites,
+#: c'est plusieurs mégaoctets transportés pour produire un booléen.
+SCORE_ROW_FIELDS = ("severity", "breach_date", "detected_at", "is_revealable")
+
+
+def annotate_revealable(queryset):
+    """Ajoute ``is_revealable`` : le secret existe ET n'est pas vide.
+
+    Calculé par la base. La condition est exactement celle de
+    ``compute_exposure_score`` (``finding.has_secret and
+    bytes(finding.secret_encrypted)``) — un test compare les deux chemins sur
+    les mêmes données, parce que deux définitions du même bonus finiraient par
+    diverger.
+    """
+    return queryset.annotate(
+        is_revealable=Case(
+            When(Q(has_secret=True) & ~Q(secret_encrypted=b""), then=Value(True)),
+            default=Value(False),
+            output_field=BooleanField(),
+        )
+    )
+
+
+def _freshness_multiplier(breach_date, detected_at, now) -> float:
+    reference = breach_date
+    if reference is not None:
+        age_days = (now.date() - reference).days
+    else:
+        age_days = (now - detected_at).days
+    age_days = max(0, age_days)
+    for max_days, multiplier, _label in FRESHNESS_TIERS:
+        if age_days < max_days:
+            return multiplier
+    return FRESHNESS_OLD_MULTIPLIER
+
+
+def score_from_rows(rows, *, now=None) -> int:
+    """Score 0-100 à partir de n-uplets ``SCORE_ROW_FIELDS``.
+
+    Même formule, mêmes constantes et même ordre de tri que
+    ``compute_exposure_score`` — volontairement, puisque c'est la seule chose
+    qui garantit que les deux ne divergent pas.
+    """
+    now = now or timezone.now()
+
+    raws = []
+    for severity, breach_date, detected_at, is_revealable in rows:
+        base = SEVERITY_WEIGHTS.get(severity, SEVERITY_WEIGHTS[BreachFinding.Severity.ATTENTION])
+        raw = base * _freshness_multiplier(breach_date, detected_at, now)
+        if is_revealable:
+            raw += REVEALABLE_SECRET_BONUS
+        raws.append(raw)
+
+    raws.sort(reverse=True)
+    total = sum(raw * (ADDITIONAL_FINDING_DECAY**rang) for rang, raw in enumerate(raws))
+    return min(MAX_SCORE, int(round(total)))
+
+
 def freshness_sort_key(finding: BreachFinding):
     """Tri intra-groupe : sévérité décroissante puis fraîcheur décroissante —
     ce qu'un dirigeant doit regarder en premier, en haut."""
@@ -222,6 +307,9 @@ __all__ = [
     "ExposureScore",
     "ScoreComponent",
     "compute_exposure_score",
+    "score_from_rows",
+    "annotate_revealable",
+    "SCORE_ROW_FIELDS",
     "level_for",
     "freshness_sort_key",
 ]

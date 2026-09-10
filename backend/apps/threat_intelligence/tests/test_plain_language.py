@@ -14,6 +14,17 @@ from apps.threat_intelligence.models import BreachFinding
 pytestmark = pytest.mark.django_db
 
 
+def _texte_complet(explanation: dict) -> str:
+    """Les trois parties d'une explication, en une seule chaîne minuscule.
+
+    Les tests éditoriaux portent sur le FOND — « le cookie contourne aussi la
+    double authentification » — pas sur la case où cette phrase est rangée.
+    Assertir sur une clé précise fait échouer un test au premier remaniement
+    de découpage, alors que le texte dit toujours ce qu'il doit dire.
+    """
+    return " ".join(explanation.get(cle, "") for cle in ("meaning", "impact", "action")).lower()
+
+
 def _finding(tenant, asset, endpoint, finding_type="test"):
     return BreachFinding.all_objects.create(
         tenant=tenant,
@@ -65,23 +76,29 @@ class TestSpecificExplanations:
         finding = _finding(tenant, website_asset, BreachFinding.SourceEndpoint.SESSIONS)
         explanation = plain_language.explain(finding)
 
-        assert "cookie de session" in explanation["meaning"]
-        assert "double authentification" in explanation["meaning"]
+        # Assertion sur l'explication ENTIÈRE plutôt que sur une clé : depuis
+        # la V2-2 elle tient en trois parties (ce que c'est / ce que ça
+        # implique / quoi faire), et l'exigence éditoriale porte sur le fond,
+        # pas sur la case où il est rangé.
+        texte = _texte_complet(explanation)
+        assert "cookie de session" in texte
+        assert "double authentification" in texte
         assert "déconnect" in explanation["action"].lower()
 
     def test_nhi_explains_unmonitored_machine_access(self, tenant, website_asset):
         finding = _finding(tenant, website_asset, BreachFinding.SourceEndpoint.NHI)
         explanation = plain_language.explain(finding)
 
-        assert "programme" in explanation["meaning"] or "machine" in explanation["meaning"]
-        assert "permanent" in explanation["meaning"]
+        texte = _texte_complet(explanation)
+        assert "programme" in texte or "machine" in texte
+        assert "permanent" in texte
         assert "révoqu" in explanation["action"].lower()
 
     def test_stealer_explains_the_infected_machine_and_reuse(self, tenant, website_asset):
         finding = _finding(tenant, website_asset, BreachFinding.SourceEndpoint.STEALER)
         explanation = plain_language.explain(finding)
 
-        assert "infect" in explanation["meaning"].lower()
+        assert "infect" in _texte_complet(explanation)
         assert "réutilis" in explanation["action"].lower()
 
     def test_docs_mentions_the_regulatory_deadline(self, tenant, website_asset):
@@ -122,5 +139,7 @@ class TestSerializerExposesExplanations:
         finding = _finding(tenant, website_asset, BreachFinding.SourceEndpoint.SESSIONS)
         data = BreachFindingSerializer(finding).data
 
-        assert "double authentification" in data["meaning"]
+        # Les trois parties sont servies, et le fond y est.
+        assert data["meaning"] and data["impact"] and data["recommended_action"]
+        assert "double authentification" in f"{data['meaning']} {data['impact']}"
         assert data["recommended_action"]
