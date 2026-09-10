@@ -128,15 +128,20 @@ class WatchUpdateReviewView(APIView):
         if update is None:
             raise NotFound("Suggestion introuvable.")
 
-        serializer = ReviewUpdateSerializer(data=request.data)
+        serializer = ReviewUpdateSerializer(data=request.data, context={"update": update})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        referential = None
-        if data["referential"]:
+        # Absent du corps : on ne touche pas au rattachement existant. Fourni
+        # mais vide : on le retire volontairement (D3, revue V2-7).
+        if "referential" not in data:
+            referential = services.NON_FOURNI
+        elif data["referential"]:
             referential = assessments_services.get_referential(slug=data["referential"])
             if referential is None:
                 raise NotFound("Référentiel introuvable.")
+        else:
+            referential = None
 
         try:
             services.review_update(

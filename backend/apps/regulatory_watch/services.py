@@ -38,6 +38,15 @@ class ReviewRequiredError(WatchError):
     """Une suggestion ne devient une mesure que par une décision humaine."""
 
 
+#: Sentinelle : distingue « le champ n'a pas été fourni » de « le champ a été
+#: vidé explicitement ». ``None`` ne peut pas jouer ce rôle, puisque c'est
+#: précisément la valeur qui signifie « plus de référentiel rattaché ».
+#:
+#: Sans cette distinction, re-trier une suggestion sans re-préciser son
+#: référentiel effaçait le rattachement en silence (défaut D3, revue V2-7).
+NON_FOURNI = object()
+
+
 # --- Sources ----------------------------------------------------------------
 
 
@@ -251,7 +260,7 @@ def review_update(
     reviewer,
     kind: str = "",
     note: str = "",
-    target_referential=None,
+    target_referential=NON_FOURNI,
 ) -> WatchUpdate:
     """Enregistre la décision d'un humain sur une suggestion.
 
@@ -260,9 +269,27 @@ def review_update(
 
     Ne crée aucune mesure. Retenir une publication dit « ceci nous concerne » ;
     en tirer une exigence est un second geste, volontairement séparé.
+
+    ``target_referential`` est laissé tel quel s'il n'est pas fourni. Passer
+    ``None`` explicitement détache la suggestion de son référentiel.
     """
     if reviewer is None:
         raise ReviewRequiredError("Une décision de veille doit être attribuée à quelqu'un.")
+    if update.status == WatchUpdate.Status.INTEGRATED:
+        # « Intégrée » est un état TERMINAL (D2, revue V2-7). La garde
+        # existait dans un seul sens — on ne pouvait pas POSER ce statut,
+        # mais rien n'empêchait de le RETIRER. Une suggestion repassée en
+        # « écartée » laissait la mesure dans le référentiel et le lien
+        # `integrated_measures` en place : la traçabilité se contredisait.
+        #
+        # Il n'y a volontairement PAS de mécanisme de dé-intégration ici. Si
+        # l'exploitant s'est trompé, il retire la mesure du référentiel —
+        # geste distinct, explicite et tracé, qui ne se déguise pas en
+        # changement de statut d'une suggestion.
+        raise WatchError(
+            "Cette publication a déjà donné lieu à une mesure : son statut n'est plus "
+            "modifiable. Pour revenir en arrière, retirez la mesure du référentiel."
+        )
     if status not in WatchUpdate.Status.values or status == WatchUpdate.Status.INTEGRATED:
         # « Intégrée » n'est pas une décision qu'on pose : c'est la
         # conséquence d'une intégration réelle (integrate_as_measure).
@@ -275,17 +302,14 @@ def review_update(
         update.kind = kind
     if note:
         update.review_note = note
-    update.target_referential = target_referential
-    update.save(
-        update_fields=[
-            "status",
-            "reviewed_by",
-            "reviewed_at",
-            "kind",
-            "review_note",
-            "target_referential",
-        ]
-    )
+
+    champs = ["status", "reviewed_by", "reviewed_at", "kind", "review_note"]
+    if target_referential is not NON_FOURNI:
+        # Fourni — y compris ``None``, qui détache volontairement.
+        update.target_referential = target_referential
+        champs.append("target_referential")
+
+    update.save(update_fields=champs)
     return update
 
 
@@ -330,30 +354,44 @@ def integrate_as_measure(
             "mesure recopiée d'un titre de publication ne veut rien dire pour un dirigeant."
         )
 
+    if update.status == WatchUpdate.Status.INTEGRATED:
+        # État terminal (D2) : une seconde intégration créerait une deuxième
+        # mesure pour la même publication, sans que rien ne le signale.
+        raise WatchError(
+            "Cette publication a déjà donné lieu à une mesure. Pour en ajouter une "
+            "autre, partez du référentiel plutôt que de la file de veille."
+        )
+
     reference = f"{update.source.publisher} — {update.title}"
     if update.published_at:
         reference += f" ({update.published_at:%d/%m/%Y})"
 
-    mesure = assessments_services.add_measure(
-        referential=referential,
-        domain_code=domain_code,
-        code=code,
-        official_title=official_title,
-        plain_language=plain_language,
-        level=level,
-        weight=weight,
-        effort=effort,
-        impact=impact,
-        source_url=update.url,
-        source_reference=reference[:300],
-    )
+    # Tout ou rien (D4, revue V2-7). C'est le SEUL chemin par lequel la veille
+    # écrit dans le cœur métier : une erreur entre la création de la mesure et
+    # le marquage de la suggestion laisserait une mesure orpheline dans un
+    # référentiel — présente pour les clients qui répondent au questionnaire,
+    # mais que plus aucune suggestion ne revendique.
+    with transaction.atomic():
+        mesure = assessments_services.add_measure(
+            referential=referential,
+            domain_code=domain_code,
+            code=code,
+            official_title=official_title,
+            plain_language=plain_language,
+            level=level,
+            weight=weight,
+            effort=effort,
+            impact=impact,
+            source_url=update.url,
+            source_reference=reference[:300],
+        )
 
-    update.integrated_measures.add(mesure)
-    update.status = WatchUpdate.Status.INTEGRATED
-    update.target_referential = referential
-    update.reviewed_by = reviewer
-    update.reviewed_at = timezone.now()
-    update.save(update_fields=["status", "target_referential", "reviewed_by", "reviewed_at"])
+        update.integrated_measures.add(mesure)
+        update.status = WatchUpdate.Status.INTEGRATED
+        update.target_referential = referential
+        update.reviewed_by = reviewer
+        update.reviewed_at = timezone.now()
+        update.save(update_fields=["status", "target_referential", "reviewed_by", "reviewed_at"])
     return mesure
 
 

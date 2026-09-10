@@ -114,6 +114,10 @@ class ReviewUpdateSerializer(serializers.Serializer):
     ``integrated`` est absent des choix : ce statut n'est pas une décision
     qu'on pose, c'est la conséquence d'une intégration réelle, qui passe par
     l'endpoint dédié et exige un contenu saisi.
+
+    ``referential`` n'a **pas** de valeur par défaut : son absence du corps de
+    la requête doit rester distinguable d'une chaîne vide. Absent, le
+    rattachement existant est conservé ; vide, il est retiré (D3).
     """
 
     status = serializers.ChoiceField(
@@ -121,7 +125,27 @@ class ReviewUpdateSerializer(serializers.Serializer):
     )
     kind = serializers.ChoiceField(choices=WatchUpdate.Kind.choices, required=False, default="")
     note = serializers.CharField(required=False, allow_blank=True, default="")
-    referential = serializers.CharField(required=False, allow_blank=True, default="")
+    referential = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        """Deuxième garde de l'état terminal, indépendante du service (D2).
+
+        Le service refuse déjà de re-trier une suggestion intégrée. On le
+        refuse aussi ici, sur le même modèle que l'exclusion d'``integrated``
+        des choix : deux couches qui ne partagent pas leur code, pour que
+        neutraliser l'une laisse l'autre debout.
+        """
+        update = self.context.get("update")
+        if update is not None and update.status == WatchUpdate.Status.INTEGRATED:
+            raise serializers.ValidationError(
+                {
+                    "status": (
+                        "Cette publication a déjà donné lieu à une mesure : son statut "
+                        "n'est plus modifiable."
+                    )
+                }
+            )
+        return attrs
 
 
 class IntegrateMeasureSerializer(serializers.Serializer):
