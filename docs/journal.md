@@ -5354,3 +5354,167 @@ et non une régression.
   désormais plus de déterministe que d'IA. Le nom est une dette assumée : le
   déplacer demanderait de migrer une table portant les documents de vrais
   clients.
+
+---
+
+## 10 septembre 2026 (suite) — V2-6 : surveiller le compte de quelqu'un d'autre
+
+### Le sujet n'était pas technique
+
+Une entreprise veut faire surveiller des comptes précis : l'adresse de sa
+directrice générale, celle d'un client important, un compte technique sensible.
+Techniquement, c'est peu de chose — le fournisseur expose déjà `scan_email`, et
+l'interface de provider le déclarait depuis la phase 7.
+
+Le vrai sujet est ailleurs. Faire surveiller `directrice@exemple.fr`, c'est
+chercher si **cette personne** apparaît dans des fuites. C'est un traitement de
+données personnelles la concernant, et le responsable en est le client — pas
+nous, qui agissons sur ses instructions.
+
+Trois façons de mal s'en tirer, toutes tentantes : ignorer le problème et
+livrer un champ de saisie ; se protéger par une clause noyée dans les CGU ;
+prétendre vérifier nous-mêmes la légitimité, ce que nous ne pouvons pas faire —
+nous n'avons ni le contrat de travail, ni le contrat client, ni l'accord de la
+personne.
+
+### Ce qu'on a fait : déclarer, figer, conserver
+
+Au moment d'ajouter un compte — pas dans un écran d'après, pas dans les
+conditions générales — le client déclare à quel titre il le surveille et
+**pourquoi**. Cinq champs, figés à la création : la base légale, la finalité,
+le texte exact accepté, sa version, qui et quand.
+
+`declaration_text` conserve le texte **intégral** plutôt qu'un renvoi à la
+version courante. Le jour où l'on reformulera cet engagement, ce qu'a réellement
+accepté ce client-là ne doit pas changer rétroactivement : c'est la différence
+entre une trace et une affirmation.
+
+La finalité est **obligatoire**, alors que le « pourquoi » d'une demande d'accès
+(V2-4) ne l'est pas. La différence est entière : là on demandait une
+fonctionnalité, ici on déclare traiter les données d'un tiers. Une finalité vide
+rendrait la déclaration ininterprétable le jour où quelqu'un la relit — à
+commencer par la personne concernée.
+
+Les bases légales sont formulées dans les termes d'un dirigeant de PME (« c'est
+mon propre compte », « compte professionnel fourni par mon entreprise ») ; le
+rattachement à l'article 6 du RGPD est fait dans [ADR-033](adr/033-comptes-designes.md),
+pas dans une liste déroulante que personne ne comprendrait.
+
+Le produit **ne vérifie pas** le fondement invoqué et ne prétend pas le faire.
+La déclaration ne lui transfère pas la responsabilité — elle était déjà celle du
+client. Elle la lui rend visible au moment où il l'engage.
+
+### Deux règles qui ne se négocient pas
+
+**Le retrait n'est jamais gardé par l'offre.** Arrêter de traiter les données
+d'un tiers ne doit dépendre d'aucun abonnement. La liste non plus : on ne peut
+pas retirer ce qu'on ne voit plus. Deux tests le tiennent.
+
+**Le retrait est logique, jamais une suppression.** Supprimer la ligne
+emporterait la déclaration, et avec elle la preuve de la date à laquelle la
+surveillance a cessé — exactement ce qu'on veut pouvoir montrer si la personne
+concernée le demande. Re-déclarer crée une **nouvelle** déclaration : ce n'est
+pas la même décision.
+
+### Une table séparée, et ce que ça évite
+
+`WatchedAccountFinding` est distinct de `BreachFinding`. L'alternative — rendre
+`asset` nullable — aurait été moins de code et bien pire : la séparation
+demandée serait devenue un filtre que chaque requête existante devrait penser à
+poser.
+
+Avec deux tables, le score d'exposition (ADR-016), le fil d'exposition, les
+indicateurs de comité (ADR-028) et le registre des incidents (ADR-032) ignorent
+ces lignes **sans qu'on ait eu à les modifier**. Quatre tests le vérifient, dont
+un qui compose le registre des incidents et exige que l'adresse surveillée n'y
+figure pas : un compte qui appartient à quelqu'un d'autre n'a rien à faire au
+registre des incidents de l'entreprise.
+
+Ce n'est pas de la duplication : c'est une entité différente qui partage une
+forme, avec un cycle de vie et un régime juridique propres.
+
+### Aucun secret conservé, et c'est un écart assumé
+
+ADR-014 chiffre le secret d'une fuite pour permettre sa révélation tracée après
+ré-authentification. Ici, non : révéler le mot de passe du compte d'un tiers à
+quelqu'un d'autre que lui est une tout autre affaire. Et l'action utile est
+rigoureusement la même sans lui — « ce compte est exposé, faites-le changer ».
+
+Il n'y a donc pas de colonne à révéler, pas de chemin de révélation, et rien à
+purger. `has_secret` dit qu'un mot de passe a circulé, ce qui suffit à décider.
+
+### Le piège du quota, qui aurait été silencieux
+
+`monthly_scans_used` comptait **toutes** les lignes d'usage du tenant. Sans
+précaution, une analyse de comptes désignés aurait vidé le quota d'analyses
+d'actifs du client — qui n'aurait pas compris pourquoi son compteur baissait
+sans qu'il ait rien analysé. Les usages VIP portent donc un endpoint dédié,
+exclu du compteur général et compté dans le sien. Un test compare les deux
+compteurs après une analyse.
+
+Le budget de requêtes de la **plateforme** (ADR-013), lui, reste commun : c'est
+la même licence qui paie.
+
+### Ce qu'une sonde de garde a révélé
+
+Le fichier `test_feature_guards.py` exige qu'une clé du registre soit exercée
+par au moins une sonde. En ajoutant `watched_accounts`, deux sondes — déclarer,
+analyser — ont fait rougir le côté « autorisé » : l'offre comprenait la
+fonctionnalité, et la déclaration était quand même refusée en 402.
+
+Cause : la garde de fonctionnalité passait, le **quota** refusait. Une offre qui
+vend la fonctionnalité sans donner d'emplacement est une erreur de saisie de
+catalogue, et la migration qui ouvre l'offre pose donc les deux quotas plutôt
+que de les laisser à zéro. Le contexte du test équipe le tenant, comme il le
+faisait déjà pour la preuve de possession — sans quoi le test aurait constaté un
+refus en croyant constater une garde.
+
+### Partie B — une demande qui répond
+
+V2-4 avait trois états : en attente, accordée, refusée. Suffisant pour un
+référentiel qu'on attribue d'un clic ; pas pour une fonctionnalité, dont
+l'ouverture passe par une conversation commerciale. Un client qui a demandé il y
+a dix jours et lit toujours « en attente » ne sait pas si quelqu'un l'a vu — et
+la consigne le dit : une demande sans retour est pire que pas de bouton.
+
+Trois états ouverts désormais (nouvelle, client contacté, proposition envoyée) et
+trois conclusifs. `handled_at` n'est posé qu'à la conclusion : c'est la date de
+la **décision**, pas celle du dernier clic.
+
+Défaut corrigé au passage, et il aurait été invisible : la contrainte d'unicité
+portait sur le seul état « pending ». Une demande passée en « client contacté »
+n'y était plus, et le client pouvait en redéposer une deuxième — le commercial
+aurait travaillé deux lignes pour une seule conversation. La contrainte couvre
+maintenant les trois états ouverts.
+
+La file des demandes a quitté l'onglet « Référentiels » de la console : elle ne
+concerne plus les seuls référentiels. Côté client, une page « Mes demandes »
+montre où en est chaque demande avec la réponse écrite, et liste ce que l'offre
+ne comprend pas — visible, jamais masqué, avec un bouton pour le demander.
+L'encart « hors offre » y renvoie désormais.
+
+### Vérifications
+
+**1466 tests backend verts** (contre 1420), **184 frontend** (contre 178) : 29
+sur les comptes désignés, 12 sur le suivi des demandes, 6 sur l'écran de
+déclaration. Les quatre échecs WeasyPrint habituels, environnementaux sous
+Windows. `ruff` et `eslint` propres, construction verte.
+
+### Reste à faire
+
+- **Le contrat de sous-traitance doit être complété par un juriste.** ADR-033 §7
+  liste ce que la clause devrait couvrir — responsable/sous-traitant au sens de
+  l'article 28, catégories de données et de personnes, obligation d'information
+  qui pèse sur le client, durée de conservation, assistance à l'exercice des
+  droits. Ce n'est pas un avis juridique et ne doit pas être présenté comme tel.
+  Reste également non tranché : que faire d'une demande d'effacement adressée
+  directement à nous par une personne concernée qui n'est pas notre client.
+- **Aucune notification** quand un compte désigné apparaît dans une fuite : le
+  client le voit en revenant sur l'écran. Même dette que le rapport de comité
+  (V2-3) et les demandes d'accès (V2-4).
+- **Pas de surveillance continue** de ces comptes : le pool de la licence (quinze
+  emplacements) est déjà contraint, et l'ouvrir demanderait de décider quelle
+  rareté prime. L'analyse est à la demande, ce que la consigne demandait.
+- **Rien vérifié en production**, comme depuis V2-1. Quatre migrations cette
+  fois, toutes additives : deux tables, deux colonnes de quota, l'élargissement
+  du suivi des demandes et l'ouverture des offres.

@@ -9,6 +9,7 @@ maturité (ANSSI, ISO 27001, NIST CSF ou un référentiel propre au client), un 
 une bibliothèque documentaire (politique de sécurité, charte, procédure et registre d'incidents,
 plan de continuité, sensibilisation, rapport de comité), la surveillance continue des
 actifs déclarés (disponibilité, TLS, en-têtes, SPF/DMARC), la détection de fuites de données,
+la surveillance de comptes désignés (dirigeants, comptes sensibles),
 et une assistance par IA.
 
 ## Ce qui le distingue
