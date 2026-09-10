@@ -108,7 +108,10 @@ test('génération de charte mockée, relecture puis validation', async ({ page 
 
   await auditAccessibility(page)
 
-  await page.getByRole('button', { name: 'Générer la charte informatique' }).click()
+  // V2-5 : la page est devenue un CATALOGUE de types de documents. Le bouton
+  // unique « Générer la charte informatique » n'existe plus ; chaque entrée
+  // porte le sien, distingué par son nom accessible.
+  await page.getByRole('button', { name: 'Générer — Charte informatique' }).click()
 
   // Génération : the polling in-progress state must show before settling.
   await expect(page.getByText('Génération en cours par l’IA')).toBeVisible()
@@ -125,7 +128,10 @@ test('génération de charte mockée, relecture puis validation', async ({ page 
   // Export PDF (US-4.1, ADR-012) — available before validation too, same as
   // the markdown export.
   const downloadPromise = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Exporter (.pdf)' }).click()
+  // V2-5 : les trois exports sont devenus « .md », « Word (.docx) » et « PDF ».
+  // Les deux formats de rendu sont gardés par l'offre (pdf_export) ; l'offre
+  // d'essai, celle de ce client, les comprend.
+  await page.getByRole('button', { name: 'PDF', exact: true }).click()
   const download = await downloadPromise
   expect(download.suggestedFilename()).toBe('it_charter-v1.pdf')
 

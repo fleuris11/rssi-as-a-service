@@ -65,9 +65,9 @@ async function tenantSlug(page) {
 
 /** Rejoue l'appel gardé depuis le navigateur, avec le jeton déjà en place —
  * c'est-à-dire exactement ce que ferait un client qui contourne l'interface. */
-async function callApi(page, method, endpoint) {
+async function callApi(page, method, endpoint, corpsEnvoye = {}) {
   return page.evaluate(
-    async ([apiBaseUrl, verb, chemin]) => {
+    async ([apiBaseUrl, verb, chemin, charge]) => {
       const access = localStorage.getItem('rssi.access')
       const tenantId = localStorage.getItem('rssi.tenantId')
       const response = await fetch(`${apiBaseUrl}${chemin}`, {
@@ -77,7 +77,7 @@ async function callApi(page, method, endpoint) {
           'X-Tenant-Id': tenantId,
           'Content-Type': 'application/json',
         },
-        body: verb === 'GET' ? undefined : '{}',
+        body: verb === 'GET' ? undefined : JSON.stringify(charge),
       })
       let corps = null
       try {
@@ -87,7 +87,7 @@ async function callApi(page, method, endpoint) {
       }
       return { status: response.status, body: corps }
     },
-    [API_BASE_URL, method, endpoint]
+    [API_BASE_URL, method, endpoint, corpsEnvoye]
   )
 }
 
@@ -135,12 +135,16 @@ test.describe('Gardes de fonctionnalité par offre', () => {
     expect(direct.body.required_plan).toBeTruthy()
 
     // 6. Les autres clés de la même offre, par appel direct également.
-    for (const chemin of [
-      '/api/v1/ai/conversations/',
-      '/api/v1/ai/documents/',
-      '/api/v1/ai/documents/999999/export/pdf/',
+    // Le corps compte : depuis la V2-5, la garde d'offre porte sur le TYPE de
+    // document demandé, et non plus sur la vue. Poster un corps vide se fait
+    // donc refuser pour corps invalide (400) AVANT d'atteindre la garde — ce
+    // qui ne prouve rien sur l'offre. On envoie le type réellement gardé.
+    for (const { chemin, corps } of [
+      { chemin: '/api/v1/ai/conversations/', corps: {} },
+      { chemin: '/api/v1/ai/documents/', corps: { type: 'it_charter' } },
+      { chemin: '/api/v1/ai/documents/999999/export/pdf/', corps: {} },
     ]) {
-      const refus = await callApi(page, chemin.endsWith('pdf/') ? 'GET' : 'POST', chemin)
+      const refus = await callApi(page, chemin.endsWith('pdf/') ? 'GET' : 'POST', chemin, corps)
       expect(refus.status, `${chemin} devrait être refusé sur « Veille »`).toBe(402)
     }
   })
