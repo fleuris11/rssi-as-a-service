@@ -132,6 +132,7 @@ function PreviewPanel() {
 /** Une entrée du catalogue : ce que le document sert à faire, et son état. */
 function CatalogEntry({ entry, versions, onGenerate, onSelect, selectedId, generating, aiEnabled }) {
   const indisponible = entry.source === 'ai' && !aiEnabled
+  const verbe = entry.latest_version ? 'Régénérer' : 'Générer'
   const bouton = (
     <Button
       variant="primary"
@@ -140,8 +141,14 @@ function CatalogEntry({ entry, versions, onGenerate, onSelect, selectedId, gener
       loading={generating === entry.type}
       disabled={indisponible}
       onClick={() => onGenerate(entry)}
+      // Le catalogue affiche un bouton par type de document : sans ce nom
+      // accessible, la page expose sept boutons nommés « Générer », que rien
+      // ne distingue pour qui navigue au lecteur d'écran ou au clavier. Le
+      // libellé visible reste court ; c'est le nom accessible qui porte le
+      // document concerné.
+      aria-label={`${verbe} — ${entry.label}`}
     >
-      {entry.latest_version ? 'Régénérer' : 'Générer'}
+      {verbe}
     </Button>
   )
 
