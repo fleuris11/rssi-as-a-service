@@ -115,8 +115,16 @@ def resolve(key: str | None = None, *, start=None, end=None, now=None) -> Period
         if key not in PRESET_DAYS:
             raise PeriodError("Période inconnue.")
         jours = PRESET_DAYS[key]
-        fin = _fin_de_jour(now.date())
-        debut = _debut_de_jour(now.date() - timedelta(days=jours - 1))
+        # ``localdate`` et non ``now.date()`` : ``now`` est en UTC, et les
+        # bornes sont posées dans le fuseau d'affichage (Europe/Paris). Entre
+        # minuit et deux heures du matin, la date UTC est encore celle de la
+        # veille : la période se terminait alors « hier à 23 h 59 heure de
+        # Paris », c'est-à-dire DANS LE PASSÉ, et le tableau de bord perdait
+        # silencieusement tout ce qui s'était produit dans les deux dernières
+        # heures. Défaut trouvé en V2-5 en lançant la suite à 1 h 50.
+        aujourd_hui = timezone.localdate(now)
+        fin = _fin_de_jour(aujourd_hui)
+        debut = _debut_de_jour(aujourd_hui - timedelta(days=jours - 1))
         libelle = PRESET_LABELS[key]
 
     precedente_fin = debut - timedelta(microseconds=1)

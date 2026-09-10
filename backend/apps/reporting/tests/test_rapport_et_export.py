@@ -10,7 +10,7 @@ postes. C'est pour cela que la construction est séparée : ``build_html`` est
 testée partout, ``render_pdf`` a un seul test, marqué comme tel.
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from django.urls import reverse
@@ -93,6 +93,33 @@ class TestPeriodes:
 
         assert (periode.start.hour, periode.start.minute) == (0, 0)
         assert periode.end.hour == 23
+
+    @pytest.mark.parametrize(
+        "instant_utc",
+        [
+            "2026-09-09T23:50:00Z",  # 1 h 50 à Paris, heure d'été
+            "2026-01-15T23:30:00Z",  # 0 h 30 à Paris, heure d'hiver
+            "2026-09-09T12:00:00Z",  # en pleine journée, le cas facile
+        ],
+    )
+    def test_la_periode_contient_toujours_l_instant_courant(self, instant_utc):
+        """Défaut trouvé en V2-5 en lançant la suite à 1 h 50 du matin.
+
+        Les bornes sont posées dans le fuseau d'affichage (Europe/Paris) mais
+        la date était prise sur ``now`` en UTC. Entre minuit et deux heures,
+        la date UTC est encore celle de la veille : la période se terminait
+        « hier à 23 h 59 heure de Paris », donc DANS LE PASSÉ, et le tableau
+        de bord perdait silencieusement tout ce qui s'était produit dans les
+        deux dernières heures. Personne ne l'aurait vu — sauf un RSSI qui
+        ouvre sa page à minuit et demi.
+        """
+        maintenant = datetime.fromisoformat(instant_utc.replace("Z", "+00:00"))
+
+        for cle in (periods.PRESET_30D, periods.PRESET_QUARTER, periods.PRESET_YEAR):
+            periode = periods.resolve(cle, now=maintenant)
+            assert periode.start <= maintenant <= periode.end, (
+                f"{cle} : {maintenant} hors de [{periode.start} ; {periode.end}]"
+            )
 
     def test_une_plage_personnalisee_est_acceptee(self):
         periode = periods.resolve(
