@@ -315,7 +315,11 @@ export default function PlatformAdminPage() {
   const [plans, setPlans] = useState([])
   // Le catalogue de référentiels sert au formulaire d'intégration de la
   // veille : on ne peut pas rattacher une mesure à un référentiel dont on
-  // n'a pas la liste.
+  // n'a pas la liste. Chargé À LA DEMANDE, à l'ouverture de cet onglet, et
+  // non avec le socle : le mettre dans le `Promise.all` de `loadCore` faisait
+  // dépendre TOUTE la console d'un appel dont un seul écran a besoin. Si cet
+  // appel tombait, l'exploitant perdait aussi la vue de ses ressources rares
+  // — un rayon de panne élargi sans contrepartie (revue V2-7).
   const [referentials, setReferentials] = useState([])
   const [health, setHealth] = useState(null)
   const [config, setConfig] = useState(null)
@@ -329,21 +333,18 @@ export default function PlatformAdminPage() {
   // chargée SÉPARÉMENT, sans bloquer le reste. L'exploitant ouvre cette page
   // d'abord pour voir ses ressources rares, pas pour attendre un ping.
   const loadCore = useCallback(async () => {
-    const [capacityRes, tenantsRes, plansRes, configRes, auditRes, referentialsRes] =
-      await Promise.all([
+    const [capacityRes, tenantsRes, plansRes, configRes, auditRes] = await Promise.all([
       platformApi.capacity(),
       platformApi.listTenants(),
       platformApi.listPlans(),
       platformApi.configuration(),
       platformApi.audit(),
-      platformApi.listReferentials(),
     ])
     setCapacity(capacityRes.data)
     setTenants(tenantsRes.data)
     setPlans(plansRes.data)
     setConfig(configRes.data)
     setAudit(auditRes.data)
-    setReferentials(referentialsRes.data)
   }, [])
 
   const loadHealth = useCallback(async () => {
@@ -360,6 +361,21 @@ export default function PlatformAdminPage() {
     loadHealth().catch(() => setHealth(null))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Le catalogue n'est chargé qu'à l'ouverture de l'onglet Veille, et une
+  // seule fois. Son échec n'affecte que cet écran : le formulaire
+  // d'intégration s'y montre alors sans référentiel à proposer, le reste de
+  // la console reste debout.
+  useEffect(() => {
+    if (activeTab !== 'watch' || referentials.length > 0) return
+    platformApi
+      .listReferentials()
+      .then((response) => setReferentials(response.data))
+      .catch(() =>
+        showToast({ type: 'error', message: 'Impossible de charger les référentiels.' })
+      )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
 
   /** Conversion d'un prospect : on bascule sur l'écran Clients avec le
    *  formulaire déjà rempli, et le lien prospect → client est conservé. */
