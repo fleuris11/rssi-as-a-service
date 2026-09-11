@@ -425,14 +425,36 @@ class WatchedAccountCreateSerializer(serializers.Serializer):
 
 
 class WatchedAccountFindingSerializer(serializers.ModelSerializer):
+    """Une observation sur un compte designe.
+
+    ``details`` est l'ajout du lot A. Les champs qui DISTINGUENT deux
+    observations — le domaine du cookie vole, son nom, le logiciel
+    malveillant, le fichier de collecte — etaient stockes dans ``raw_data``
+    depuis la V2-2 et **n'etaient servis nulle part sur cet ecran**. D'ou des
+    lignes rigoureusement identiques a l'affichage alors qu'elles sont toutes
+    differentes en base : mesure en production, 3 222 lignes pour un compte,
+    3 222 empreintes distinctes, 470 couples (domaine, nom de cookie).
+
+    ``finding_details.details_for`` existe depuis la V2-2 et fait deja le
+    travail : liste blanche par entrepot, libelle francais, phrase
+    d'implication. Il n'y avait qu'a l'appeler.
+    """
+
     account_value = serializers.CharField(source="account.value", read_only=True)
     account_label = serializers.CharField(source="account.label", read_only=True)
     severity_label = serializers.CharField(source="get_severity_display", read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
+    details = serializers.SerializerMethodField()
+
+    def get_details(self, obj) -> list:
+        from . import finding_details
+
+        return finding_details.details_for(obj)
 
     class Meta:
         model = WatchedAccountFinding
         fields = [
+            "details",
             "id",
             "account",
             "account_value",

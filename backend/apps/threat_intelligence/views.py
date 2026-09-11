@@ -1,11 +1,13 @@
 import logging
 
 from django.core.cache import cache
+from django.utils.dateparse import parse_date
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import NotFound
 from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -739,7 +741,36 @@ class WatchedAccountDetailView(APIView):
         return Response(WatchedAccountSerializer(compte).data)
 
 
+def _date_depuis(valeur):
+    """Une periode de filtre, ou None. Une date illisible n'est pas une erreur
+    du client : on l'ignore plutot que de lui renvoyer un 400 pour un filtre."""
+    if not valeur:
+        return None
+    return parse_date(valeur)
+
+
 class WatchedAccountFindingListView(APIView):
+    """Les resultats des comptes designes : groupes par defaut, pagines toujours.
+
+    **Pourquoi grouper plutot que seulement paginer.** Mesure en production :
+    un compte portait 3 222 resultats. Tous distincts en base — 3 222
+    empreintes de dedoublonnage distinctes, 470 couples (domaine, nom de
+    cookie) — mais identiques a l'ecran faute d'afficher ce qui les distingue.
+    Paginer sans grouper ne fait que repartir 3 222 lignes identiques sur 162
+    pages. Personne ne traitera cela.
+
+    Trois modes, un seul endpoint :
+
+    - par defaut : la liste des GROUPES (compte, type, service d'origine) ;
+    - ``?group=<cle>`` : le detail d'un groupe qu'on deplie ;
+    - ``?flat=1`` : la liste ligne a ligne, pour l'export.
+
+    Toujours pagine cote serveur : la reponse complete pesait 1,6 Mo et
+    demandait 4,9 s de construction pour un seul compte. Borner l'affichage ne
+    borne jamais l'analyse — les compteurs de ``summary`` continuent de porter
+    sur l'ensemble.
+    """
+
     permission_classes = [permissions.IsAuthenticated, IsTenantMember]
 
     def get(self, request):
@@ -749,10 +780,50 @@ class WatchedAccountFindingListView(APIView):
             compte = services.get_watched_account(tenant=request.tenant, account_id=account_id)
             if compte is None:
                 raise NotFound("Compte introuvable.")
-        resultats = services.list_watched_account_findings(
-            request.tenant, account=compte, status=request.query_params.get("status")
+
+        base = services.list_watched_account_findings(
+            request.tenant,
+            account=compte,
+            status=request.query_params.get("status"),
+            severity=request.query_params.get("severity"),
+            finding_type=request.query_params.get("type"),
+            since=_date_depuis(request.query_params.get("since")),
+            search=request.query_params.get("q"),
         )
-        return Response(WatchedAccountFindingSerializer(resultats, many=True).data)
+
+        paginateur = PageNumberPagination()
+        paginateur.page_size = int(request.query_params.get("page_size") or 25)
+        paginateur.page_size_query_param = "page_size"
+        paginateur.max_page_size = 200
+
+        groupe = request.query_params.get("group")
+        if groupe:
+            try:
+                account_pk, finding_type, service = groupe.split("|", 2)
+            except ValueError as exc:
+                raise DRFValidationError({"group": "Groupe illisible."}) from exc
+            lignes = services.findings_in_group(
+                base, account_id=account_pk, finding_type=finding_type, service=service
+            )
+            page = paginateur.paginate_queryset(lignes, request)
+            return paginateur.get_paginated_response(
+                WatchedAccountFindingSerializer(page, many=True).data
+            )
+
+        if request.query_params.get("flat"):
+            page = paginateur.paginate_queryset(base, request)
+            return paginateur.get_paginated_response(
+                WatchedAccountFindingSerializer(page, many=True).data
+            )
+
+        groupes = services.group_watched_account_findings(base)
+        page = paginateur.paginate_queryset(groupes, request)
+        reponse = paginateur.get_paginated_response(page)
+        # Les filtres se peuplent de ce qui existe REELLEMENT chez ce client :
+        # proposer un type qu'il n'a pas donne un filtre qui ne renvoie jamais
+        # rien, et laisse croire a une panne.
+        reponse.data["filters"] = services.watched_account_filter_options(request.tenant)
+        return reponse
 
 
 class WatchedAccountFindingDetailView(APIView):

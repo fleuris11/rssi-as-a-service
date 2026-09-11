@@ -17,13 +17,34 @@ Ce que ce module ne fait pas, et c'est délibéré (ADR-033) :
 """
 
 import logging
+from datetime import date
 
 from django.db import IntegrityError, transaction
+from django.db.models import (
+    Case,
+    CharField,
+    Count,
+    F,
+    IntegerField,
+    Max,
+    Min,
+    Q,
+    Value,
+    When,
+)
+from django.db.models.fields.json import KeyTextTransform
+from django.db.models.functions import Coalesce, NullIf
 from django.utils import timezone
 
 from apps.billing import entitlements
 
-from .models import BreachIntelligenceUsage, BreachScanJob, WatchedAccount, WatchedAccountFinding
+from .models import (
+    BreachFinding,
+    BreachIntelligenceUsage,
+    BreachScanJob,
+    WatchedAccount,
+    WatchedAccountFinding,
+)
 from .providers import get_provider
 from .providers.breachsense import normalizer
 
@@ -149,13 +170,175 @@ def remove_watched_account(
 # --- Résultats --------------------------------------------------------------
 
 
-def list_watched_account_findings(tenant, *, account=None, status=None):
+#: Rang de gravite, pour trier et pour retenir la pire d'un groupe. Les
+#: valeurs sont des chaines : « critical » < « high » en ordre alphabetique,
+#: ce qui est l'inverse de ce qu'on veut.
+SEVERITY_RANK = {
+    BreachFinding.Severity.CRITICAL: 3,
+    BreachFinding.Severity.HIGH: 2,
+    BreachFinding.Severity.ATTENTION: 1,
+}
+
+
+def _service_expression():
+    """Le « service d'origine » d'une observation, lu dans la charge brute.
+
+    Selon l'entrepot il s'appelle ``dom`` (le domaine du cookie vole) ou
+    ``src`` (la fuite d'ou vient le couple identifiant/mot de passe). C'est la
+    troisieme composante du regroupement : sans elle, des milliers de cookies
+    provenant de domaines differents se reduiraient a une seule ligne.
+    """
+    return Coalesce(
+        NullIf(KeyTextTransform("dom", "raw_data"), Value("")),
+        NullIf(KeyTextTransform("src", "raw_data"), Value("")),
+        Value(""),
+        output_field=CharField(),
+    )
+
+
+def list_watched_account_findings(
+    tenant,
+    *,
+    account=None,
+    status=None,
+    severity=None,
+    finding_type=None,
+    since=None,
+    search=None,
+):
+    """Les resultats, filtres et tries par DATE DE FUITE decroissante.
+
+    Le tri etait ``-detected_at``, c'est-a-dire l'ordre d'insertion inverse.
+    Les milliers de lignes d'une meme analyse etant creees dans la meme
+    boucle, trier par cette colonne revenait a trier par l'ordre dans lequel
+    le fournisseur avait repondu : arbitraire pour un lecteur, et c'est ce qui
+    faisait apparaitre en tete une serie de cookies tous dates du meme jour.
+
+    ``-breach_date`` repond a la question qu'on se pose vraiment — qu'est-ce
+    qui est le plus recent — et ``-detected_at`` ne sert plus qu'a departager
+    deux fuites de meme date.
+    """
     queryset = WatchedAccountFinding.all_objects.filter(tenant=tenant).select_related("account")
     if account is not None:
         queryset = queryset.filter(account=account)
     if status:
         queryset = queryset.filter(status=status)
-    return queryset.order_by("-detected_at")
+    if severity:
+        queryset = queryset.filter(severity=severity)
+    if finding_type:
+        queryset = queryset.filter(finding_type=finding_type)
+    if since is not None:
+        queryset = queryset.filter(breach_date__gte=since)
+    if search:
+        queryset = queryset.filter(
+            Q(account__value__icontains=search) | Q(account__label__icontains=search)
+        )
+    return queryset.order_by(F("breach_date").desc(nulls_last=True), "-detected_at")
+
+
+def group_watched_account_findings(queryset):
+    """Regroupe par (compte, type de fuite, service d'origine).
+
+    **C'est le regroupement qui rend l'ecran lisible, pas la pagination.**
+    Mesure en production : un compte portait 3 222 resultats, tous distincts
+    en base (3 222 empreintes de dedoublonnage distinctes) mais rigoureusement
+    identiques a l'ecran, faute d'afficher le domaine et le nom du cookie.
+    Paginer 3 222 lignes identiques ne fait que les etaler sur 162 pages.
+
+    Renvoie des dictionnaires, pas des objets : un groupe n'est pas une ligne
+    de la base, et lui donner l'apparence d'un modele inviterait a lui preter
+    des proprietes qu'il n'a pas.
+    """
+    # order_by() VIDE, et ce n'est pas un detail : Django fait entrer les
+    # colonnes de tri dans le GROUP BY. La liste arrive triee par date de
+    # fuite puis par date de detection — deux colonnes distinctes sur chaque
+    # ligne — ce qui donnait un groupe par ligne, soit exactement le defaut
+    # qu'on corrige. Le tri des groupes se fait ensuite, sur leurs agregats.
+    annote = queryset.order_by().annotate(service=_service_expression())
+    lignes = annote.values(
+        "account_id", "account__value", "account__label", "finding_type", "service"
+    ).annotate(
+        occurrences=Count("id"),
+        ouverts=Count("id", filter=Q(status=WatchedAccountFinding.Status.OPEN)),
+        traites=Count("id", filter=Q(status=WatchedAccountFinding.Status.TREATED)),
+        ignores=Count("id", filter=Q(status=WatchedAccountFinding.Status.IGNORED)),
+        plus_recente=Max("breach_date"),
+        plus_ancienne=Min("breach_date"),
+        derniere_detection=Max("detected_at"),
+        # La gravite d'un groupe est la PIRE qu'il contient : annoncer
+        # « Attention » sur un groupe qui renferme une fuite critique
+        # tromperait sur l'urgence. Calcule en base, en une passe.
+        rang_gravite=Max(
+            Case(
+                When(severity=BreachFinding.Severity.CRITICAL, then=Value(3)),
+                When(severity=BreachFinding.Severity.HIGH, then=Value(2)),
+                When(severity=BreachFinding.Severity.ATTENTION, then=Value(1)),
+                default=Value(0),
+                output_field=IntegerField(),
+            )
+        ),
+    )
+
+    par_rang = {rang: nom for nom, rang in SEVERITY_RANK.items()}
+    groupes = [
+        {
+            "key": f"{ligne['account_id']}|{ligne['finding_type']}|{ligne['service']}",
+            "account_id": ligne["account_id"],
+            "account_value": ligne["account__value"],
+            "account_label": ligne["account__label"],
+            "finding_type": ligne["finding_type"],
+            "service": ligne["service"],
+            "occurrences": ligne["occurrences"],
+            "open_count": ligne["ouverts"],
+            "treated_count": ligne["traites"],
+            "ignored_count": ligne["ignores"],
+            "severity": par_rang.get(ligne["rang_gravite"], ""),
+            "latest_breach_date": ligne["plus_recente"],
+            "oldest_breach_date": ligne["plus_ancienne"],
+            "last_detected_at": ligne["derniere_detection"],
+        }
+        for ligne in lignes
+    ]
+
+    groupes.sort(
+        key=lambda g: (
+            SEVERITY_RANK.get(g["severity"], 0),
+            g["latest_breach_date"] or date.min,
+            g["occurrences"],
+        ),
+        reverse=True,
+    )
+    return groupes
+
+
+def findings_in_group(queryset, *, account_id, finding_type, service):
+    """Le detail d'un groupe, quand on le deplie."""
+    return (
+        queryset.annotate(service=_service_expression())
+        .filter(account_id=account_id, finding_type=finding_type, service=service)
+        .order_by(F("breach_date").desc(nulls_last=True), "-detected_at")
+    )
+
+
+def watched_account_filter_options(tenant) -> dict:
+    """Ce qui existe REELLEMENT chez ce client, pour peupler les filtres.
+
+    Proposer un type que le client n'a pas produit un filtre qui ne renvoie
+    jamais rien, et laisse croire a une panne.
+    """
+    # order_by() VIDE pour la meme raison que dans le regroupement : le
+    # modele porte un ordre par defaut (-detected_at), et DISTINCT le fait
+    # entrer dans le SELECT. Les valeurs redevenaient alors distinctes par
+    # (type, date de detection), c'est-a-dire une entree de filtre par ligne.
+    base = WatchedAccountFinding.all_objects.filter(tenant=tenant).order_by()
+    return {
+        "types": sorted(t for t in base.values_list("finding_type", flat=True).distinct() if t),
+        "severities": sorted(
+            (s for s in base.values_list("severity", flat=True).distinct() if s),
+            key=lambda s: SEVERITY_RANK.get(s, 0),
+            reverse=True,
+        ),
+    }
 
 
 def get_watched_account_finding(*, tenant, finding_id):

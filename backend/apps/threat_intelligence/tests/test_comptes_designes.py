@@ -532,4 +532,8 @@ class TestEtancheite:
             **_auth(api_client, voisin_owner, voisin),
         )
 
-        assert response.data == []
+        # Reponse paginee depuis le lot A. La garde est verifiee plus
+        # strictement qu'avant : ni ligne servie, ni compteur non nul — un
+        # total qui fuirait le volume du voisin serait deja une fuite.
+        assert response.data["results"] == []
+        assert response.data["count"] == 0
