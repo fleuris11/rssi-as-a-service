@@ -274,8 +274,14 @@ export const monitoringApi = {
 }
 
 export const threatIntelligenceApi = {
-  listFindings: (status) =>
-    apiClient.get('/api/v1/threat-intelligence/findings/', { params: status ? { status } : {} }),
+  // La reponse est paginee cote serveur depuis le correctif du 06/09 (28 450
+  // entrees figeaient le navigateur). L'ecran n'exposait pourtant aucune
+  // navigation : un client avec 165 compromissions en voyait 20, sans savoir
+  // que les autres existaient. `page` rend le reste atteignable.
+  listFindings: (status, page = 1) =>
+    apiClient.get('/api/v1/threat-intelligence/findings/', {
+      params: { ...(status ? { status } : {}), ...(page > 1 ? { page } : {}) },
+    }),
   updateFindingStatus: (id, status) =>
     apiClient.patch(`/api/v1/threat-intelligence/findings/${id}/`, { status }),
   // Step-up re-authentication (ADR-014) : mot de passe OU code TOTP, jamais

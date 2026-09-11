@@ -455,6 +455,11 @@ export default function CompromisesPage() {
   const canReveal = isTenantAdmin || Boolean(user?.is_staff)
   const [loading, setLoading] = useState(true)
   const [findings, setFindings] = useState([])
+  // Pagination servie par le serveur : l'ecran n'en exposait aucune, et
+  // s'arretait donc silencieusement a la premiere page.
+  const [page, setPage] = useState(1)
+  const [hasNext, setHasNext] = useState(false)
+  const [totalFindings, setTotalFindings] = useState(0)
   const [activeTab, setActiveTab] = useState('open')
   const [status, setStatus] = useState(null)
   const [assets, setAssets] = useState([])
@@ -475,9 +480,12 @@ export default function CompromisesPage() {
   const poll = usePolling(threatIntelligenceApi.getScanJob)
 
   const loadFindings = useCallback(
-    async (tab) => {
-      const response = await threatIntelligenceApi.listFindings(tab)
+    async (tab, page = 1) => {
+      const response = await threatIntelligenceApi.listFindings(tab, page)
       setFindings(response.data.results)
+      setTotalFindings(response.data.count ?? response.data.results.length)
+      setHasNext(Boolean(response.data.next))
+      setPage(page)
     },
     []
   )
@@ -492,6 +500,9 @@ export default function CompromisesPage() {
         threatIntelligenceApi.listMonitoredAssets(),
       ])
       setFindings(findingsRes.data.results)
+      setTotalFindings(findingsRes.data.count ?? findingsRes.data.results.length)
+      setHasNext(Boolean(findingsRes.data.next))
+      setPage(1)
       setStatus(statusRes.data)
       setAssets(assetsRes.data.results)
       setMonitored(monitoredRes.data.results)
@@ -722,6 +733,38 @@ export default function CompromisesPage() {
               </div>
             </section>
           ))}
+        </div>
+      )}
+
+      {/* La reponse est paginee cote serveur (correctif du 06/09 : 28 450
+          entrees figeaient le navigateur). L'ecran ne le disait pas et
+          s'arretait a la premiere page — un client avec 165 compromissions
+          en voyait 20 sans savoir que les autres existaient. Borner
+          l'affichage ne borne pas l'analyse : le score et les compteurs
+          portent toujours sur l'ensemble. */}
+      {(page > 1 || hasNext) && (
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <p className="text-ink-500">
+            {findings.length} affichée(s) sur {totalFindings} — page {page}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => loadFindings(activeTab, page - 1)}
+            >
+              Précédent
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!hasNext}
+              onClick={() => loadFindings(activeTab, page + 1)}
+            >
+              Suivant
+            </Button>
+          </div>
         </div>
       )}
 

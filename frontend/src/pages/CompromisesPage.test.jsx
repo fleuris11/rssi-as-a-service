@@ -117,7 +117,9 @@ describe('CompromisesPage', () => {
 
     // Le lien mène à l'onglet où elles se trouvent réellement.
     await userEvent.click(screen.getByRole('button', { name: 'Les consulter' }))
-    expect(threatIntelligenceApi.listFindings).toHaveBeenCalledWith('treated')
+    // La signature porte desormais la page en second argument ; ce que ce
+    // test verifie reste l onglet vise.
+    expect(threatIntelligenceApi.listFindings).toHaveBeenCalledWith('treated', expect.anything())
   })
 
   it('ne dit rien quand l’analyse n’a revu aucune fuite déjà traitée', async () => {
