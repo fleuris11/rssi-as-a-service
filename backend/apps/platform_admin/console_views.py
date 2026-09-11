@@ -1127,6 +1127,113 @@ class ReferentialCatalogView(ConsoleView):
         return Response(catalogue)
 
 
+class ReferentialTemplateView(ConsoleView):
+    """Le modele VIDE a remplir (B2.3).
+
+    Un format documente ne suffit pas : personne ne lit une specification de
+    quatre pages pour remplir un tableur. Le modele porte les colonnes
+    exactes, dans l'ordre, et une ligne d'exemple qu'on remplace.
+
+    Les colonnes viennent de ``CSV_COLUMNS`` et ne sont jamais recopiees : un
+    modele qui diverge du parseur produit un fichier ACCEPTE dont les enonces
+    sont vides — l'erreur la plus couteuse, parce qu'elle ne se voit qu'a
+    l'ecran du client.
+    """
+
+    def get(self, request):
+        from apps.assessments import importers
+
+        reponse = HttpResponse(importers.modele_csv(), content_type="text/csv; charset=utf-8")
+        reponse["Content-Disposition"] = 'attachment; filename="modele-referentiel.csv"'
+        # BOM : sans lui, Excel en francais abime les accents a l'ouverture.
+        reponse.content = "\ufeff".encode() + reponse.content
+        return reponse
+
+
+class ReferentialImportView(ConsoleView):
+    """Importer un referentiel depuis un fichier (B2.3).
+
+    **Deux temps, jamais un seul.** Sans ``confirm``, on ANALYSE et on ne
+    touche a rien : la reponse porte toutes les erreurs avec leur ligne, et
+    l'apercu de ce qui serait cree. Avec ``confirm``, on importe.
+
+    Demander de confirmer un import qu'on n'a pas montre reviendrait a faire
+    signer un contrat sans le lire — et un referentiel fautif se propage
+    ensuite dans les questionnaires de tous les clients a qui on l'attribue.
+    """
+
+    def post(self, request):
+        from apps.assessments import importers
+
+        contenu = request.data.get("content") or ""
+        if not contenu.strip():
+            fichier = request.FILES.get("file")
+            if fichier is not None:
+                contenu = fichier.read().decode("utf-8-sig", errors="replace")
+        if not contenu.strip():
+            return Response(
+                {"detail": "Aucun fichier a analyser."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        fmt = (request.data.get("format") or "").strip().lower()
+        if fmt not in ("json", "csv"):
+            fmt = "json" if contenu.lstrip().startswith("{") else "csv"
+
+        entete = {
+            champ: request.data.get(champ, "")
+            for champ in (
+                "slug",
+                "name",
+                "version",
+                "publisher",
+                "kind",
+                "source_url",
+                "licence_notice",
+                "description",
+            )
+        }
+        resultat = importers.analyser(contenu, fmt=fmt, header=entete)
+
+        if resultat["erreurs"]:
+            # On ne cree RIEN tant qu'il reste une erreur, et on les rend
+            # toutes : corriger un fichier une erreur a la fois est le plus
+            # sur moyen de ne jamais le corriger.
+            return Response(
+                {"errors": resultat["erreurs"], "preview": None, "imported": False},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not request.data.get("confirm"):
+            return Response(
+                {"errors": [], "preview": resultat["apercu"], "imported": False},
+                status=status.HTTP_200_OK,
+            )
+
+        rapport = importers.import_referential(resultat["parsed"])
+        self.audit(
+            request,
+            AdminAuditLog.Action.SETTING_CHANGED,
+            target=resultat["apercu"]["slug"],
+            detail=(
+                f"Referentiel importe : {rapport.measures} mesure(s), {rapport.domains} domaine(s)."
+            ),
+        )
+        return Response(
+            {
+                "errors": [],
+                "preview": resultat["apercu"],
+                "imported": True,
+                "report": {
+                    "domains": rapport.domains,
+                    "measures": rapport.measures,
+                    "created": rapport.created,
+                    "updated": rapport.updated,
+                },
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
 class ClientReferentialView(ConsoleView):
     """Attribuer un ou plusieurs référentiels à un client, et les retirer.
 

@@ -67,6 +67,10 @@ class ParsedMeasure:
     effort: str = DEFAULT_EFFORT
     impact: str = DEFAULT_IMPACT
     effort_impact_disclaimer: bool = True
+    #: Ligne du tableur d'ou vient cette mesure, quand le format en a une.
+    #: Rend les erreurs ACTIONNABLES : « ligne 47 » se corrige, « une mesure
+    #: n'a pas de code » se cherche.
+    source_line: int | None = None
 
 
 @dataclass
@@ -182,7 +186,7 @@ def _parse_measure(raw: dict, *, label: str) -> ParsedMeasure:
     )
 
 
-def parse_json(data: dict) -> ParsedReferential:
+def parse_json(data: dict, *, validate: bool = True) -> ParsedReferential:
     for champ in ("slug", "name", "version"):
         if not data.get(champ):
             raise ReferentialImportError(f"Champ obligatoire manquant à la racine : « {champ} ».")
@@ -229,10 +233,14 @@ def parse_json(data: dict) -> ParsedReferential:
             parsed_domain.measures.append(_parse_measure(mesure, label=label))
         parsed.domains.append(parsed_domain)
 
-    return _validate(parsed)
+    # ``validate=False`` pour la console : elle veut COLLECTER toutes les
+    # erreurs, la ou ``_validate`` leve des la premiere. Sans cette sortie,
+    # l'erreur remonte sans sa ligne d'origine et devient introuvable dans
+    # un tableur de trois cents lignes.
+    return _validate(parsed) if validate else parsed
 
 
-def parse_csv(rows, *, header: dict) -> ParsedReferential:
+def parse_csv(rows, *, header: dict, validate: bool = True) -> ParsedReferential:
     """``rows`` : les lignes du tableur. ``header`` : les métadonnées du
     référentiel, passées en options de la commande — un CSV ne sait pas porter
     d'en-tête structuré, et les répéter sur chaque ligne inviterait à les
@@ -296,10 +304,15 @@ def parse_csv(rows, *, header: dict) -> ParsedReferential:
                     label=label,
                     champ="impact",
                 ),
+                source_line=numero_ligne,
             )
         )
 
-    return _validate(parsed)
+    # ``validate=False`` pour la console : elle veut COLLECTER toutes les
+    # erreurs, la ou ``_validate`` leve des la premiere. Sans cette sortie,
+    # l'erreur remonte sans sa ligne d'origine et devient introuvable dans
+    # un tableur de trois cents lignes.
+    return _validate(parsed) if validate else parsed
 
 
 def _validate(parsed: ParsedReferential) -> ParsedReferential:
@@ -448,3 +461,174 @@ def import_referential(parsed: ParsedReferential, *, activate: bool = True) -> I
         updated=mises_a_jour,
         orphans=sorted(connus_avant - vues),
     )
+
+
+# --- Analyse sans ecriture, pour la console (lot B) -------------------------
+
+
+def collecter_erreurs(parsed: ParsedReferential) -> list[dict]:
+    """Toutes les erreurs structurelles, pas seulement la premiere.
+
+    ``_validate`` leve des le premier probleme : c'est ce qu'il faut pour une
+    commande en ligne, qui s'arrete de toute facon. Une console, elle, doit
+    montrer **tout ce qu'il y a a corriger** en une fois — sans quoi
+    l'exploitant repasse le fichier dix fois pour dix erreurs.
+
+    Chaque erreur porte sa ligne d'origine quand le format en a une.
+    """
+    erreurs: list[dict] = []
+
+    def ajouter(message, ligne=None):
+        erreurs.append({"ligne": ligne, "message": message})
+
+    if not parsed.domains:
+        ajouter("Le referentiel ne contient aucun domaine.")
+        return erreurs
+
+    codes_domaines = [d.code for d in parsed.domains]
+    for code in sorted({c for c in codes_domaines if codes_domaines.count(c) > 1}):
+        ajouter(f"Code de domaine en double : « {code} ».")
+
+    tous_codes: list[str] = []
+    lignes_par_code: dict[str, int | None] = {}
+    for domaine in parsed.domains:
+        if not domaine.measures:
+            ajouter(f"Le domaine « {domaine.code} » ne contient aucune mesure.")
+            continue
+        for mesure in domaine.measures:
+            ligne = mesure.source_line
+            if not mesure.code:
+                ajouter(f"Domaine « {domaine.code} » : une mesure n'a pas de code.", ligne)
+                continue
+            if not mesure.official_title:
+                ajouter(f"Mesure « {mesure.code} » : intitule officiel manquant.", ligne)
+            if not mesure.plain_language:
+                # L'enonce en langage clair est ce que le dirigeant LIT.
+                ajouter(
+                    f"Mesure « {mesure.code} » : enonce en langage clair manquant.",
+                    ligne,
+                )
+            tous_codes.append(mesure.code)
+            lignes_par_code.setdefault(mesure.code, ligne)
+
+    for code in sorted({c for c in tous_codes if tous_codes.count(c) > 1}):
+        ajouter(f"Code de mesure en double : « {code} ».", lignes_par_code.get(code))
+
+    return erreurs
+
+
+def apercu(parsed: ParsedReferential) -> dict:
+    """Ce qui SERA cree, avant de rien ecrire. On ne demande pas de confirmer
+    a l'aveugle."""
+    return {
+        "slug": parsed.slug,
+        "name": parsed.name,
+        "version": parsed.version,
+        "publisher": parsed.publisher,
+        "kind": parsed.kind,
+        "licence_notice": parsed.licence_notice,
+        "domain_count": len(parsed.domains),
+        "measure_count": sum(len(d.measures) for d in parsed.domains),
+        "domains": [
+            {
+                "code": d.code,
+                "name": d.name,
+                "measure_count": len(d.measures),
+                "measures": [
+                    {"code": m.code, "official_title": m.official_title} for m in d.measures[:5]
+                ],
+            }
+            for d in parsed.domains
+        ],
+    }
+
+
+def analyser(contenu: str, *, fmt: str, header: dict | None = None) -> dict:
+    """Lit, valide, et ne DECIDE rien. Renvoie ``{erreurs, apercu}``.
+
+    Aucune ecriture, jamais : c'est ce qui permet a la console de montrer le
+    resultat et de demander confirmation avant d'engager quoi que ce soit.
+    """
+    import csv as _csv
+    import io as _io
+    import json as _json
+
+    try:
+        if fmt == "json":
+            parsed = parse_json(_json.loads(contenu), validate=False)
+        else:
+            # Le separateur est DEDUIT, pas suppose : Excel en francais
+            # exporte en point-virgule, les outils anglophones en virgule.
+            # Imposer l'un des deux ferait lire tout le fichier comme une
+            # colonne unique — et l'erreur rendue (« colonnes obligatoires
+            # vides ») n'aurait aucun rapport avec la cause.
+            premiere = contenu.splitlines()[0] if contenu.strip() else ""
+            separateur = ";" if premiere.count(";") >= premiere.count(",") else ","
+            lignes = list(_csv.DictReader(_io.StringIO(contenu), delimiter=separateur))
+
+            # Passe de COLLECTE au niveau des lignes, avant de laisser
+            # ``parse_csv`` lever. Celui-ci s'arrete a la premiere ligne
+            # fautive — ce qui convient a une commande en ligne, mais ferait
+            # repasser le fichier dix fois a l'exploitant pour dix lignes.
+            erreurs_lignes = []
+            for numero, ligne_csv in enumerate(lignes, start=2):
+                manquantes = [
+                    colonne
+                    for colonne in ("domaine_code", "mesure_code")
+                    if not (ligne_csv.get(colonne) or "").strip()
+                ]
+                if manquantes:
+                    erreurs_lignes.append(
+                        {
+                            "ligne": numero,
+                            "message": (
+                                "Colonne(s) obligatoire(s) vide(s) : " + ", ".join(manquantes) + "."
+                            ),
+                        }
+                    )
+            if erreurs_lignes:
+                return {"erreurs": erreurs_lignes, "apercu": None}
+
+            parsed = parse_csv(lignes, header=header or {}, validate=False)
+    except ReferentialImportError as exc:
+        # Une erreur de LECTURE empeche d'aller plus loin : on la rend telle
+        # quelle, avec sa ligne si le message la porte.
+        return {"erreurs": [{"ligne": None, "message": str(exc)}], "apercu": None}
+    except (ValueError, KeyError) as exc:
+        return {
+            "erreurs": [{"ligne": None, "message": f"Fichier illisible : {exc}"}],
+            "apercu": None,
+        }
+
+    erreurs = collecter_erreurs(parsed)
+    return {"erreurs": erreurs, "apercu": apercu(parsed) if not erreurs else None, "parsed": parsed}
+
+
+def modele_csv() -> str:
+    """Le modele VIDE a remplir, avec une ligne d'exemple.
+
+    Les colonnes viennent de ``CSV_COLUMNS``, jamais recopiees : un modele
+    qui diverge du parseur produit un fichier accepte dont les enonces sont
+    vides — l'erreur la plus couteuse, parce qu'elle ne se voit qu'a l'ecran
+    du client.
+
+    Un format documente ne suffit pas : personne ne lit une specification
+    pour remplir un tableur. Le modele porte les colonnes exactes et un
+    exemple qu'on remplace.
+    """
+    exemple = {
+        "domaine_code": "sensibiliser-former",
+        "domaine_nom": "Sensibiliser et former",
+        "domaine_ordre": "1",
+        "mesure_code": "1",
+        "mesure_numero": "1",
+        "intitule_officiel": "Former les equipes aux risques numeriques",
+        "enonce_clair": "Vos equipes sont-elles formees aux risques numeriques ?",
+        "niveau": "standard",
+        "poids": "1",
+        "effort": "low",
+        "impact": "high",
+    }
+    entetes = ";".join(CSV_COLUMNS)
+    ligne = ";".join(exemple.get(colonne, "") for colonne in CSV_COLUMNS)
+    return entetes + chr(10) + ligne + chr(10)

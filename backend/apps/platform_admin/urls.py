@@ -25,6 +25,8 @@ from .console_views import (
     ProspectListView,
     ProspectNoteView,
     ReferentialCatalogView,
+    ReferentialImportView,
+    ReferentialTemplateView,
     SubscriptionDetailView,
     TrashView,
 )
@@ -112,6 +114,16 @@ urlpatterns = [
     path("trash/", TrashView.as_view(), name="platform-trash"),
     # --- Referentiels (V2-4) ------------------------------------------------
     path("referentials/", ReferentialCatalogView.as_view(), name="platform-referential-list"),
+    path(
+        "referentials/template/",
+        ReferentialTemplateView.as_view(),
+        name="platform-referential-template",
+    ),
+    path(
+        "referentials/import/",
+        ReferentialImportView.as_view(),
+        name="platform-referential-import",
+    ),
     # --- Catalogue ----------------------------------------------------------
     path("plans/", AdminPlanListView.as_view(), name="platform-plan-list"),
     # Les chemins spécifiques passent AVANT le détail : sans cela,
