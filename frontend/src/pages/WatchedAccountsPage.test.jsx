@@ -19,6 +19,10 @@ vi.mock('../api/endpoints', () => ({
   threatIntelligenceApi: {
     listWatchedAccounts: vi.fn(),
     listWatchedAccountFindings: vi.fn(),
+    // Lot A : l'ecran interroge desormais une API GROUPEE et paginee, et
+    // propose un export filtre comme l'ecran.
+    watchedAccountFindingsExportUrl: vi.fn(() => '/export.csv'),
+    updateWatchedAccountFinding: vi.fn(),
     declareWatchedAccount: vi.fn(),
     removeWatchedAccount: vi.fn(),
     scanWatchedAccounts: vi.fn(),
@@ -73,7 +77,9 @@ describe('WatchedAccountsPage', () => {
         results: [COMPTE],
       },
     })
-    threatIntelligenceApi.listWatchedAccountFindings.mockResolvedValue({ data: [] })
+    threatIntelligenceApi.listWatchedAccountFindings.mockResolvedValue({
+      data: { count: 0, results: [], filters: { types: [], severities: [] } },
+    })
   })
 
   it('affiche la déclaration à signer, et non un renvoi aux conditions générales', async () => {

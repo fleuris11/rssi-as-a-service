@@ -1,6 +1,7 @@
-import { AlertTriangle, Plus, Radar, ShieldCheck, Trash2, UserRoundSearch } from 'lucide-react'
+import { Plus, Radar, ShieldCheck, Trash2, UserRoundSearch } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { threatIntelligenceApi } from '../api/endpoints'
+import ResultatsComptes from './watched/ResultatsComptes'
 import FeatureGate, { FeatureLockedNotice } from '../components/FeatureGate'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
@@ -29,7 +30,6 @@ const BASES_LEGALES = [
   { value: 'other', label: 'Autre situation, que je précise ci-dessous' },
 ]
 
-const SEVERITE_VARIANT = { critical: 'critical', high: 'warning', attention: 'neutral' }
 
 function dateCourte(valeur) {
   return valeur ? new Date(valeur).toLocaleDateString('fr-FR') : '—'
@@ -252,7 +252,6 @@ export default function WatchedAccountsPage() {
   const { showToast } = useToast()
   const { hasFeature } = useEntitlements()
   const [data, setData] = useState(null)
-  const [resultats, setResultats] = useState([])
   const [loading, setLoading] = useState(true)
   const [formulaireOuvert, setFormulaireOuvert] = useState(false)
   const [occupe, setOccupe] = useState(null)
@@ -263,12 +262,12 @@ export default function WatchedAccountsPage() {
   const charger = useCallback(async () => {
     setLoading(true)
     try {
-      const [comptes, findings] = await Promise.all([
-        threatIntelligenceApi.listWatchedAccounts(),
-        threatIntelligenceApi.listWatchedAccountFindings().catch(() => ({ data: [] })),
-      ])
+      // Les resultats ne sont plus charges ici : `ResultatsComptes`
+      // interroge l'API groupee et paginee lui-meme. Ramener les 3 222
+      // lignes pour n'en afficher qu'une poignee etait precisement le
+      // defaut — 1,6 Mo et 4,9 s pour un seul compte.
+      const comptes = await threatIntelligenceApi.listWatchedAccounts()
       setData(comptes.data)
-      setResultats(findings.data)
     } catch (err) {
       if (err.response?.status !== 402) {
         toastRef.current({ type: 'error', message: 'Impossible de charger les comptes surveillés.' })
@@ -313,14 +312,6 @@ export default function WatchedAccountsPage() {
     }
   }
 
-  async function handleTraiter(finding, status) {
-    try {
-      await threatIntelligenceApi.updateWatchedAccountFinding(finding.id, status)
-      await charger()
-    } catch {
-      showToast({ type: 'error', message: 'Impossible de mettre à jour ce résultat.' })
-    }
-  }
 
   if (loading) {
     return (
@@ -333,7 +324,6 @@ export default function WatchedAccountsPage() {
 
   const comptes = data?.results ?? []
   const resume = data?.summary ?? { accounts: 0, open_findings: 0, critical_findings: 0 }
-  const ouverts = resultats.filter((r) => r.status === 'open')
 
   return (
     <div className="space-y-6">
@@ -438,56 +428,7 @@ export default function WatchedAccountsPage() {
         )}
       </Card>
 
-      <Card padding="p-0">
-        <div className="p-5 pb-0">
-          <CardHeader
-            title="Résultats"
-            description="Ce que le renseignement a trouvé sur ces comptes."
-          />
-        </div>
-        {ouverts.length === 0 ? (
-          <div className="p-5 pt-0">
-            <EmptyState
-              tone="positive"
-              icon={ShieldCheck}
-              title="Rien à traiter"
-              description="Aucun de ces comptes n’apparaît dans une fuite connue à ce jour."
-            />
-          </div>
-        ) : (
-          <ul className="divide-y divide-ink-100 px-5 pb-3">
-            {ouverts.map((resultat) => (
-              <li key={resultat.id} className="flex flex-wrap items-start justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={SEVERITE_VARIANT[resultat.severity] || 'neutral'} dot>
-                      {resultat.severity_label}
-                    </Badge>
-                    <p className="text-sm font-medium text-ink-800">{resultat.account_value}</p>
-                  </div>
-                  <p className="mt-0.5 text-xs text-ink-500">
-                    {resultat.finding_type} · détecté le {dateCourte(resultat.detected_at)}
-                    {resultat.breach_date ? ` · fuite datée du ${dateCourte(resultat.breach_date)}` : ''}
-                  </p>
-                  {resultat.has_secret && (
-                    <p className="mt-1 flex items-start gap-1.5 text-xs text-warning-strong">
-                      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                      {/* Le mot de passe n'est ni stocké ni révélable pour un
-                          compte désigné (ADR-033) : l'action utile est la
-                          même sans lui. */}
-                      Un mot de passe de ce compte a circulé. Faites-le changer, et activez la
-                      double authentification si ce n’est pas déjà fait.
-                    </p>
-                  )}
-                </div>
-                <Button variant="secondary" size="sm" onClick={() => handleTraiter(resultat, 'treated')}>
-                  Marquer traité
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <ResultatsComptes comptes={comptes} resume={resume} />
     </div>
   )
 }
