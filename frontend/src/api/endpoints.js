@@ -219,6 +219,12 @@ export const assessmentsApi = {
 
 // Demandes de l'entreprise a l'exploitant : un référentiel aujourd'hui,
 // d'autres fonctionnalités demain — le mécanisme est générique (V2-4/V2-6).
+// B5.18 : la veille vue du client — lecture seule, et seulement ce qui a ete
+// juge pertinent. Ni la file de tri, ni l etat des sources.
+export const watchApi = {
+  feed: () => apiClient.get('/api/v1/watch/'),
+}
+
 export const accessRequestsApi = {
   list: (status) =>
     apiClient.get('/api/v1/access-requests/', { params: status ? { status } : {} }),

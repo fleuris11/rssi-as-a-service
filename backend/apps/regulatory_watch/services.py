@@ -433,3 +433,55 @@ def summarize_update(update: WatchUpdate, *, reviewer) -> WatchUpdate:
         ]
     )
     return update
+
+
+# --- Ce que le CLIENT voit (B5.18) ------------------------------------------
+
+#: Ce qu'on montre au client : ce qui a ete JUGE pertinent, et rien d'autre.
+#: Les suggestions encore a trier sont un travail en cours ; les montrer
+#: reviendrait a lui faire porter nos doutes, et a annoncer des exigences qui
+#: n'en sont peut-etre pas.
+STATUTS_PUBLICS = (WatchUpdate.Status.KEPT, WatchUpdate.Status.INTEGRATED)
+
+
+def public_feed(*, limit: int = 20) -> dict:
+    """La veille telle qu'un client la lit.
+
+    **Lecture seule, et volontairement partielle.** Le client voit ce qui a
+    ete retenu ou integre — avec sa source officielle et sa date — jamais la
+    file de tri, jamais l'etat des sources, jamais le fonctionnement interne.
+
+    Ce n'est pas de la retenue d'information : une suggestion non triee n'est
+    pas une information, c'est une hypothese. La promesse servie avec le flux
+    dit d'ailleurs ce que cette veille n'est pas.
+    """
+    publications = (
+        WatchUpdate.objects.filter(status__in=STATUTS_PUBLICS)
+        .select_related("source", "target_referential")
+        .order_by("-published_at", "-detected_at")[:limit]
+    )
+    return {
+        "promise": PROMESSE,
+        "results": [
+            {
+                "id": publication.id,
+                "title": publication.title,
+                "url": publication.url,
+                "publisher": publication.source.publisher,
+                "published_at": publication.published_at,
+                "kind": publication.kind,
+                "kind_label": publication.get_kind_display(),
+                # Le referentiel concerne quand il y en a un : c'est ce qui
+                # relie une publication a ce que le client evalue.
+                "referential": (
+                    publication.target_referential.name
+                    if publication.target_referential_id
+                    else None
+                ),
+                # « Integree » veut dire qu'une exigence en est sortie. Le
+                # client a le droit de savoir laquelle le concerne.
+                "integrated": publication.status == WatchUpdate.Status.INTEGRATED,
+            }
+            for publication in publications
+        ],
+    }

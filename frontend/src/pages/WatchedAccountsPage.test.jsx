@@ -22,7 +22,6 @@ vi.mock('../api/endpoints', () => ({
     // Lot A : l'ecran interroge desormais une API GROUPEE et paginee, et
     // propose un export filtre comme l'ecran.
     watchedAccountFindingsExportUrl: vi.fn(() => '/export.csv'),
-    updateWatchedAccountFinding: vi.fn(),
     declareWatchedAccount: vi.fn(),
     removeWatchedAccount: vi.fn(),
     scanWatchedAccounts: vi.fn(),

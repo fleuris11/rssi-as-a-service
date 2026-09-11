@@ -21,6 +21,7 @@ from apps.assessments import services as assessments_services
 from apps.platform_admin.models import AdminAuditLog
 from apps.platform_admin.permissions import IsFullPlatformAdmin, IsPlatformAdmin
 from apps.platform_admin.services import record_admin_action
+from apps.tenants.permissions import IsTenantMember
 
 from . import services
 from .serializers import (
@@ -35,6 +36,25 @@ logger = logging.getLogger(__name__)
 
 def _client_ip(request) -> str:
     return request.META.get("REMOTE_ADDR", "")
+
+
+class PublicWatchFeedView(APIView):
+    """La veille, cote CLIENT (B5.18).
+
+    Lecture seule et sans role particulier : tout membre d'un tenant y a
+    acces. C'est un argument commercial autant qu'un service — le client voit
+    que la plateforme suit l'actualite reglementaire pour lui.
+
+    Ce qui n'y figure pas est aussi important que ce qui y figure : ni les
+    suggestions en cours de tri, ni l'etat des sources, ni les compteurs de
+    la file. Une suggestion non triee n'est pas une information, c'est une
+    hypothese, et l'annoncer comme une exigence serait faux.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
+
+    def get(self, request):
+        return Response(services.public_feed())
 
 
 class WatchQueueView(APIView):

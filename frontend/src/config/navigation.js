@@ -1,5 +1,6 @@
 import {
   Inbox,
+  Newspaper,
   Building2,
   ClipboardCheck,
   Crosshair,
@@ -35,6 +36,9 @@ export const NAV_ITEMS = [
   // tableau de bord qu'on ouvre pour savoir où on en est aujourd'hui.
   { to: '/rapports', label: 'Rapports', icon: FileBarChart },
   { to: '/documents', label: 'Documents', icon: ScrollText },
+  // B5.18 : la veille reglementaire vue du client. Lecture seule, et
+  // seulement ce qui a ete juge pertinent.
+  { to: '/veille', label: 'Veille', icon: Newspaper },
   { to: '/assistant', label: 'Assistant', icon: MessageSquareText },
   // Lot B : la page existait, etait routee, et n'etait dans AUCUN menu.
   // Le seul lien y menant etait enfoui dans le panneau « hors offre » —

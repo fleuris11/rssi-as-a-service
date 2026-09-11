@@ -32,6 +32,9 @@ urlpatterns = [
     # plateforme, jamais sous un namespace client — une suggestion non triee
     # n'a rien a faire sous les yeux d'un client.
     path("api/v1/platform/watch/", include("apps.regulatory_watch.urls")),
+    # La meme veille, cote CLIENT : lecture seule, et seulement ce qui a
+    # ete juge pertinent (B5.18).
+    path("api/v1/watch/", include("apps.regulatory_watch.client_urls")),
     path("api/v1/billing/", include("apps.billing.urls")),
     path("api/v1/reporting/", include("apps.reporting.urls")),
     # Demandes d'un client a l'exploitant. Le meme modele sert des deux cotes :

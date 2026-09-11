@@ -8,6 +8,7 @@ import AdminBreachsensePage from './pages/AdminBreachsensePage'
 import PlatformAdminPage from './pages/admin/PlatformAdminPage'
 import AssistantPage from './pages/AssistantPage'
 import CompromisesPage from './pages/CompromisesPage'
+import WatchPage from './pages/WatchPage'
 import WatchedAccountsPage from './pages/WatchedAccountsPage'
 import RequestsPage from './pages/RequestsPage'
 import DashboardPage from './pages/DashboardPage'
@@ -45,6 +46,7 @@ export default function AppRoutes() {
           <Route path="/rapports" element={<ReportingPage />} />
           <Route path="/compromissions" element={<CompromisesPage />} />
           <Route path="/comptes-surveilles" element={<WatchedAccountsPage />} />
+          <Route path="/veille" element={<WatchPage />} />
           <Route path="/mes-demandes" element={<RequestsPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/assistant" element={<AssistantPage />} />
