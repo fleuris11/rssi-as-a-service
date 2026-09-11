@@ -476,6 +476,12 @@ class WatchedAccount(TenantScopedModel):
     # --- Cycle de vie -------------------------------------------------------
     is_active = models.BooleanField(default=True)
     last_scanned_at = models.DateTimeField(null=True, blank=True)
+    #: Le PREMIER passage sur ce compte (lot A). Il remonte tout
+    #: l'historique connu du fournisseur — des milliers d'entrees, c'est
+    #: normal. Les passages suivants ne rapportent que du nouveau. Sans
+    #: cette distinction, un client decouvre un volume enorme et croit a
+    #: une catastrophe du jour.
+    first_scanned_at = models.DateTimeField(null=True, blank=True)
     removed_at = models.DateTimeField(null=True, blank=True)
     removed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
@@ -549,6 +555,11 @@ class WatchedAccountFinding(TenantScopedModel):
     detected_at = models.DateTimeField(auto_now_add=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
     treated_at = models.DateTimeField(null=True, blank=True)
+    #: Vrai si cette observation vient du PREMIER passage sur le compte,
+    #: c'est-a-dire de la reprise d'historique. Faux si elle est apparue
+    #: depuis. L'ecran doit le dire : « historique decouvert au premier
+    #: scan » et « apparu depuis » ne demandent pas la meme reaction.
+    from_first_scan = models.BooleanField(default=False)
     raw_data = models.JSONField(default=dict, blank=True)
     dedup_hash = models.CharField(max_length=64)
 

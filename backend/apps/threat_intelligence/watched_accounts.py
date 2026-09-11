@@ -369,11 +369,21 @@ def watched_accounts_summary(tenant) -> dict:
         .values_list("last_scanned_at", flat=True)
         .first()
     )
+    tous = WatchedAccountFinding.all_objects.filter(tenant=tenant)
     return {
         "accounts": comptes.count(),
         "open_findings": ouverts.count(),
         "critical_findings": ouverts.filter(severity="critical").count(),
         "last_scanned_at": derniere,
+        # A5.16 : ce qui vient de la reprise d'historique, et ce qui est
+        # apparu depuis. Un client qui decouvre 3 000 entrees au premier
+        # passage n'a pas 3 000 incidents du jour.
+        "from_first_scan": tous.filter(from_first_scan=True).count(),
+        "since_first_scan": tous.filter(from_first_scan=False).count(),
+        # A3.9 : on masque, on ne cache pas. Le compteur dit ce qui a ete
+        # traite ou ecarte, avec de quoi y revenir.
+        "treated_findings": tous.filter(status=WatchedAccountFinding.Status.TREATED).count(),
+        "ignored_findings": tous.filter(status=WatchedAccountFinding.Status.IGNORED).count(),
     }
 
 
@@ -479,6 +489,10 @@ def _ingest(*, tenant, account: WatchedAccount, raw_findings) -> tuple[int, int]
     crees = 0
     revus = 0
     now = timezone.now()
+    # Le premier passage remonte tout l'historique du fournisseur ; les
+    # suivants ne rapportent que du nouveau. La distinction est posee ICI,
+    # au seul moment ou on la connait avec certitude.
+    premier_passage = account.first_scanned_at is None
 
     for raw in raw_findings:
         if raw.is_test:
@@ -505,6 +519,7 @@ def _ingest(*, tenant, account: WatchedAccount, raw_findings) -> tuple[int, int]
                 "breach_date": normalized.get("breach_date"),
                 "raw_data": normalized.get("raw_data", {}),
                 "last_seen_at": now,
+                "from_first_scan": premier_passage,
             },
         )
         if cree:
@@ -515,5 +530,9 @@ def _ingest(*, tenant, account: WatchedAccount, raw_findings) -> tuple[int, int]
         revus += 1
         finding.last_seen_at = now
         finding.save(update_fields=["last_seen_at"])
+
+    if premier_passage:
+        account.first_scanned_at = now
+        account.save(update_fields=["first_scanned_at"])
 
     return crees, revus

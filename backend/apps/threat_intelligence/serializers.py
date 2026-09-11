@@ -455,6 +455,7 @@ class WatchedAccountFindingSerializer(serializers.ModelSerializer):
         model = WatchedAccountFinding
         fields = [
             "details",
+            "from_first_scan",
             "id",
             "account",
             "account_value",

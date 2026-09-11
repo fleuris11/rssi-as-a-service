@@ -1,6 +1,8 @@
+import csv
 import logging
 
 from django.core.cache import cache
+from django.http import HttpResponse
 from django.utils.dateparse import parse_date
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -17,8 +19,8 @@ from apps.monitoring import services as monitoring_services
 from apps.tenants.models import Membership
 from apps.tenants.permissions import IsTenantAdmin, IsTenantMember, IsTenantMemberReadOnlyForReader
 
+from . import finding_details, services
 from . import quota as quota_module
-from . import services
 from .models import (
     BreachFinding,
     BreachIntelligenceUsage,
@@ -823,6 +825,78 @@ class WatchedAccountFindingListView(APIView):
         # proposer un type qu'il n'a pas donne un filtre qui ne renvoie jamais
         # rien, et laisse croire a une panne.
         reponse.data["filters"] = services.watched_account_filter_options(request.tenant)
+        return reponse
+
+
+class WatchedAccountFindingExportView(APIView):
+    """L'export en tableur, filtre EXACTEMENT comme a l'ecran (A5.17).
+
+    Un RSSI veut retravailler ses donnees. Exporter autre chose que ce qu'il
+    voit — l'ensemble plutot que sa selection — lui donnerait un fichier qui
+    ne correspond a rien de ce qu'il a demande.
+
+    Ligne a ligne et non par groupes : le groupe sert a LIRE, le fichier sert
+    a trier et filtrer ailleurs. Les champs distinctifs y figurent en
+    colonnes, ce qui est precisement ce qui manquait a l'ecran d'origine.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
+
+    def get(self, request):
+        compte = None
+        account_id = request.query_params.get("account")
+        if account_id:
+            compte = services.get_watched_account(tenant=request.tenant, account_id=account_id)
+            if compte is None:
+                raise NotFound("Compte introuvable.")
+
+        lignes = services.list_watched_account_findings(
+            request.tenant,
+            account=compte,
+            status=request.query_params.get("status"),
+            severity=request.query_params.get("severity"),
+            finding_type=request.query_params.get("type"),
+            since=_date_depuis(request.query_params.get("since")),
+            search=request.query_params.get("q"),
+        )
+
+        reponse = HttpResponse(content_type="text/csv; charset=utf-8")
+        reponse["Content-Disposition"] = 'attachment; filename="comptes-surveilles.csv"'
+        # Le separateur point-virgule et le BOM : sans eux, Excel en francais
+        # ouvre le fichier en une seule colonne et abime les accents. Un
+        # export qu'il faut reparer a la main n'est pas un export.
+        reponse.write("\ufeff")
+        plume = csv.writer(reponse, delimiter=";")
+        plume.writerow(
+            [
+                "Compte",
+                "Libelle",
+                "Type",
+                "Gravite",
+                "Statut",
+                "Date de fuite",
+                "Detecte le",
+                "Mot de passe expose",
+                "Origine",
+                "Details",
+            ]
+        )
+        for ligne in lignes.iterator(chunk_size=500):
+            details = finding_details.details_for(ligne)
+            plume.writerow(
+                [
+                    ligne.account.value,
+                    ligne.account.label,
+                    ligne.finding_type,
+                    ligne.get_severity_display(),
+                    ligne.get_status_display(),
+                    ligne.breach_date or "date inconnue",
+                    ligne.detected_at.date() if ligne.detected_at else "",
+                    "oui" if ligne.has_secret else "non",
+                    "historique" if ligne.from_first_scan else "apparu depuis",
+                    " | ".join(f"{d['label']} : {d['value']}" for d in details),
+                ]
+            )
         return reponse
 
 

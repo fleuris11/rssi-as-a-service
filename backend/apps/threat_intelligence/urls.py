@@ -17,6 +17,7 @@ from .views import (
     ThreatIntelligenceStatusView,
     WatchedAccountDetailView,
     WatchedAccountFindingDetailView,
+    WatchedAccountFindingExportView,
     WatchedAccountFindingListView,
     WatchedAccountListCreateView,
     WatchedAccountScanTriggerView,
@@ -37,6 +38,11 @@ urlpatterns = [
         "watched-accounts/findings/",
         WatchedAccountFindingListView.as_view(),
         name="ti-watched-account-finding-list",
+    ),
+    path(
+        "watched-accounts/findings/export/",
+        WatchedAccountFindingExportView.as_view(),
+        name="ti-watched-account-finding-export",
     ),
     path(
         "watched-accounts/findings/<int:finding_id>/",

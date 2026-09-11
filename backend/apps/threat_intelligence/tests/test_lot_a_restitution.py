@@ -23,7 +23,7 @@ from unittest.mock import patch
 import pytest
 from django.urls import reverse
 
-from apps.threat_intelligence import services
+from apps.threat_intelligence import services, watched_accounts
 from apps.threat_intelligence.models import WatchedAccount, WatchedAccountFinding
 
 from .test_comptes_designes import _auth
@@ -301,3 +301,152 @@ class TestApiBornee:
         )
 
         assert "filters" in response.data
+
+
+class TestPremierPassage:
+    """A5.16 — distinguer la reprise d'historique des nouveautes.
+
+    Le premier passage sur un compte remonte tout l'historique connu du
+    fournisseur : 3 222 entrees en production. Les suivants ne rapportent que
+    du nouveau. Sans cette distinction, le client croit a une catastrophe du
+    jour devant ce qui est un inventaire du passe.
+    """
+
+    def test_le_premier_passage_est_marque_comme_historique(self, tenant, compte):
+        from apps.threat_intelligence.providers.base import RawFinding
+
+        brutes = [
+            RawFinding(
+                endpoint="sessions",
+                payload={"user_name": compte.value, "dom": "a.test", "cookie_name": "c1"},
+                is_test=False,
+            )
+        ]
+        with patch("apps.threat_intelligence.watched_accounts.get_provider"):
+            watched_accounts._ingest(tenant=tenant, account=compte, raw_findings=brutes)
+
+        compte.refresh_from_db()
+        assert compte.first_scanned_at is not None
+        assert WatchedAccountFinding.all_objects.filter(from_first_scan=True).count() == 1
+
+    def test_les_passages_suivants_ne_sont_pas_de_l_historique(self, tenant, compte):
+        from apps.threat_intelligence.providers.base import RawFinding
+
+        def brute(cookie):
+            return RawFinding(
+                endpoint="sessions",
+                payload={"user_name": compte.value, "dom": "a.test", "cookie_name": cookie},
+                is_test=False,
+            )
+
+        with patch("apps.threat_intelligence.watched_accounts.get_provider"):
+            watched_accounts._ingest(tenant=tenant, account=compte, raw_findings=[brute("c1")])
+            compte.refresh_from_db()
+            watched_accounts._ingest(tenant=tenant, account=compte, raw_findings=[brute("c2")])
+
+        nouvelle = WatchedAccountFinding.all_objects.get(raw_data__cookie_name="c2")
+        assert nouvelle.from_first_scan is False
+
+    def test_le_resume_separe_les_deux_volumes(self, tenant, compte):
+        _finding(tenant, compte, dom="a.test", cookie="c1", jour=datetime.date(2024, 1, 1))
+        historique = _finding(
+            tenant, compte, dom="a.test", cookie="c2", jour=datetime.date(2023, 1, 1)
+        )
+        historique.from_first_scan = True
+        historique.save(update_fields=["from_first_scan"])
+
+        resume = services.watched_accounts_summary(tenant)
+
+        assert resume["from_first_scan"] == 1
+        assert resume["since_first_scan"] == 1
+
+    def test_le_resume_compte_ce_qui_est_deja_traite(self, tenant, compte):
+        """A3.9 — on masque, on ne cache pas."""
+        _finding(
+            tenant,
+            compte,
+            dom="a.test",
+            cookie="c1",
+            jour=datetime.date(2024, 1, 1),
+            statut="treated",
+        )
+        _finding(
+            tenant,
+            compte,
+            dom="a.test",
+            cookie="c2",
+            jour=datetime.date(2024, 1, 2),
+            statut="ignored",
+        )
+
+        resume = services.watched_accounts_summary(tenant)
+
+        assert resume["treated_findings"] == 1
+        assert resume["ignored_findings"] == 1
+
+
+class TestExport:
+    """A5.17 — un export filtre EXACTEMENT comme l'ecran."""
+
+    def test_l_export_respecte_les_filtres(self, api_client, tenant, tenant_owner, compte):
+        _finding(tenant, compte, dom="a.test", cookie="c1", jour=datetime.date(2024, 1, 1))
+        _finding(
+            tenant,
+            compte,
+            dom="a.test",
+            cookie="c2",
+            jour=datetime.date(2024, 1, 2),
+            statut="treated",
+        )
+
+        response = api_client.get(
+            reverse("ti-watched-account-finding-export"),
+            {"status": "open"},
+            **_auth(api_client, tenant_owner, tenant),
+        )
+
+        corps = response.content.decode("utf-8")
+        assert response.status_code == 200
+        # Une ligne d'en-tete, une seule ligne de donnees : le filtre a porte.
+        assert len([x for x in corps.strip().splitlines() if x]) == 2
+
+    def test_l_export_porte_les_champs_distinctifs(self, api_client, tenant, tenant_owner, jeu):
+        response = api_client.get(
+            reverse("ti-watched-account-finding-export"),
+            **_auth(api_client, tenant_owner, tenant),
+        )
+        corps = response.content.decode("utf-8")
+
+        # Ce qui manquait a l'ecran doit se retrouver dans le fichier.
+        assert "Service concerné" in corps
+        assert ".gmail.com" in corps
+
+    def test_l_export_dit_ce_qui_vient_de_l_historique(
+        self, api_client, tenant, tenant_owner, compte
+    ):
+        f = _finding(tenant, compte, dom="a.test", cookie="c1", jour=datetime.date(2024, 1, 1))
+        f.from_first_scan = True
+        f.save(update_fields=["from_first_scan"])
+
+        response = api_client.get(
+            reverse("ti-watched-account-finding-export"),
+            **_auth(api_client, tenant_owner, tenant),
+        )
+
+        assert "historique" in response.content.decode("utf-8")
+
+    def test_un_voisin_n_exporte_rien(
+        self, api_client, tenant, tenant_owner, jeu, tenant_factory, user_factory
+    ):
+        """L'export est un chemin de sortie de donnees : il se garde comme les autres."""
+        voisin_owner = user_factory(email="voisin-export@example.com")
+        voisin = tenant_factory(voisin_owner, name="Voisin Export")
+
+        response = api_client.get(
+            reverse("ti-watched-account-finding-export"),
+            **_auth(api_client, voisin_owner, voisin),
+        )
+
+        corps = response.content.decode("utf-8")
+        assert "dirigeant@exemple.test" not in corps
+        assert len([x for x in corps.strip().splitlines() if x]) == 1
