@@ -50,6 +50,10 @@ class DomainStructureSerializer(serializers.Serializer):
 
 
 class ReferentialSummarySerializer(serializers.ModelSerializer):
+    assessment_status = serializers.CharField(read_only=True, default="not_started")
+    last_assessed_at = serializers.DateTimeField(read_only=True, default=None)
+    last_score = serializers.FloatField(read_only=True, default=None)
+    available_subsets = serializers.ListField(read_only=True, default=list)
     """Une ligne de catalogue, sans les mesures : ce qu'on affiche pour
     choisir un référentiel ou en demander un."""
 
@@ -72,6 +76,11 @@ class ReferentialSummarySerializer(serializers.ModelSerializer):
             "granted",
             "readable",
             "measure_count",
+            # B3.8 : ou en est ce client sur CE referentiel.
+            "assessment_status",
+            "last_assessed_at",
+            "last_score",
+            "available_subsets",
         ]
         read_only_fields = fields
 

@@ -111,15 +111,10 @@ class TestAucunCheminDeRepli:
     def test_le_diagnostic_refuse_de_demarrer_sans_attribution(
         self, api_client, tenant, tenant_owner
     ):
-        response = api_client.post(
-            reverse("assessment-start"),
-            {},
-            format="json",
-            **{
-                "HTTP_AUTHORIZATION": f"Bearer {api_client.post(reverse('token-obtain-pair'), {'email': tenant_owner.email, 'password': 'Str0ng!Passw0rd123'}, format='json').data['access']}",
-                "HTTP_X_TENANT_ID": str(tenant.id),
-            },
-        )
+        entetes = _auth(api_client, tenant_owner)
+        entetes["HTTP_X_TENANT_ID"] = str(tenant.id)
+
+        response = api_client.post(reverse("assessment-start"), {}, format="json", **entetes)
 
         # 503 et non 500 : l'indisponibilite est ASSUMEE et temporaire — il
         # manque une attribution, pas un bout de code. Le message servi au

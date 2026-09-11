@@ -86,6 +86,37 @@ class ReferentialListView(APIView):
             referential.granted = referential.id in attribues
             referential.readable = referential.id in lisibles
             referential.measure_count = Measure.objects.filter(referential=referential).count()
+
+            # B3.8 : l'ecran Diagnostic est un ACCUEIL. Le nom seul ne dit pas
+            # ou on en est — il faut l'avancement, le score s'il existe, et la
+            # date. Sans eux, un client avec plusieurs referentiels doit
+            # ouvrir chacun pour savoir lequel reprendre.
+            en_cours = services.get_current_assessment(tenant, referential=referential)
+            terminee = services.get_latest_completed_assessment(tenant, referential=referential)
+            referential.assessment_status = (
+                "in_progress" if en_cours else ("completed" if terminee else "not_started")
+            )
+            referential.last_assessed_at = (
+                terminee.completed_at if terminee else (en_cours.started_at if en_cours else None)
+            )
+            referential.last_score = (
+                services.compute_scores(terminee)["global"] if terminee else None
+            )
+            # Les compositions utilisables : « les 10 mesures essentielles »
+            # existe pour qu'un dirigeant ne referme pas un questionnaire de
+            # 42 questions. Encore faut-il qu'il la voie.
+            # `available_subsets` et non `subsets` : ce dernier est deja la
+            # relation inverse de MeasureSubset, et Django interdit d'y
+            # affecter directement.
+            referential.available_subsets = [
+                {
+                    "slug": subset.slug,
+                    "name": subset.name,
+                    "description": subset.description,
+                    "measure_count": len(services.subset_measure_ids(subset)),
+                }
+                for subset in services.list_subsets(tenant, referential=referential)
+            ]
             charge.append(referential)
         return Response(ReferentialSummarySerializer(charge, many=True).data)
 
