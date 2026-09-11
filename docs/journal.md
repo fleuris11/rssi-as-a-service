@@ -5938,3 +5938,152 @@ mais il n'est pas urgent.
 - **Un test frontend intermittent de plus** (`ExposurePage` a été corrigé ;
   une autre passe a montré un échec isolé non reproduit). À surveiller : la
   suite est longue et la machine de développement saturée fausse le verdict.
+
+
+## 12 septembre 2026 — Lots A et B : rendre utilisable ce qui existait
+
+Deux constats relevés sur la production, et une même cause de fond : des
+fonctionnalités livrées côté serveur, invisibles ou illisibles à l'écran.
+
+### Lot A — le diagnostic a changé le travail
+
+L'écran des comptes surveillés affichait **3 222 résultats pour un seul
+compte**, en lignes rigoureusement identiques. Trois hypothèses étaient
+posées ; la mesure en a écarté deux.
+
+| Hypothèse | Verdict | Preuve |
+|---|---|---|
+| Le dédoublonnage ne fonctionne pas | **fausse** | 3 222 lignes, **3 222 empreintes distinctes** |
+| La source renvoie des milliers d'occurrences | **vraie** | 470 couples (domaine, nom de cookie) |
+| Chaque analyse recrée des entrées | **fausse** | une seule date d'analyse |
+
+Ce n'était donc pas un défaut de fond. Les 3 222 lignes sont 3 222 cookies
+réellement volés sur un poste infecté. **Le défaut était l'affichage — et
+pire qu'un manque de regroupement : l'écran masquait exactement les deux
+champs qui distinguent les lignes.** Ils étaient stockés depuis la V2-2 et
+servis nulle part : `details_for` existait déjà et n'avait jamais été appelé
+ici.
+
+**Le « 01/01/2020 » n'était pas une valeur par défaut**, contrairement au
+soupçon. La charge brute dit littéralement `fnd='20200101'` : une vraie
+donnée du fournisseur, sur 17 lignes de 3 222, parmi 580 dates distinctes.
+Ce qui le faisait voir partout, c'est le tri : `-detected_at`, c'est-à-dire
+l'ordre d'insertion inversé. Les lignes d'une même analyse étant créées dans
+la même boucle, trier par cette colonne revenait à trier par l'ordre de
+réponse du fournisseur. Le tri porte désormais sur la date de **fuite**.
+
+Mesures sur 3 222 lignes :
+
+| | Avant | Après |
+|---|---|---|
+| Poids de la réponse | 3 456,6 Ko | **3,5 Ko** |
+| Durée de construction | 1 610 ms | **86 ms** |
+
+**987 fois plus léger, 18,7 fois plus rapide.** La mesure initiale en
+production donnait 1 606 Ko / 4 900 ms *sans* les champs distinctifs : les
+ajouter aurait doublé la charge, d'où l'ordre — regrouper d'abord, servir le
+détail à la demande.
+
+#### Deux pièges Django trouvés par les tests, pas par la relecture
+
+1. **`GROUP BY` pollué par le tri** : avec un `order_by` en amont,
+   `.values().annotate()` fait entrer les colonnes de tri dans le
+   regroupement. Chaque ligne devenait son propre groupe — exactement le
+   défaut qu'on corrigeait.
+2. **`DISTINCT` neutralisé par l'ordre du modèle** : les options de filtre
+   redevenaient distinctes par (type, date), soit une entrée de filtre par
+   ligne.
+
+Aucun des deux ne se voyait à la lecture.
+
+#### Un défaut trouvé en chemin
+
+**Les compromissions étaient tronquées en silence.** Le serveur paginait bien
+depuis le correctif du 6 septembre, mais l'écran n'exposait ni `count` ni
+`next` : un client avec 165 compromissions en voyait **20**, sans aucun signe
+que les 145 autres existaient.
+
+#### Sans objet, et c'est structurel
+
+A2.6 demandait de vérifier que la procédure de révélation soit accessible
+depuis cet écran. **Elle ne peut pas l'être :** ADR-033 pose qu'aucun secret
+n'est conservé pour un compte désigné, même chiffré. Il n'y a pas de colonne
+à révéler. L'écran dit ce qui est utile — « un mot de passe de ce compte a
+circulé » — sans le secret.
+
+### Lot B — le compteur mentait
+
+« Clients : 0 » pour tous les référentiels, alors que **sept attributions
+actives** existaient, CRRH comprise.
+
+La donnée n'était pas en cause. `Referential.assignments` traverse la
+relation inverse, donc le manager par défaut de `ReferentialAssignment`, qui
+est scopé par tenant et **échoue fermé** : sans tenant en contexte, il
+renvoie vide. La console n'en a pas. Le compteur affichait 0 depuis toujours,
+sans qu'aucun test ne rougisse.
+
+C'est la classe de défaut la plus coûteuse de ce projet : une garde de
+sécurité qui fait correctement son travail, un appelant qui aurait dû
+utiliser `all_objects`, et un chiffre faux que rien ne signale. Un balayage
+montre que seules deux relations inverses partent d'un parent non scopé vers
+un enfant scopé, et que la seconde n'est jamais traversée ainsi : **le défaut
+était unique et circonscrit.**
+
+Supprimé au passage `get_active_referential()` — « le référentiel actif de la
+plateforme », sans rien savoir des attributions. **Zéro appelant dans tout le
+dépôt, tests compris.** Du code mort qui documentait un contournement de la
+garde ; le laisser, c'était attendre qu'on s'en serve.
+
+#### Trois corrections au constat
+
+- **« Aucune trace du mécanisme de demande »** : il existe et fonctionne. Le
+  vrai défaut était que `/mes-demandes` n'était dans **aucun menu** — le seul
+  lien y menant était enfoui dans le panneau « hors offre ». Un client qui
+  avait déposé une demande n'avait aucun moyen de la retrouver.
+- **« Le diagnostic ignore les référentiels »** : le code multi-référentiel
+  existe, mais se replie délibérément quand il n'y en a qu'un. Production
+  n'en avait qu'un : la bascule n'avait jamais été franchie.
+- **« Le parcours d'intégration ne va pas au bout »** : le formulaire
+  demandait le domaine en **saisie libre**, alors que le service refuse tout
+  code inexistant. L'exploitant devait deviner un code qu'aucun écran ne lui
+  montrait.
+
+#### Ce qui a été livré
+
+L'**import en console**, en deux temps : modèle vide à télécharger, erreurs
+**ligne par ligne** toutes en une fois, aperçu, puis confirmation. Rien n'est
+écrit tant qu'il reste une erreur. Le séparateur CSV est déduit et non
+supposé — Excel en français exporte en point-virgule, et imposer la virgule
+faisait lire tout le fichier comme une colonne unique, avec une erreur sans
+rapport avec la cause.
+
+La **veille côté client** : ce qui a été jugé pertinent, avec sa source
+officielle. Ni la file de tri, ni l'état des sources. Une suggestion non
+triée n'est pas une information, c'est une hypothèse.
+
+**« Les 10 mesures essentielles »** : une composition de l'ANSSI, pas un
+référentiel de plus. Quarante-deux questions découragent ; dix, non. Le choix
+se relit — impact fort, niveau standard, effort majoritairement faible — et
+les mesures à effort élevé sont écartées malgré leur impact : segmenter un
+réseau n'est pas un point de départ.
+
+### Sur la neutralisation des gardes
+
+**Trente-quatre neutralisations**, dont **quatre invalides au premier essai** :
+un `[] or [...]` qui ne mutait rien, une mutation qui cassait la compilation
+JSX et faisait passer « aucun test » pour un rouge, une qui visait la
+mauvaise fonction, et un test qui passait pour une raison étrangère à la
+règle qu'il prétendait garder. Toutes reprises jusqu'à rougir pour la bonne
+raison.
+
+C'est la leçon la plus utile de ces deux lots : **une neutralisation qui
+rougit ne prouve rien tant qu'on n'a pas vérifié POURQUOI elle rougit.**
+
+### Reste à faire
+
+- **B2.4-6** : créer un référentiel à la main, composer un sous-ensemble et
+  reformuler un énoncé depuis la console. Les API existent et sont testées ;
+  les écrans manquent.
+- **B4.15** : le client importe son propre référentiel.
+- **B3.9-11** côté écran : le parcours nommé et la vue consolidée.
+- Le jeu de démonstration pour ces écrans.
