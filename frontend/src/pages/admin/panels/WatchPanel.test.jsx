@@ -50,7 +50,13 @@ const SUGGESTION = {
   integrated_measures: [],
 }
 
-const REFERENTIELS = [{ slug: 'anssi-hygiene', name: 'Guide d’hygiène (ANSSI)' }]
+const REFERENTIELS = [
+  {
+    slug: 'anssi-hygiene',
+    name: 'Guide d’hygiène (ANSSI)',
+    domains: [{ code: 'sensibiliser-former', name: 'Sensibiliser et former' }],
+  },
+]
 
 /** L'état par défaut : une suggestion à examiner, toutes les sources saines. */
 function mockOk({ health, results = [SUGGESTION] } = {}) {
@@ -168,5 +174,19 @@ describe('WatchPanel', () => {
     // Le résumé ne remplace jamais la référence.
     expect(await screen.findByText('Un résumé en trois phrases.')).toBeInTheDocument()
     expect(screen.getByText(/dix mesures applicables/)).toBeInTheDocument()
+  })
+
+  it('propose les domaines du référentiel choisi, sans saisie libre', async () => {
+    // Le parcours d'intégration butait ici : l'exploitant devait deviner un
+    // code de domaine qu'aucun écran ne lui montrait, et le service refuse
+    // tout code inexistant.
+    const user = userEvent.setup()
+    render(<WatchPanel referentiels={REFERENTIELS} />)
+
+    await user.click(await screen.findByRole('button', { name: /Ajouter une mesure/ }))
+
+    const champ = await screen.findByLabelText('Domaine')
+    expect(champ.tagName).toBe('SELECT')
+    expect(champ).toHaveTextContent('Sensibiliser et former')
   })
 })

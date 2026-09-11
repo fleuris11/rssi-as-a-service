@@ -255,26 +255,6 @@ def get_default_referential(tenant) -> Referential:
     return referential
 
 
-def get_active_referential() -> Referential:
-    """Compatibilité : le référentiel actif de la plateforme, quand il n'y a
-    pas de client sous la main (chargement initial, scripts d'exploitation).
-
-    N'est plus le chemin normal — il ne sait rien des attributions. Les vues
-    passent par ``get_default_referential(tenant)``.
-    """
-    referential = Referential.objects.filter(is_active=True).order_by("-id").first()
-    if referential is None:
-        logger.error(
-            "Aucun référentiel en base : le diagnostic est indisponible pour tous les "
-            "clients. Charger un référentiel avec `manage.py import_referential`."
-        )
-        raise NoActiveReferentialError(
-            "Le diagnostic est momentanément indisponible. Nos équipes en sont "
-            "informées ; réessayez d'ici quelques minutes."
-        )
-    return referential
-
-
 # --- Sous-ensembles ---------------------------------------------------------
 
 

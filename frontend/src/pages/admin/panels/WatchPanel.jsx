@@ -50,6 +50,17 @@ function FormulaireIntegration({ suggestion, referentiels, onIntegre, onCancel }
   const [enonce, setEnonce] = useState('')
   const [envoi, setEnvoi] = useState(false)
 
+  // Les domaines du referentiel SELECTIONNE. Changer de referentiel remet le
+  // domaine a zero : un code valide dans l'un ne l'est pas dans l'autre, et
+  // le laisser en place reviendrait a proposer un choix qui sera refuse.
+  const domainesDisponibles =
+    referentiels.find((item) => item.slug === referentiel)?.domains ?? []
+
+  function changerReferentiel(slug) {
+    setReferentiel(slug)
+    setDomaine('')
+  }
+
   const complet = referentiel && domaine.trim() && code.trim() && intitule.trim() && enonce.trim()
 
   async function handleSubmit(event) {
@@ -89,7 +100,7 @@ function FormulaireIntegration({ suggestion, referentiels, onIntegre, onCancel }
           <select
             id={`ref-${suggestion.id}`}
             value={referentiel}
-            onChange={(event) => setReferentiel(event.target.value)}
+            onChange={(event) => changerReferentiel(event.target.value)}
             className="mt-1 w-full rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm"
           >
             {referentiels.map((item) => (
@@ -101,15 +112,26 @@ function FormulaireIntegration({ suggestion, referentiels, onIntegre, onCancel }
         </div>
         <div>
           <label className="t-eyebrow" htmlFor={`dom-${suggestion.id}`}>
-            Code du domaine
+            Domaine
           </label>
-          <input
+          {/* Une LISTE et non une saisie libre : c'est ce qui empechait le
+              parcours d'aboutir. L'exploitant devait deviner un code de
+              domaine qu'aucun ecran ne lui montrait, et le service refuse
+              tout code inexistant — l'integration echouait donc sans qu'on
+              comprenne pourquoi. */}
+          <select
             id={`dom-${suggestion.id}`}
             value={domaine}
             onChange={(event) => setDomaine(event.target.value)}
-            placeholder="sensibiliser-former"
             className="mt-1 w-full rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm"
-          />
+          >
+            <option value="">Choisir un domaine…</option>
+            {domainesDisponibles.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
           <label className="t-eyebrow" htmlFor={`code-${suggestion.id}`}>

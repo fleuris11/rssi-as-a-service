@@ -1080,6 +1080,7 @@ class ReferentialCatalogView(ConsoleView):
 
     def get(self, request):
         from apps.assessments import services as assessments_services
+        from apps.assessments.models import ReferentialAssignment
 
         catalogue = []
         for referential in assessments_services.list_catalog(include_inactive=True):
@@ -1101,8 +1102,25 @@ class ReferentialCatalogView(ConsoleView):
                         referential.owner_tenant.name if referential.owner_tenant_id else None
                     ),
                     "measure_count": referential.measures.count(),
-                    "assigned_tenants": referential.assignments.filter(
-                        revoked_at__isnull=True
+                    # Les domaines accompagnent le referentiel : la console en
+                    # a besoin pour proposer un CHOIX la ou elle demandait une
+                    # saisie libre. L'integration depuis la veille butait
+                    # exactement la — l'exploitant devait deviner un code de
+                    # domaine qu'aucun ecran ne lui montrait, et le service
+                    # refusait tout code inexistant.
+                    "domains": [
+                        {"code": domaine.code, "name": domaine.name}
+                        for domaine in referential.domains.order_by("order", "code")
+                    ],
+                    # ``all_objects`` et NON la relation inverse : celle-ci
+                    # passe par le manager par defaut de ``ReferentialAssignment``,
+                    # qui est scope par tenant et « echoue ferme » — sans tenant
+                    # en contexte, il renvoie vide. La console n'en a pas.
+                    # Le compteur affichait donc 0 pour TOUS les referentiels
+                    # depuis toujours, alors que sept attributions actives
+                    # existaient en production, CRRH comprise.
+                    "assigned_tenants": ReferentialAssignment.all_objects.filter(
+                        referential=referential, revoked_at__isnull=True
                     ).count(),
                 }
             )

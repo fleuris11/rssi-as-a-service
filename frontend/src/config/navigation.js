@@ -1,4 +1,5 @@
 import {
+  Inbox,
   Building2,
   ClipboardCheck,
   Crosshair,
@@ -35,13 +36,17 @@ export const NAV_ITEMS = [
   { to: '/rapports', label: 'Rapports', icon: FileBarChart },
   { to: '/documents', label: 'Documents', icon: ScrollText },
   { to: '/assistant', label: 'Assistant', icon: MessageSquareText },
+  // Lot B : la page existait, etait routee, et n'etait dans AUCUN menu.
+  // Le seul lien y menant etait enfoui dans le panneau « hors offre » —
+  // un client qui avait depose une demande n'avait aucun moyen de la
+  // retrouver. Une demande sans retour est pire que pas de bouton.
+  { to: '/mes-demandes', label: 'Mes demandes', icon: Inbox },
 ]
 
 // Pages reachable but not in the primary nav (contextual links only) —
 // still need a topbar title.
 const SECONDARY_TITLES = {
   '/resultats': 'Résultats',
-  '/mes-demandes': 'Mes demandes',
   '/preferences': 'Préférences',
   '/securite': 'Sécurité',
   '/admin/breachsense': 'Administration — Renseignement sur la menace',
