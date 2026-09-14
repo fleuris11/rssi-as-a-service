@@ -35,6 +35,8 @@ from apps.threat_intelligence.models import (
     ExposureSynthesis,
     MonitoredAsset,
     SecretRevealAudit,
+    WatchedAccount,
+    WatchedAccountFinding,
 )
 from apps.threat_intelligence.providers.base import RawFinding
 
@@ -320,6 +322,167 @@ def demo_findings_payloads() -> list[tuple[str, dict, int]]:
     ]
 
 
+# --- Lot A : un compte surveille, et ce qu'un premier passage remonte --------
+
+#: Domaine RESERVE (RFC 2606) : aucune personne reelle ne peut porter cette
+#: adresse, et aucune analyse n'est jamais lancee dessus — les observations
+#: ci-dessous sont fabriquees et passent par l'ingestion reelle.
+DEMO_WATCHED_ACCOUNT = "gerante.durand.demo@example.org"
+
+
+def _fnd(days_ago: int) -> str:
+    """Une date de fuite au format du fournisseur (AAAAMMJJ)."""
+    return (date.today() - timedelta(days=days_ago)).strftime("%Y%m%d")
+
+
+def demo_watched_history() -> list[tuple[str, dict]]:
+    """Ce qu'un PREMIER passage remonte : un poste infecte, plusieurs services,
+    plusieurs cookies par service — le motif releve en production, en petit.
+
+    Assez de lignes pour que le regroupement se voie (plusieurs occurrences
+    par service), assez peu pour qu'une demonstration reste lisible.
+    """
+    services_voles = [
+        ("accounts.google.com", ["SID", "HSID", "SSID"]),
+        (".google.com", ["__Secure-3PSID", "NID"]),
+        ("outlook.live.com", ["MSPAuth", "RPSSecAuth"]),
+        (".linkedin.com", ["bcookie"]),
+    ]
+    lignes = []
+    decalage = 0
+    for domaine, cookies in services_voles:
+        for cookie in cookies:
+            decalage += 41
+            lignes.append(
+                (
+                    "sessions",
+                    {
+                        "user_name": DEMO_WATCHED_ACCOUNT,
+                        "dom": domaine,
+                        "cookie_name": cookie,
+                        "cookie_path": "/",
+                        "val": f"demo-{domaine}-{cookie}",
+                        "expires": "20271231",
+                        "mal": "RedLine",
+                        "fnd": _fnd(900 - decalage),
+                    },
+                )
+            )
+    lignes.append(
+        (
+            "stealer",
+            {
+                "usr": DEMO_WATCHED_ACCOUNT,
+                "pwd": "Demo-Mot-De-Passe-2024",
+                "src": "https://accounts.google.com",
+                "mal": "RedLine",
+                "os": "Windows 10 Professionnel",
+                "fle": "demo_collecte.zip",
+                "fnd": _fnd(420),
+            },
+        )
+    )
+    return lignes
+
+
+def demo_watched_new() -> list[tuple[str, dict]]:
+    """Ce qui est APPARU depuis le premier passage : deux sessions recentes."""
+    return [
+        (
+            "sessions",
+            {
+                "user_name": DEMO_WATCHED_ACCOUNT,
+                "dom": ".linkedin.com",
+                "cookie_name": "li_at",
+                "cookie_path": "/",
+                "val": "demo-linkedin-li_at",
+                "expires": "20271231",
+                "mal": "Lumma",
+                "fnd": _fnd(3),
+            },
+        ),
+        (
+            "sessions",
+            {
+                "user_name": DEMO_WATCHED_ACCOUNT,
+                "dom": "outlook.live.com",
+                "cookie_name": "ESTSAUTHPERSISTENT",
+                "cookie_path": "/",
+                "val": "demo-outlook-ests",
+                "expires": "20271231",
+                "mal": "Lumma",
+                "fnd": _fnd(5),
+            },
+        ),
+    ]
+
+
+# --- Lot B : un referentiel propre au client -------------------------------
+
+#: Contenu ORIGINAL, redige pour la demonstration : aucune reprise d'un
+#: questionnaire d'assureur reel, qui serait sous droits.
+DEMO_REFERENTIEL_ASSUREUR = {
+    "name": "Exigences de notre assureur cyber",
+    "version": "2026",
+    "description": "Les conditions posées par l’assureur pour maintenir la garantie.",
+    "domains": [
+        {
+            "code": "acces",
+            "name": "Accès aux comptes",
+            "measures": [
+                {
+                    "code": "A1",
+                    "title": "Double authentification sur la messagerie",
+                    "statement": (
+                        "La messagerie de chaque collaborateur exige-t-elle un second facteur ?"
+                    ),
+                    "effort": "low",
+                    "impact": "high",
+                },
+                {
+                    "code": "A2",
+                    "title": "Comptes d’administration séparés",
+                    "statement": (
+                        "Les droits d’administration sont-ils portés par des comptes dédiés ?"
+                    ),
+                    "effort": "medium",
+                    "impact": "high",
+                },
+            ],
+        },
+        {
+            "code": "continuite",
+            "name": "Continuité",
+            "measures": [
+                {
+                    "code": "C1",
+                    "title": "Sauvegarde hors ligne",
+                    "statement": "Une copie de vos sauvegardes est-elle déconnectée du réseau ?",
+                    "effort": "medium",
+                    "impact": "high",
+                },
+                {
+                    "code": "C2",
+                    "title": "Correctifs sous trente jours",
+                    "statement": (
+                        "Les correctifs de sécurité sont-ils appliqués sous trente jours ?"
+                    ),
+                    "effort": "medium",
+                    "impact": "medium",
+                },
+                {
+                    "code": "C3",
+                    "title": "Contact en cas d’incident",
+                    "statement": "Savez-vous qui appeler, et dans quel délai, en cas d’incident ?",
+                    "effort": "low",
+                    "impact": "medium",
+                },
+            ],
+        },
+    ],
+}
+
+
 class Command(BaseCommand):
     help = "Crée ou réinitialise le tenant de démonstration client (Phase 8A)."
 
@@ -350,6 +513,8 @@ class Command(BaseCommand):
             assets = self._ensure_assets(tenant, admin)
             created = self._ensure_findings(tenant, assets)
             self._ensure_synthesis(tenant)
+            self._ensure_watched_accounts(tenant, admin)
+            self._ensure_referentiels(tenant, admin)
             self._mute_emails(tenant)
 
         total = BreachFinding.all_objects.filter(tenant=tenant).count()
@@ -362,6 +527,129 @@ class Command(BaseCommand):
         )
 
     # --- Étapes ------------------------------------------------------------
+
+    # --- Lots A et B ---------------------------------------------------------
+
+    def _ensure_watched_accounts(self, tenant: Tenant, admin) -> None:
+        """Un compte surveille presentable en demonstration commerciale.
+
+        Le compte est DECLARE par le service, jamais insere directement : la
+        declaration et le quota de l'offre s'appliquent a la demonstration
+        comme a un client. Une offre qui n'inclut pas la fonctionnalite fait
+        sauter cette etape avec un avertissement, plutot que de fabriquer un
+        ecran qu'aucun client de cette offre ne verrait.
+
+        Deux passages, pour montrer ce que l'ecran distingue : la reprise
+        d'historique du premier passage, et ce qui est apparu depuis.
+        """
+        from apps.billing.entitlements import EntitlementError
+        from apps.threat_intelligence import watched_accounts
+
+        compte = WatchedAccount.all_objects.filter(
+            tenant=tenant, value=DEMO_WATCHED_ACCOUNT
+        ).first()
+        if compte is None:
+            try:
+                compte = watched_accounts.declare_watched_account(
+                    tenant=tenant,
+                    user=admin,
+                    value=DEMO_WATCHED_ACCOUNT,
+                    label="Messagerie personnelle de la gérante",
+                    category=WatchedAccount.Category.EXECUTIVE,
+                    legal_basis=WatchedAccount.LegalBasis.CONSENT,
+                    purpose=(
+                        "Démonstration : la gérante a donné son accord pour que sa "
+                        "messagerie personnelle, utilisée pour le cabinet, soit surveillée."
+                    ),
+                    declaration_accepted=True,
+                )
+            except (EntitlementError, watched_accounts.WatchedAccountError) as exc:
+                self.stdout.write(
+                    self.style.WARNING(f"Compte surveillé de démonstration non créé : {exc}")
+                )
+                return
+
+        premier_passage = compte.first_scanned_at is None
+        watched_accounts._ingest(
+            tenant=tenant,
+            account=compte,
+            raw_findings=[RawFinding(endpoint=e, payload=p) for e, p in demo_watched_history()],
+        )
+        if premier_passage:
+            # Le premier passage date de deux semaines : l'ecran doit pouvoir
+            # montrer une reprise d'historique ANCIENNE et des nouveautes.
+            il_y_a = timezone.now() - timedelta(days=14)
+            WatchedAccount.all_objects.filter(pk=compte.pk).update(
+                first_scanned_at=il_y_a, last_scanned_at=il_y_a
+            )
+            WatchedAccountFinding.all_objects.filter(
+                tenant=tenant, account=compte, from_first_scan=True
+            ).update(detected_at=il_y_a)
+            compte.refresh_from_db()
+
+        watched_accounts._ingest(
+            tenant=tenant,
+            account=compte,
+            raw_findings=[RawFinding(endpoint=e, payload=p) for e, p in demo_watched_new()],
+        )
+        WatchedAccount.all_objects.filter(pk=compte.pk).update(last_scanned_at=timezone.now())
+
+        # De quoi montrer les compteurs « deja traite » et « ecarte ».
+        ouverts = WatchedAccountFinding.all_objects.filter(
+            tenant=tenant, account=compte, status=WatchedAccountFinding.Status.OPEN
+        )
+        ouverts.filter(raw_data__cookie_name="HSID").update(
+            status=WatchedAccountFinding.Status.TREATED, treated_at=timezone.now()
+        )
+        ouverts.filter(raw_data__cookie_name="NID").update(
+            status=WatchedAccountFinding.Status.IGNORED
+        )
+
+    def _ensure_referentiels(self, tenant: Tenant, admin) -> None:
+        """Un second referentiel, propre au client, et une reformulation.
+
+        C'est ce qui fait vivre l'accueil du Diagnostic en demonstration :
+        avec un seul referentiel, l'ecran de choix ne s'affiche pas. Le
+        referentiel passe par l'import REEL (garde de propriete comprise) et
+        n'est visible que de ce client.
+
+        Aucune publication de veille n'est fabriquee ici, et c'est voulu : la
+        veille est COMMUNE a tous les clients. Une publication de
+        demonstration apparaitrait chez les vrais clients.
+        """
+        from apps.assessments import importers
+        from apps.assessments import services as assessments_services
+
+        slug = f"{tenant.slug}-exigences-assureur"
+        referentiel = assessments_services.get_referential(slug=slug)
+        if referentiel is None:
+            parsed = importers.parse_json({**DEMO_REFERENTIEL_ASSUREUR, "slug": slug})
+            parsed.kind = "custom"
+            parsed.publisher = tenant.name
+            parsed.licence_notice = (
+                f"Référentiel propre à {tenant.name}. Il n'est visible que de votre entreprise."
+            )
+            referentiel = importers.import_referential(parsed, owner_tenant=tenant).referential
+        assessments_services.assign_referential(
+            tenant=tenant,
+            referential=referentiel,
+            granted_by=admin,
+            note="Référentiel de démonstration.",
+        )
+
+        anssi = assessments_services.get_referential(slug="anssi-hygiene-informatique")
+        mesure = anssi.measures.filter(code="37").first() if anssi is not None else None
+        if mesure is not None:
+            assessments_services.set_measure_override(
+                tenant=tenant,
+                measure=mesure,
+                plain_language=(
+                    "Vos dossiers clients et votre logiciel comptable sont-ils sauvegardés "
+                    "chaque jour, avec une copie conservée hors du cabinet ?"
+                ),
+                context_note="Reformulé pour un cabinet d’expertise comptable.",
+                created_by=admin,
+            )
 
     def _mute_emails(self, tenant: Tenant) -> None:
         """Le tenant de démonstration n'envoie aucun email. Jamais.
@@ -458,6 +746,8 @@ class Command(BaseCommand):
         MonitoredAsset.all_objects.filter(tenant=tenant).delete()
         ExposureSynthesis.all_objects.filter(tenant=tenant).delete()
         Alert.all_objects.filter(tenant=tenant).delete()
+        WatchedAccountFinding.all_objects.filter(tenant=tenant).delete()
+        WatchedAccount.all_objects.filter(tenant=tenant).delete()
 
     def _ensure_users(self, tenant: Tenant):
         admin = None
