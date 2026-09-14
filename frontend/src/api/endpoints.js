@@ -234,6 +234,12 @@ export const assessmentsApi = {
       params: referential ? { referential } : {},
     }),
   createSubset: (payload) => apiClient.post('/api/v1/assessments/subsets/', payload),
+  // B4.15 : le client importe SON referentiel. L'identifiant est impose par
+  // le serveur ; celui du fichier est ignore.
+  importReferential: (payload) =>
+    apiClient.post('/api/v1/assessments/referentials/import/', payload),
+  referentialTemplate: () =>
+    apiClient.get('/api/v1/assessments/referentials/template/', { responseType: 'blob' }),
 
   // Reformulation d'une mesure pour cette entreprise. Elle vit A COTE du
   // référentiel : `plain_language` reste l'énoncé d'origine, `statement` est

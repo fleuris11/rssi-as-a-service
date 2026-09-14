@@ -9,6 +9,7 @@ import Card, { CardHeader } from '../components/ui/Card'
 import SegmentedControl from '../components/ui/SegmentedControl'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
+import ImportReferentielClient from './diagnostic/ImportReferentielClient'
 
 const VALUE_OPTIONS = [
   { value: 'yes', label: 'Oui' },
@@ -132,6 +133,35 @@ function ReferentielsADemander({ referentiels, demandes, onDemander, enCours }) 
   )
 }
 
+const ETATS = {
+  not_started: 'Non commencé',
+  in_progress: 'En cours',
+  completed: 'Terminé',
+}
+
+/** Où en est ce client sur un référentiel (B3.8). Le nom seul ne dit pas
+ *  lequel reprendre quand on en suit plusieurs. */
+function EtatReferentiel({ referentiel }) {
+  if (!referentiel?.assessment_status) return null
+  const date = referentiel.last_assessed_at
+    ? new Date(referentiel.last_assessed_at).toLocaleDateString('fr-FR')
+    : null
+  const score =
+    referentiel.last_score === null || referentiel.last_score === undefined
+      ? ''
+      : ` · dernier score ${Math.round(referentiel.last_score)}/100`
+  const quand = date
+    ? ` · ${referentiel.assessment_status === 'completed' ? 'terminé le' : 'commencé le'} ${date}`
+    : ''
+  return (
+    <span>
+      {ETATS[referentiel.assessment_status] ?? referentiel.assessment_status}
+      {score}
+      {quand}
+    </span>
+  )
+}
+
 export default function DiagnosticPage() {
   const { showToast } = useToast()
   const [referentiels, setReferentiels] = useState([])
@@ -148,6 +178,10 @@ export default function DiagnosticPage() {
   const [justCompleted, setJustCompleted] = useState(false)
   const [currentDomainIndex, setCurrentDomainIndex] = useState(0)
   const initializedIndex = useRef(false)
+  // Rechargement du catalogue après un import, et le référentiel à ouvrir
+  // ensuite : on ouvre celui qu'on vient d'importer.
+  const [rafraichir, setRafraichir] = useState(0)
+  const choixVoulu = useRef(null)
   // `showToast` par référence, et non en dépendance d'effet : le fournisseur
   // en rend une nouvelle fonction à chaque rendu, et un effet qui en dépend
   // se relance en boucle — l'écran reste alors sur son squelette de
@@ -160,6 +194,11 @@ export default function DiagnosticPage() {
 
   const attribues = referentiels.filter((r) => r.granted)
   const aDemander = referentiels.filter((r) => !r.granted && !r.readable)
+  const choisiRef = referentiels.find((r) => r.slug === choisi)
+  // « Les 10 mesures essentielles » n'existe que si le client la voit. Tant
+  // qu'une composition est proposée, on ne démarre pas tout seul le
+  // questionnaire complet : ce serait choisir les 42 questions à sa place.
+  const nbCompositions = choisiRef?.available_subsets?.length ?? 0
 
   const chargerEvaluation = useCallback(async (slug, { demarrer = false } = {}) => {
     try {
@@ -195,7 +234,13 @@ export default function DiagnosticPage() {
         ])
         setReferentiels(catalogue.data)
         setDemandes(mesDemandes.data)
-        setChoisi(catalogue.data.find((r) => r.granted)?.slug ?? null)
+        const voulu = choixVoulu.current
+        choixVoulu.current = null
+        setChoisi(
+          voulu && catalogue.data.some((r) => r.slug === voulu && r.granted)
+            ? voulu
+            : (catalogue.data.find((r) => r.granted)?.slug ?? null)
+        )
       } catch (err) {
         if (err.response?.status !== 402) {
           toastRef.current({ type: 'error', message: 'Impossible de charger le diagnostic.' })
@@ -205,7 +250,7 @@ export default function DiagnosticPage() {
       }
     }
     load()
-  }, [])
+  }, [rafraichir])
 
   // 2. Le questionnaire du référentiel choisi.
   useEffect(() => {
@@ -216,12 +261,16 @@ export default function DiagnosticPage() {
       initializedIndex.current = false
       setCurrentDomainIndex(0)
       try {
-        const structure = await assessmentsApi.referential(choisi)
-        // Démarrage automatique conservé quand il n'y a qu'un référentiel :
-        // c'est le parcours d'avant V2-4, et il n'y a rien à choisir.
+        // Démarrage automatique conservé quand il n'y a RIEN à choisir : un
+        // seul référentiel et aucune composition — le parcours d'avant V2-4.
         const evaluation = await chargerEvaluation(choisi, {
-          demarrer: attribues.length <= 1,
+          demarrer: attribues.length <= 1 && nbCompositions === 0,
         })
+        // La structure suit le PÉRIMÈTRE de l'évaluation : une évaluation
+        // ouverte sur dix mesures ne doit pas afficher les quarante-deux.
+        const structure = evaluation?.subset_slug
+          ? await assessmentsApi.referential(choisi, evaluation.subset_slug)
+          : await assessmentsApi.referential(choisi)
         if (annule) return
         setReferential(structure.data)
         appliquerEvaluation(evaluation)
@@ -240,7 +289,7 @@ export default function DiagnosticPage() {
     // `attribues.length` et non `attribues` : la liste est reconstruite à
     // chaque rendu, la mettre en dépendance relancerait le chargement en
     // boucle.
-  }, [choisi, attribues.length, chargerEvaluation, appliquerEvaluation])
+  }, [choisi, attribues.length, nbCompositions, chargerEvaluation, appliquerEvaluation])
 
   useEffect(() => {
     if (initializedIndex.current || !referential || !assessment) return
@@ -272,10 +321,22 @@ export default function DiagnosticPage() {
     }
   }
 
-  async function handleStart() {
-    setStarting(true)
+  function recharger(slug) {
+    choixVoulu.current = slug ?? null
+    setRafraichir((n) => n + 1)
+  }
+
+  async function handleStart(composition) {
+    setStarting(composition || 'complet')
     try {
-      const response = await assessmentsApi.start(choisi)
+      // Sans composition, l'appel reste exactement celui d'avant.
+      const response = composition
+        ? await assessmentsApi.start(choisi, composition)
+        : await assessmentsApi.start(choisi)
+      if (composition) {
+        const structure = await assessmentsApi.referential(choisi, composition)
+        setReferential(structure.data)
+      }
       appliquerEvaluation(response.data)
     } catch (err) {
       showToast({
@@ -379,6 +440,7 @@ export default function DiagnosticPage() {
             Aucun référentiel ne vous est attribué pour le moment.
           </p>
         </div>
+        <ImportReferentielClient onImporte={recharger} />
         <ReferentielsADemander
           referentiels={aDemander}
           demandes={demandes}
@@ -397,9 +459,12 @@ export default function DiagnosticPage() {
     return <p className="text-critical-strong">Diagnostic indisponible.</p>
   }
 
-  // Référentiel choisi, aucun diagnostic ouvert dessus : on demande le geste
-  // plutôt que d'ouvrir une évaluation que personne n'a demandée.
+  // Référentiel choisi, aucun diagnostic ouvert dessus : l'ACCUEIL (B3.8). On
+  // montre où en est ce référentiel et par où commencer, plutôt que d'ouvrir
+  // une évaluation que personne n'a demandée.
   if (!assessment) {
+    const compositions = choisiRef?.available_subsets ?? []
+    const nbMesures = referential.domains.reduce((total, d) => total + d.measures.length, 0)
     return (
       <div className="space-y-6">
         <div>
@@ -407,28 +472,72 @@ export default function DiagnosticPage() {
             Diagnostic de maturité
           </h1>
           <p className="mt-1 text-sm text-ink-500">
-            Choisissez le référentiel sur lequel vous souhaitez vous évaluer.
+            {attribues.length > 1
+              ? 'Choisissez le référentiel sur lequel vous souhaitez vous évaluer.'
+              : 'Par où voulez-vous commencer ?'}
           </p>
         </div>
         {selecteur}
+        {attribues.length > 1 && (
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {attribues.map((ref) => (
+              <li key={ref.slug} className="rounded-md border border-ink-200 px-3 py-2 text-xs text-ink-600">
+                <span className="font-medium text-ink-800">{ref.name}</span>
+                {' — '}
+                <EtatReferentiel referentiel={ref} />
+              </li>
+            ))}
+          </ul>
+        )}
         <Card>
           <CardHeader
             title={referential.name}
             description={referential.description || referential.publisher}
           />
           <p className="mt-2 text-sm text-ink-500">
-            {referential.domains.reduce((total, d) => total + d.measures.length, 0)} mesures,{' '}
-            {referential.domains.length} domaines.
+            {nbMesures} mesures, {referential.domains.length} domaines.
           </p>
+          {choisiRef?.assessment_status && (
+            <p className="mt-1 text-sm text-ink-600">
+              <EtatReferentiel referentiel={choisiRef} />
+            </p>
+          )}
           {referential.licence_notice && (
             <p className="mt-2 text-xs text-ink-400">{referential.licence_notice}</p>
           )}
-          <div className="mt-4">
-            <Button variant="primary" loading={starting} onClick={handleStart}>
+          <div className="mt-4 space-y-3">
+            {compositions.map((composition) => (
+              <div
+                key={composition.slug}
+                className="rounded-md border border-ink-200 bg-canvas p-3"
+              >
+                <p className="text-sm font-medium text-ink-800">
+                  {composition.name} — {composition.measure_count} mesures
+                </p>
+                {composition.description && (
+                  <p className="mt-0.5 text-xs text-ink-500">{composition.description}</p>
+                )}
+                <div className="mt-2">
+                  <Button
+                    variant="primary"
+                    loading={starting === composition.slug}
+                    onClick={() => handleStart(composition.slug)}
+                  >
+                    Commencer par ce questionnaire
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <Button
+              variant={compositions.length > 0 ? 'secondary' : 'primary'}
+              loading={starting === 'complet'}
+              onClick={() => handleStart()}
+            >
               Démarrer ce diagnostic
             </Button>
           </div>
         </Card>
+        <ImportReferentielClient onImporte={recharger} />
         <ReferentielsADemander
           referentiels={aDemander}
           demandes={demandes}

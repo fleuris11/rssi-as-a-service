@@ -206,6 +206,10 @@ class AssessmentSerializer(serializers.ModelSerializer):
     referential_name = serializers.CharField(source="referential.name", read_only=True)
     referential_slug = serializers.CharField(source="referential.slug", read_only=True)
     subset_name = serializers.CharField(source="subset.name", read_only=True, default=None)
+    # L'identifiant, pas seulement le nom : l'ecran en a besoin pour charger
+    # la structure DU PERIMETRE. Sans lui, une evaluation ouverte sur dix
+    # mesures reprenait en affichant les quarante-deux.
+    subset_slug = serializers.CharField(source="subset.slug", read_only=True, default=None)
     progress = serializers.SerializerMethodField()
     answers = serializers.SerializerMethodField()
 
@@ -218,6 +222,7 @@ class AssessmentSerializer(serializers.ModelSerializer):
             "referential_slug",
             "subset",
             "subset_name",
+            "subset_slug",
             "status",
             "started_at",
             "completed_at",
