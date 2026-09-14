@@ -40,7 +40,7 @@ function AssigneeAvatar({ email }) {
   )
 }
 
-function ActionCard({ item, members, updatingId, onUpdate }) {
+function ActionCard({ item, members, updatingId, onUpdate, montrerReferentiel = false }) {
   return (
     <Card padding="p-3" className="space-y-2.5">
       <div className="flex flex-wrap items-center gap-1.5">
@@ -51,6 +51,9 @@ function ActionCard({ item, members, updatingId, onUpdate }) {
           </Badge>
         )}
         <Badge variant="brand">Priorité {item.priority}</Badge>
+        {/* B20 : avec plusieurs référentiels, une action sans provenance
+            visible laisse le client se demander pourquoi elle apparaît. */}
+        {montrerReferentiel && <Badge variant="neutral">{item.referential_name}</Badge>}
       </div>
 
       <div>
@@ -173,6 +176,7 @@ export default function ActionPlanPage() {
   const { showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const domainFilter = searchParams.get('domaine') || ''
+  const referentielFilter = searchParams.get('referentiel') || ''
   const [items, setItems] = useState([])
   const [members, setMembers] = useState([])
   const [projected, setProjected] = useState(null)
@@ -214,15 +218,51 @@ export default function ActionPlanPage() {
     load()
   }, [load])
 
+  // B3.10 : plusieurs référentiels, une vue par référentiel et une vue
+  // d'ensemble. La règle de consolidation est celle d'ADR-030.
+  const referentiels = useMemo(() => {
+    const vus = new Map()
+    for (const item of items) {
+      if (item.referential_slug && !vus.has(item.referential_slug)) {
+        vus.set(item.referential_slug, item.referential_name)
+      }
+    }
+    return [...vus.entries()]
+      .map(([slug, name]) => ({ slug, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [items])
+
   const domains = useMemo(
-    () => [...new Set(items.map((item) => item.domain_name))].sort(),
-    [items]
+    () =>
+      [
+        ...new Set(
+          items
+            .filter((item) => !referentielFilter || item.referential_slug === referentielFilter)
+            .map((item) => item.domain_name)
+        ),
+      ].sort(),
+    [items, referentielFilter]
   )
 
   const filteredItems = useMemo(
-    () => (domainFilter ? items.filter((item) => item.domain_name === domainFilter) : items),
-    [items, domainFilter]
+    () =>
+      items.filter(
+        (item) =>
+          (!domainFilter || item.domain_name === domainFilter) &&
+          (!referentielFilter || item.referential_slug === referentielFilter)
+      ),
+    [items, domainFilter, referentielFilter]
   )
+
+  function changerFiltre(cle, valeur) {
+    const suivant = new URLSearchParams(searchParams)
+    if (valeur) suivant.set(cle, valeur)
+    else suivant.delete(cle)
+    // Un domaine appartient à un référentiel : changer de référentiel
+    // invalide le domaine choisi.
+    if (cle === 'referentiel') suivant.delete('domaine')
+    setSearchParams(suivant)
+  }
 
   const columns = useMemo(() => {
     const grouped = { todo: [], in_progress: [], done: [] }
@@ -266,15 +306,29 @@ export default function ActionPlanPage() {
             Priorisé par ratio impact/effort — les actions rapides à fort impact en premier.
           </p>
         </div>
+        {referentiels.length > 1 && (
+          <label className="text-sm text-ink-600">
+            <span className="mr-2">Référentiel</span>
+            <select
+              value={referentielFilter}
+              onChange={(e) => changerFiltre('referentiel', e.target.value)}
+              className="transition-smooth rounded-md border border-ink-200 px-3 py-1.5 text-sm text-ink-700 focus-visible:outline-2 focus-visible:outline-brand-600"
+            >
+              <option value="">Vue d’ensemble</option>
+              {referentiels.map((ref) => (
+                <option key={ref.slug} value={ref.slug}>
+                  {ref.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {domains.length > 0 && (
           <label className="text-sm text-ink-600">
             <span className="mr-2">Domaine</span>
             <select
               value={domainFilter}
-              onChange={(e) => {
-                const value = e.target.value
-                setSearchParams(value ? { domaine: value } : {})
-              }}
+              onChange={(e) => changerFiltre('domaine', e.target.value)}
               className="transition-smooth rounded-md border border-ink-200 px-3 py-1.5 text-sm text-ink-700 focus-visible:outline-2 focus-visible:outline-brand-600"
             >
               <option value="">Tous les domaines</option>
@@ -287,6 +341,16 @@ export default function ActionPlanPage() {
           </label>
         )}
       </div>
+
+      {referentiels.length > 1 && !referentielFilter && (
+        // La règle de consolidation est dite là où l'on voit les actions
+        // mélangées, pas seulement dans un ADR (ADR-030).
+        <p className="text-sm text-ink-500">
+          Vous suivez {referentiels.length} référentiels : chaque action indique celui dont elle
+          vient. Dans le score consolidé, chaque référentiel compte pour un, quel que soit son
+          nombre de mesures.
+        </p>
+      )}
 
       {projected && (
         <Card>
@@ -333,6 +397,7 @@ export default function ActionPlanPage() {
                     members={members}
                     updatingId={updatingId}
                     onUpdate={updateItem}
+                    montrerReferentiel={referentiels.length > 1}
                   />
                 ))}
               </div>
