@@ -16,7 +16,7 @@ vi.mock('../../api/endpoints', () => ({
   threatIntelligenceApi: {
     listWatchedAccountFindings: vi.fn(),
     updateWatchedAccountFinding: vi.fn(),
-    watchedAccountFindingsExportUrl: vi.fn(() => '/export.csv'),
+    exportWatchedAccountFindings: vi.fn(() => Promise.resolve({ data: new Blob(['x']) })),
   },
 }))
 
@@ -155,13 +155,22 @@ describe('ResultatsComptes', () => {
     expect(await screen.findByRole('heading', { name: /Direction/ })).toBeInTheDocument()
   })
 
-  it('propose un export qui reprend les filtres de l’écran', async () => {
+  it('exporte avec les filtres de l’écran, par le client authentifié', async () => {
+    // Un simple lien partait sans le jeton et répondait 401 : l'export passe
+    // par l'appel authentifié, avec exactement les filtres affichés.
+    URL.createObjectURL = vi.fn(() => 'blob:x')
+    URL.revokeObjectURL = vi.fn()
     render(<ResultatsComptes comptes={COMPTES} resume={{}} />)
     await screen.findByText('.gmail.com')
 
-    expect(threatIntelligenceApi.watchedAccountFindingsExportUrl).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'open' })
+    await userEvent.click(screen.getByRole('button', { name: /Exporter/ }))
+
+    await waitFor(() =>
+      expect(threatIntelligenceApi.exportWatchedAccountFindings).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'open' })
+      )
     )
+    expect(screen.queryByRole('link', { name: /Exporter/ })).not.toBeInTheDocument()
   })
 
   it('ne propose que les filtres qui existent chez ce client', async () => {

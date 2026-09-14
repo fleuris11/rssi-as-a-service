@@ -334,11 +334,14 @@ export const threatIntelligenceApi = {
     }),
   listWatchedAccountFindings: (params = {}) =>
     apiClient.get('/api/v1/threat-intelligence/watched-accounts/findings/', { params }),
-  // Lot A : l'export reprend EXACTEMENT les filtres de l'ecran. On renvoie
-  // l'URL plutot que la reponse : un telechargement de fichier n'a pas a
-  // transiter par un blob en memoire.
-  watchedAccountFindingsExportUrl: (params = {}) =>
-    `/api/v1/threat-intelligence/watched-accounts/findings/export/?${new URLSearchParams(params)}`,
+  // Lot A : l'export reprend EXACTEMENT les filtres de l'ecran. Il se charge
+  // en BLOB, AVEC le jeton : l'API authentifie par en-tete, et un simple lien
+  // vers cette route repondait 401 dans le navigateur.
+  exportWatchedAccountFindings: (params = {}) =>
+    apiClient.get('/api/v1/threat-intelligence/watched-accounts/findings/export/', {
+      params,
+      responseType: 'blob',
+    }),
   updateWatchedAccountFinding: (id, status) =>
     apiClient.patch(`/api/v1/threat-intelligence/watched-accounts/findings/${id}/`, { status }),
   scanWatchedAccounts: (accountIds = []) =>

@@ -7,6 +7,7 @@ import Card, { CardHeader } from '../../components/ui/Card'
 import EmptyState from '../../components/ui/EmptyState'
 import { SkeletonCard } from '../../components/ui/Skeleton'
 import { useToast } from '../../components/ui/Toast'
+import { telechargerBlob } from '../admin/panels/referentiels/outils'
 
 /**
  * La restitution des résultats de comptes surveillés (lot A).
@@ -230,6 +231,18 @@ export default function ResultatsComptes({ comptes = [], resume = {} }) {
     charger()
   }, [charger])
 
+  // Un lien direct partait SANS le jeton — l'API authentifie par en-tete —
+  // et le navigateur recevait un 401 au lieu du fichier. Le fichier transite
+  // donc par l'client HTTP authentifie.
+  async function exporter() {
+    try {
+      const reponse = await threatIntelligenceApi.exportWatchedAccountFindings(filtres)
+      telechargerBlob(reponse.data, 'comptes-surveilles.csv')
+    } catch {
+      showToast({ type: 'error', message: 'L’export n’a pas pu être produit.' })
+    }
+  }
+
   async function handleStatut(ligne, nouveau) {
     setOccupe(`${nouveau}-${ligne.id}`)
     try {
@@ -355,13 +368,14 @@ export default function ResultatsComptes({ comptes = [], resume = {} }) {
             />
           </div>
 
-          <a
-            href={threatIntelligenceApi.watchedAccountFindingsExportUrl(filtres)}
+          <button
+            type="button"
+            onClick={exporter}
             className="ml-auto inline-flex items-center gap-1 text-xs text-brand-600 hover:underline"
           >
             <Download className="size-3.5" aria-hidden="true" />
             Exporter (.csv)
-          </a>
+          </button>
         </div>
       </div>
 
