@@ -6087,3 +6087,71 @@ rougit ne prouve rien tant qu'on n'a pas vérifié POURQUOI elle rougit.**
 - **B4.15** : le client importe son propre référentiel.
 - **B3.9-11** côté écran : le parcours nommé et la vue consolidée.
 - Le jeu de démonstration pour ces écrans.
+
+## 15 septembre 2026 — Lot B, fin : l'édition du catalogue et ce qu'elle a révélé
+
+### Ce qui a été livré
+
+- **Console** : créer un référentiel à la main, lui ajouter domaines et
+  mesures, composer un sous-ensemble (commun ou propre à un client), reformuler
+  un énoncé pour un client. Chaque écriture est journalisée.
+- **Import par le client** de son propre référentiel (modèle vide, aperçu,
+  confirmation). Il reste hors du catalogue général : identifiant préfixé par
+  celui du client, `owner_tenant` posé, attribution au seul importateur.
+- **Accueil du diagnostic** : l'évaluation porte sa composition
+  (`subset_slug`) ; l'écran ne démarre plus les 42 questions à la place du
+  client quand une composition plus courte existe.
+- **Plan d'action** : filtre par référentiel, « Vue d'ensemble » expliquant la
+  consolidation (ADR-030), provenance affichée sur chaque action.
+- **Démonstration** : comptes surveillés (premier passage antidaté de 14
+  jours, puis nouveautés, statuts traité / ignoré), référentiel « exigences
+  assureur » importé par le client, une reformulation. Aucune fausse
+  publication de veille : la veille est commune à toute la plateforme.
+
+### Défauts trouvés en chemin, et non prévus au lot
+
+1. **Les deux exports CSV répondaient 401 en production** (comptes surveillés
+   ET liste des clients, ce second défaut antérieur au lot). Un simple lien
+   `<a href>` n'emporte pas le jeton, qui vit dans `localStorage`. Vérifié
+   sans jeton sur la production, puis corrigé par un téléchargement en blob.
+2. **Écrasement entre clients par identifiant** : `import_referential` et
+   `create_subset` retrouvaient l'existant par `slug` seul. Un client pouvait
+   réécrire une composition commune ; la console pouvait reprendre un
+   référentiel client. Gardes de propriété ajoutées — **ADR-035**.
+3. **« Les 10 mesures essentielles » n'existaient sur aucune installation
+   neuve.** Le conteneur lance `migrate` PUIS `load_anssi_referential` : la
+   migration 0005 cherchait un ANSSI pas encore chargé et ne posait rien. CI et
+   postes de développement en étaient privés ; seule la production, où l'ANSSI
+   préexistait, l'avait. Le chargeur garantit désormais la composition
+   (`essentielles.py`), sans jamais réécrire une composition ajustée. Au
+   passage : la description posée par la migration était **sans accents** et
+   affichée au client ; le chargeur la corrige si elle est restée telle quelle.
+4. **Règle 1 du CLAUDE.md** : la console importait `ReferentialAssignment`
+   directement pour son compteur. Remplacé par un service, et un test
+   d'architecture l'empêche de revenir.
+
+### Neutralisations
+
+Front : **9 valides, toutes rougissent**, après une invalide (F9 lançait un
+fichier de test sans rapport ; refaite sur le bon fichier).
+
+Back : **18 neutralisations, 17 rougissent du premier coup.** La dix-huitième
+(E2 : ne plus forcer l'identifiant dans le JSON importé par un client) **est
+restée verte** — et c'était juste : l'identifiant est forcé à deux endroits,
+dans le document avant analyse puis sur le résultat analysé. Retirer les
+deux couches fait rougir le test. La redondance est conservée délibérément
+(défense en profondeur) et documentée ici plutôt que maquillée.
+
+### Difficultés
+
+- Le moteur Docker Desktop est tombé en cours de suite : 22 ERROR, pas des
+  FAILED. Redémarré ; aucune régression derrière.
+- Deux tests passaient ou échouaient selon l'ordre des fixtures (attribution
+  automatique du conftest) : précondition désormais POSÉE et vérifiée dans le
+  test.
+
+### Reste à faire
+
+- Vérifier en production le compteur « Clients » après déploiement.
+- Parcours e2e du client qui importe son référentiel (couvert en Vitest et
+  pytest, pas encore en navigateur).
