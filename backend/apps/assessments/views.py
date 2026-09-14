@@ -7,7 +7,7 @@ from apps.billing import api_guards, features
 from apps.tenants.permissions import IsTenantAdmin, IsTenantMember, IsTenantMemberReadOnlyForReader
 
 from . import services
-from .models import Measure
+from .models import Measure, Referential
 from .serializers import (
     AnswerSerializer,
     AssessmentHistorySerializer,
@@ -240,6 +240,159 @@ class MeasureOverrideView(APIView):
         measure = self._measure_or_404(request, measure_id)
         services.clear_measure_override(tenant=request.tenant, measure=measure)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ClientReferentialTemplateView(APIView):
+    """Le MEME modele vide que la console, servi au client (B4.15).
+
+    Un seul modele pour les deux cotes, genere depuis ``CSV_COLUMNS`` : un
+    modele client qui divergerait de celui de la console produirait des
+    fichiers acceptes ici et refuses la-bas, ou l'inverse.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
+
+    def get(self, request):
+        from django.http import HttpResponse
+
+        from . import importers
+
+        reponse = HttpResponse(
+            "\ufeff" + importers.modele_csv(), content_type="text/csv; charset=utf-8"
+        )
+        reponse["Content-Disposition"] = 'attachment; filename="modele-referentiel.csv"'
+        return reponse
+
+
+class ClientReferentialImportView(APIView):
+    """Un client importe SON PROPRE referentiel (B4.15).
+
+    Meme modele et meme analyse que la console, et trois differences qui sont
+    toutes des gardes :
+
+    1. le referentiel est ``custom`` et appartient a ce client : il n'entre
+       pas au catalogue general, et aucun autre client ne le voit ;
+    2. l'identifiant est IMPOSE, prefixe par celui du client. Celui du fichier
+       est ignore : un fichier qui porterait l'identifiant du referentiel ANSSI
+       ne doit pas pouvoir remplacer le questionnaire de tous les clients ;
+    3. a la confirmation, le referentiel lui est attribue : importer un
+       questionnaire qu'on ne pourrait pas remplir n'aurait pas de sens.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantAdmin]
+
+    def post(self, request):
+        import json
+
+        from django.db import transaction
+        from django.utils.text import slugify
+
+        from . import importers
+
+        api_guards.ensure_feature(request.tenant, features.ANSSI_ASSESSMENT)
+        tenant = request.tenant
+
+        def refus(message, code):
+            return Response(
+                {
+                    "errors": [{"ligne": None, "message": message}],
+                    "preview": None,
+                    "imported": False,
+                },
+                status=code,
+            )
+
+        contenu = request.data.get("content") or ""
+        if not contenu.strip():
+            fichier = request.FILES.get("file")
+            if fichier is not None:
+                contenu = fichier.read().decode("utf-8-sig", errors="replace")
+        if not contenu.strip():
+            return refus("Aucun fichier à analyser.", status.HTTP_400_BAD_REQUEST)
+
+        nom = (request.data.get("name") or "").strip()
+        base = slugify(request.data.get("slug") or nom)[:60]
+        if not base:
+            return refus("Donnez un nom à votre référentiel.", status.HTTP_400_BAD_REQUEST)
+        slug = f"{tenant.slug}-{base}"[:100]
+        version = (request.data.get("version") or "1").strip()
+
+        fmt = (request.data.get("format") or "").strip().lower()
+        if fmt not in ("json", "csv"):
+            fmt = "json" if contenu.lstrip().startswith("{") else "csv"
+        if fmt == "json":
+            # L'identifiant du FICHIER est remplace avant toute analyse : c'est
+            # la garde 2, et elle ne doit pas dependre de l'etape suivante.
+            try:
+                donnees = json.loads(contenu)
+            except ValueError:
+                return refus("Fichier illisible : JSON invalide.", status.HTTP_400_BAD_REQUEST)
+            if isinstance(donnees, dict):
+                donnees["slug"] = slug
+                donnees["name"] = nom or donnees.get("name") or base
+                donnees.setdefault("version", version)
+                contenu = json.dumps(donnees)
+
+        resultat = importers.analyser(
+            contenu, fmt=fmt, header={"slug": slug, "name": nom or base, "version": version}
+        )
+        if resultat["erreurs"]:
+            return Response(
+                {"errors": resultat["erreurs"], "preview": None, "imported": False},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        parsed = resultat["parsed"]
+        parsed.slug = slug
+        if nom:
+            parsed.name = nom
+        parsed.kind = Referential.Kind.CUSTOM
+        parsed.publisher = tenant.name
+        parsed.licence_notice = (
+            f"Référentiel propre à {tenant.name}. Il n'est visible que de votre entreprise."
+        )[:300]
+        apercu = importers.apercu(parsed)
+
+        existant = services.get_referential(slug=slug)
+        if existant is not None and existant.owner_tenant_id != tenant.id:
+            # Le message ne nomme pas le proprietaire : ce serait apprendre a un
+            # client l'existence d'un autre.
+            return refus(
+                "Cet identifiant est déjà utilisé. Choisissez un autre nom.",
+                status.HTTP_409_CONFLICT,
+            )
+        apercu["will_update"] = existant is not None
+
+        if not request.data.get("confirm"):
+            return Response({"errors": [], "preview": apercu, "imported": False})
+
+        try:
+            with transaction.atomic():
+                rapport = importers.import_referential(parsed, owner_tenant=tenant)
+                services.assign_referential(
+                    tenant=tenant,
+                    referential=rapport.referential,
+                    granted_by=request.user,
+                    note="Référentiel importé par le client.",
+                )
+        except importers.ReferentialImportError as exc:
+            return refus(str(exc), status.HTTP_409_CONFLICT)
+
+        return Response(
+            {
+                "errors": [],
+                "preview": apercu,
+                "imported": True,
+                "slug": rapport.referential.slug,
+                "report": {
+                    "domains": rapport.domains,
+                    "measures": rapport.measures,
+                    "created": rapport.created,
+                    "updated": rapport.updated,
+                },
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class StartAssessmentView(APIView):

@@ -4,6 +4,8 @@ from .views import (
     AnswerView,
     AssessmentDetailView,
     AssessmentListView,
+    ClientReferentialImportView,
+    ClientReferentialTemplateView,
     CompleteAssessmentView,
     ConsolidatedScoresView,
     CurrentAssessmentView,
@@ -22,6 +24,18 @@ urlpatterns = [
     # continuent de fonctionner sans savoir qu'il peut y en avoir plusieurs.
     path("referential/", ReferentialDetailView.as_view(), name="assessment-referential"),
     path("referentials/", ReferentialListView.as_view(), name="assessment-referential-list"),
+    # AVANT la route de detail : « template » et « import » seraient sinon lus
+    # comme des slugs.
+    path(
+        "referentials/template/",
+        ClientReferentialTemplateView.as_view(),
+        name="assessment-referential-template",
+    ),
+    path(
+        "referentials/import/",
+        ClientReferentialImportView.as_view(),
+        name="assessment-referential-import",
+    ),
     path(
         "referentials/<slug:slug>/",
         ReferentialDetailView.as_view(),

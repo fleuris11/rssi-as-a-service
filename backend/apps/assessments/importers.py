@@ -398,12 +398,27 @@ class ImportReport:
 
 
 @transaction.atomic
-def import_referential(parsed: ParsedReferential, *, activate: bool = True) -> ImportReport:
+def import_referential(
+    parsed: ParsedReferential, *, activate: bool = True, owner_tenant=None
+) -> ImportReport:
     """Écrit le référentiel analysé. Idempotent : un second import du même
     fichier ne crée rien et ne casse aucune réponse déjà enregistrée."""
+    # Garde de PROPRIETE (lot B). L'import identifie le referentiel par son
+    # slug et le MET A JOUR : sans cette garde, un import pouvait remplacer le
+    # referentiel d'un autre proprietaire — un client celui de la plateforme,
+    # ou la console celui d'un client — sans que personne l'ait decide.
+    existant = Referential.objects.filter(slug=parsed.slug).first()
+    proprietaire = owner_tenant.id if owner_tenant is not None else None
+    if existant is not None and existant.owner_tenant_id != proprietaire:
+        raise ReferentialImportError(
+            f"Le référentiel « {parsed.slug} » appartient à un autre propriétaire : "
+            "il ne peut pas être remplacé par cet import."
+        )
+
     referential, _ = Referential.objects.update_or_create(
         slug=parsed.slug,
         defaults={
+            "owner_tenant": owner_tenant,
             "name": parsed.name,
             "version": parsed.version,
             "description": parsed.description,

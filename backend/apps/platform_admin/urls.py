@@ -8,6 +8,7 @@ from .console_views import (
     ClientMemberDetailView,
     ClientMemberListView,
     ClientMonitoredAssetView,
+    ClientOverrideView,
     ClientReferentialView,
     ExportView,
     FollowUpBoardView,
@@ -25,7 +26,11 @@ from .console_views import (
     ProspectListView,
     ProspectNoteView,
     ReferentialCatalogView,
+    ReferentialDomainView,
     ReferentialImportView,
+    ReferentialMeasureView,
+    ReferentialOutlineView,
+    ReferentialSubsetView,
     ReferentialTemplateView,
     SubscriptionDetailView,
     TrashView,
@@ -102,6 +107,11 @@ urlpatterns = [
         name="platform-client-referentials",
     ),
     path(
+        "clients/<uuid:tenant_id>/overrides/",
+        ClientOverrideView.as_view(),
+        name="platform-client-overrides",
+    ),
+    path(
         "clients/<uuid:tenant_id>/actions/",
         ClientActionView.as_view(),
         name="platform-client-actions",
@@ -123,6 +133,28 @@ urlpatterns = [
         "referentials/import/",
         ReferentialImportView.as_view(),
         name="platform-referential-import",
+    ),
+    # Edition du catalogue (lot B). APRES « template/ » et « import/ » : un
+    # slug nomme « import » serait sinon capture par la route de detail.
+    path(
+        "referentials/<slug:slug>/",
+        ReferentialOutlineView.as_view(),
+        name="platform-referential-outline",
+    ),
+    path(
+        "referentials/<slug:slug>/domains/",
+        ReferentialDomainView.as_view(),
+        name="platform-referential-domains",
+    ),
+    path(
+        "referentials/<slug:slug>/measures/",
+        ReferentialMeasureView.as_view(),
+        name="platform-referential-measures",
+    ),
+    path(
+        "referentials/<slug:slug>/subsets/",
+        ReferentialSubsetView.as_view(),
+        name="platform-referential-subsets",
     ),
     # --- Catalogue ----------------------------------------------------------
     path("plans/", AdminPlanListView.as_view(), name="platform-plan-list"),

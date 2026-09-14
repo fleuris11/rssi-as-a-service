@@ -264,3 +264,42 @@ La reformulation vit **à côté** du référentiel : l'énoncé d'origine est i
 les autres clients ne voient rien, et le retrait le fait réapparaître.
 L'intitulé officiel, lui, n'est pas surchargeable — c'est la citation du
 référentiel.
+
+---
+
+## 8. Depuis les écrans (lot B)
+
+Tout ce qui précède se fait désormais sans commande. Décisions correspondantes :
+[ADR-035](adr/035-edition-catalogue-et-gardes-de-propriete.md).
+
+### Console — onglet Référentiels
+
+| Geste | Ce que fait l'écran |
+|---|---|
+| **Importer** | Télécharger le modèle vide, déposer le fichier, **analyser** : toutes les erreurs s'affichent avec leur ligne, ou l'aperçu de ce qui sera créé. Rien n'est écrit avant « Confirmer l'import ». L'aperçu prévient quand le référentiel **existe déjà** et sera mis à jour pour tous ses clients. |
+| **Créer à la main** | Un référentiel vide, puis ses domaines et ses mesures un par un. Une mesure sans intitulé officiel ou sans énoncé en langage clair est refusée. |
+| **Composer** | Cocher les mesures, nommer la composition. Sans client désigné : **modèle de plateforme**, proposé à tout client à qui le référentiel est attribué. Pour un client : composition qui n'appartient qu'à lui — c'est ainsi qu'on lui attribue « 10 ou 20 mesures ». Le référentiel doit déjà lui être attribué. |
+| **Reformuler pour un client** | L'énoncé d'origine reste affiché et intact ; la reformulation vit à côté, pour ce client seulement. |
+
+### Espace client — écran Diagnostic
+
+- **Importer son propre référentiel** (administrateur de l'entreprise) : même
+  modèle, même analyse en deux temps. Le référentiel est `custom`, appartient
+  au client, lui est attribué, et **aucun autre client ne le voit**.
+- **L'identifiant est imposé** : `<identifiant du client>-<nom>`. Celui qui
+  figure dans le fichier est ignoré.
+- Quand une composition est proposée (« Les 10 mesures essentielles »),
+  l'écran **ne démarre pas seul** le questionnaire complet : le client choisit.
+
+### La garde de propriété
+
+Un import ou une composition **ne remplace jamais** un objet d'un autre
+propriétaire :
+
+- un client ne peut pas réécrire un référentiel ou un modèle de plateforme,
+  même en reprenant son identifiant ;
+- la console ne peut pas, par un import, s'approprier le référentiel d'un
+  client. Remplacer celui-ci est une décision à part : demander au client de
+  réimporter.
+
+Ces deux cas renvoient une erreur explicite, jamais une mise à jour silencieuse.

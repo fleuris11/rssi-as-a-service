@@ -22,10 +22,12 @@ import csv
 import logging
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.text import slugify
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -1080,7 +1082,6 @@ class ReferentialCatalogView(ConsoleView):
 
     def get(self, request):
         from apps.assessments import services as assessments_services
-        from apps.assessments.models import ReferentialAssignment
 
         catalogue = []
         for referential in assessments_services.list_catalog(include_inactive=True):
@@ -1119,12 +1120,58 @@ class ReferentialCatalogView(ConsoleView):
                     # Le compteur affichait donc 0 pour TOUS les referentiels
                     # depuis toujours, alors que sept attributions actives
                     # existaient en production, CRRH comprise.
-                    "assigned_tenants": ReferentialAssignment.all_objects.filter(
-                        referential=referential, revoked_at__isnull=True
-                    ).count(),
+                    "assigned_tenants": assessments_services.count_active_assignments(referential),
                 }
             )
         return Response(catalogue)
+
+    def post(self, request):
+        """Creer un referentiel A LA MAIN (B2.4), vide, pour y ajouter ensuite
+        domaines et mesures. ``tenant_id`` en fait un referentiel propre a ce
+        client, qui lui est attribue d'office."""
+        from apps.assessments import services as assessments_services
+
+        proprietaire = None
+        tenant_id = request.data.get("tenant_id")
+        if tenant_id:
+            proprietaire = _client_ou_none(tenant_id)
+            if proprietaire is None:
+                return _introuvable("Client introuvable.")
+        try:
+            referential = assessments_services.create_referential(
+                slug=request.data.get("slug", ""),
+                name=request.data.get("name", ""),
+                version=request.data.get("version", ""),
+                publisher=request.data.get("publisher", ""),
+                kind=request.data.get("kind") or "open",
+                licence_notice=request.data.get("licence_notice", ""),
+                description=request.data.get("description", ""),
+                source_url=request.data.get("source_url", ""),
+                owner_tenant=proprietaire,
+            )
+        except assessments_services.ReferentialConflictError as exc:
+            return self.refused(exc, status.HTTP_409_CONFLICT)
+        except assessments_services.AssessmentsError as exc:
+            return self.refused(exc, status.HTTP_400_BAD_REQUEST)
+
+        if proprietaire is not None:
+            assessments_services.assign_referential(
+                tenant=proprietaire,
+                referential=referential,
+                granted_by=request.user,
+                note="Référentiel propre, créé depuis la console.",
+            )
+        self.audit(
+            request,
+            AdminAuditLog.Action.SETTING_CHANGED,
+            tenant=proprietaire,
+            target=referential.name,
+            detail=f"Référentiel « {referential.name} » créé à la main.",
+        )
+        return Response(
+            assessments_services.referential_outline(referential),
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class ReferentialTemplateView(ConsoleView):
@@ -1164,6 +1211,7 @@ class ReferentialImportView(ConsoleView):
 
     def post(self, request):
         from apps.assessments import importers
+        from apps.assessments import services as assessments_services
 
         contenu = request.data.get("content") or ""
         if not contenu.strip():
@@ -1203,13 +1251,32 @@ class ReferentialImportView(ConsoleView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # L'apercu dit s'il CREE ou s'il REMPLACE : un import qui met a jour
+        # un referentiel deja attribue change le questionnaire de ses clients.
+        existant = assessments_services.get_referential(slug=resultat["apercu"]["slug"])
+        resultat["apercu"]["will_update"] = existant is not None
+        resultat["apercu"]["existing_measure_count"] = (
+            existant.measures.count() if existant is not None else 0
+        )
+
         if not request.data.get("confirm"):
             return Response(
                 {"errors": [], "preview": resultat["apercu"], "imported": False},
                 status=status.HTTP_200_OK,
             )
 
-        rapport = importers.import_referential(resultat["parsed"])
+        try:
+            with transaction.atomic():
+                rapport = importers.import_referential(resultat["parsed"])
+        except importers.ReferentialImportError as exc:
+            return Response(
+                {
+                    "errors": [{"ligne": None, "message": str(exc)}],
+                    "preview": resultat["apercu"],
+                    "imported": False,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         self.audit(
             request,
             AdminAuditLog.Action.SETTING_CHANGED,
@@ -1232,6 +1299,300 @@ class ReferentialImportView(ConsoleView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+def _referentiel_console(slug):
+    from apps.assessments import services as assessments_services
+
+    return assessments_services.get_referential(slug=slug)
+
+
+def _introuvable(message="Référentiel introuvable."):
+    return Response({"detail": message}, status=status.HTTP_404_NOT_FOUND)
+
+
+def _client_ou_none(tenant_id):
+    try:
+        return Tenant.objects.filter(id=tenant_id).first()
+    except (ValueError, DjangoValidationError):
+        return None
+
+
+class ReferentialOutlineView(ConsoleView):
+    """La structure complete d'un referentiel, pour l'editer (B2.4-6).
+
+    Un domaine VIDE y figure, contrairement a la structure servie au client :
+    on vient justement de le creer. Lecture ouverte aux deux niveaux
+    d'administrateur, ecriture reservee au niveau complet.
+    """
+
+    def get(self, request, slug):
+        from apps.assessments import services as assessments_services
+
+        referential = _referentiel_console(slug)
+        if referential is None:
+            return _introuvable()
+        return Response(assessments_services.referential_outline(referential))
+
+
+class ReferentialDomainView(ConsoleView):
+    """Ajouter un domaine a un referentiel (B2.4)."""
+
+    def post(self, request, slug):
+        from apps.assessments import services as assessments_services
+
+        referential = _referentiel_console(slug)
+        if referential is None:
+            return _introuvable()
+        try:
+            domaine = assessments_services.add_domain(
+                referential=referential,
+                code=request.data.get("code", ""),
+                name=request.data.get("name", ""),
+                description=request.data.get("description", ""),
+            )
+        except assessments_services.ReferentialConflictError as exc:
+            return self.refused(exc, status.HTTP_409_CONFLICT)
+        except assessments_services.AssessmentsError as exc:
+            return self.refused(exc, status.HTTP_400_BAD_REQUEST)
+
+        self.audit(
+            request,
+            AdminAuditLog.Action.SETTING_CHANGED,
+            target=referential.name,
+            detail=f"Domaine « {domaine.name} » ajouté au référentiel « {referential.name} ».",
+        )
+        return Response(
+            assessments_services.referential_outline(referential),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ReferentialMeasureView(ConsoleView):
+    """Ajouter une mesure, une par une (B2.4).
+
+    Passe par ``assessments.services.add_measure``, le meme point d'entree que
+    la veille : un enonce vide y est refuse pour tout le monde.
+    """
+
+    def post(self, request, slug):
+        from apps.assessments import services as assessments_services
+
+        referential = _referentiel_console(slug)
+        if referential is None:
+            return _introuvable()
+        try:
+            poids = float(request.data.get("weight") or 1)
+        except (TypeError, ValueError):
+            return self.refused(
+                assessments_services.AssessmentsError("Le poids doit être un nombre."),
+                status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            mesure = assessments_services.add_measure(
+                referential=referential,
+                domain_code=(request.data.get("domain_code") or "").strip(),
+                code=request.data.get("code", ""),
+                official_title=request.data.get("official_title", ""),
+                plain_language=request.data.get("plain_language", ""),
+                level=request.data.get("level", ""),
+                weight=poids,
+                effort=request.data.get("effort") or "medium",
+                impact=request.data.get("impact") or "medium",
+            )
+        except assessments_services.AssessmentsError as exc:
+            return self.refused(exc, status.HTTP_400_BAD_REQUEST)
+
+        self.audit(
+            request,
+            AdminAuditLog.Action.SETTING_CHANGED,
+            target=referential.name,
+            detail=f"Mesure « {mesure.code} » ajoutée au référentiel « {referential.name} ».",
+        )
+        return Response(
+            assessments_services.referential_outline(referential),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ReferentialSubsetView(ConsoleView):
+    """Composer un questionnaire a partir d'un referentiel (B2.5, B2.7).
+
+    Sans ``tenant_id`` : un MODELE DE PLATEFORME, proposable a tout client a
+    qui le referentiel est attribue. Avec ``tenant_id`` : une composition
+    propre a ce client — c'est ainsi qu'on « attribue un sous-ensemble » a un
+    client, sans second mecanisme d'attribution a maintenir.
+    """
+
+    def post(self, request, slug):
+        from apps.assessments import services as assessments_services
+
+        referential = _referentiel_console(slug)
+        if referential is None:
+            return _introuvable()
+
+        client = None
+        tenant_id = request.data.get("tenant_id")
+        if tenant_id:
+            client = _client_ou_none(tenant_id)
+            if client is None:
+                return _introuvable("Client introuvable.")
+            if not assessments_services.is_readable(client, referential):
+                return self.refused(
+                    assessments_services.AssessmentsError(
+                        "Ce référentiel n'est pas attribué à ce client : attribuez-le d'abord."
+                    ),
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                )
+
+        codes = request.data.get("measure_codes")
+        if not isinstance(codes, list) or not codes:
+            return self.refused(
+                assessments_services.AssessmentsError("Cochez au moins une mesure."),
+                status.HTTP_400_BAD_REQUEST,
+            )
+        nom = (request.data.get("name") or "").strip()
+        if not nom:
+            return self.refused(
+                assessments_services.AssessmentsError("Donnez un nom à cette composition."),
+                status.HTTP_400_BAD_REQUEST,
+            )
+        identifiant = slugify(request.data.get("slug") or nom)[:100]
+
+        try:
+            composition = assessments_services.create_subset(
+                referential=referential,
+                slug=identifiant,
+                name=nom,
+                description=(request.data.get("description") or "").strip(),
+                measure_codes=[str(code) for code in codes],
+                owner_tenant=client,
+                created_by=request.user,
+            )
+        except assessments_services.AssessmentsError as exc:
+            return self.refused(exc, status.HTTP_400_BAD_REQUEST)
+
+        self.audit(
+            request,
+            AdminAuditLog.Action.SETTING_CHANGED,
+            tenant=client,
+            target=referential.name,
+            detail=(
+                f"Composition « {composition.name} » "
+                + (f"écrite pour {client.name}." if client else "publiée comme modèle.")
+            ),
+        )
+        return Response(
+            assessments_services.referential_outline(referential),
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ClientOverrideView(ConsoleView):
+    """Reformuler une mesure POUR UN CLIENT, depuis la console (B2.6).
+
+    La surcharge vit a cote : l'enonce d'origine n'est jamais modifie, et les
+    autres clients continuent de le lire. ``DELETE`` retire la reformulation
+    et l'enonce d'origine reapparait.
+    """
+
+    def _charge(self, tenant, referential_slug=""):
+        from apps.assessments import services as assessments_services
+
+        referential = (
+            assessments_services.get_referential(slug=referential_slug)
+            if referential_slug
+            else None
+        )
+        return {
+            "overrides": [
+                {
+                    "measure_id": surcharge.measure_id,
+                    "measure_code": surcharge.measure.code,
+                    "referential_slug": surcharge.measure.referential.slug,
+                    "original_plain_language": surcharge.measure.plain_language,
+                    "plain_language": surcharge.plain_language,
+                    "context_note": surcharge.context_note,
+                    "updated_at": surcharge.updated_at,
+                }
+                for surcharge in assessments_services.list_overrides(
+                    tenant, referential=referential
+                )
+            ]
+        }
+
+    def _mesure_lisible(self, tenant, measure_id):
+        from apps.assessments import services as assessments_services
+
+        mesure = assessments_services.get_measure(measure_id)
+        if mesure is None:
+            return None, _introuvable("Mesure introuvable.")
+        if not assessments_services.is_readable(tenant, mesure.referential):
+            return None, Response(
+                {
+                    "detail": (
+                        "Ce référentiel n'est pas attribué à ce client : une "
+                        "reformulation n'y aurait aucun effet."
+                    )
+                },
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        return mesure, None
+
+    def get(self, request, tenant_id):
+        tenant = get_object_or_404(Tenant, id=tenant_id)
+        return Response(self._charge(tenant, request.query_params.get("referential", "")))
+
+    def put(self, request, tenant_id):
+        from apps.assessments import services as assessments_services
+
+        tenant = get_object_or_404(Tenant, id=tenant_id)
+        mesure, refus = self._mesure_lisible(tenant, request.data.get("measure_id"))
+        if refus is not None:
+            return refus
+        texte = (request.data.get("plain_language") or "").strip()
+        if not texte:
+            return Response(
+                {
+                    "detail": (
+                        "La reformulation est vide. Pour revenir à l'énoncé d'origine, "
+                        "retirez la reformulation."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        assessments_services.set_measure_override(
+            tenant=tenant,
+            measure=mesure,
+            plain_language=texte,
+            context_note=(request.data.get("context_note") or "").strip(),
+            created_by=request.user,
+        )
+        self.audit(
+            request,
+            AdminAuditLog.Action.SETTING_CHANGED,
+            tenant=tenant,
+            target=f"{mesure.referential.name} — mesure {mesure.code}",
+            detail=f"Énoncé reformulé pour {tenant.name}.",
+        )
+        return Response(self._charge(tenant, mesure.referential.slug))
+
+    def delete(self, request, tenant_id):
+        from apps.assessments import services as assessments_services
+
+        tenant = get_object_or_404(Tenant, id=tenant_id)
+        mesure, refus = self._mesure_lisible(tenant, request.data.get("measure_id"))
+        if refus is not None:
+            return refus
+        assessments_services.clear_measure_override(tenant=tenant, measure=mesure)
+        self.audit(
+            request,
+            AdminAuditLog.Action.SETTING_CHANGED,
+            tenant=tenant,
+            target=f"{mesure.referential.name} — mesure {mesure.code}",
+            detail=f"Reformulation retirée pour {tenant.name} : l'énoncé d'origine réapparaît.",
+        )
+        return Response(self._charge(tenant, mesure.referential.slug))
 
 
 class ClientReferentialView(ConsoleView):

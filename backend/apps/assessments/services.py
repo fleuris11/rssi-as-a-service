@@ -70,6 +70,10 @@ class SubsetError(AssessmentsError):
     pass
 
 
+class ReferentialConflictError(AssessmentsError):
+    """Un identifiant deja pris : referentiel, domaine ou composition."""
+
+
 class AssessmentAlreadyCompletedError(AssessmentsError):
     pass
 
@@ -295,6 +299,14 @@ def create_subset(
     if inconnus:
         raise SubsetError(f"Mesures inconnues dans « {referential.name} » : {', '.join(inconnus)}.")
 
+    # Garde d'integrite ENTRE clients (lot B). La composition est identifiee
+    # par (referentiel, slug) et ses mesures sont REMPLACEES a chaque appel :
+    # sans cette garde, un client qui composait avec l'identifiant d'un modele
+    # de plateforme en reecrivait le contenu pour TOUS les clients.
+    existant = MeasureSubset.objects.filter(referential=referential, slug=slug).first()
+    proprietaire = owner_tenant.id if owner_tenant is not None else None
+    if existant is not None and existant.owner_tenant_id != proprietaire:
+        raise SubsetError("Une composition porte déjà cet identifiant. Choisissez un autre nom.")
     subset, _ = MeasureSubset.objects.update_or_create(
         referential=referential,
         slug=slug,
@@ -418,6 +430,189 @@ def get_referential_structure(referential: Referential, *, tenant=None, subset=N
     return structure
 
 
+# --- Edition du catalogue depuis la console (lot B) --------------------------
+
+
+def count_active_assignments(referential) -> int:
+    """Combien de clients utilisent ce referentiel en ce moment.
+
+    ``all_objects`` et non la relation inverse ``referential.assignments`` :
+    celle-ci passe par le manager par defaut, scope par tenant, qui renvoie
+    vide sans tenant en contexte. La console n'en a pas — c'est ce qui
+    faisait afficher « Clients : 0 » pour tous les referentiels.
+
+    Expose ici plutot que calcule dans la console : une app n'importe pas les
+    modeles d'une autre (CLAUDE.md, regle 1).
+    """
+    return ReferentialAssignment.all_objects.filter(
+        referential=referential, revoked_at__isnull=True
+    ).count()
+
+
+def get_measure(measure_id) -> Measure | None:
+    try:
+        identifiant = int(measure_id)
+    except (TypeError, ValueError):
+        return None
+    return Measure.objects.filter(id=identifiant).select_related("referential", "domain").first()
+
+
+def create_referential(
+    *,
+    slug,
+    name,
+    version,
+    publisher="",
+    kind="open",
+    licence_notice="",
+    description="",
+    source_url="",
+    owner_tenant=None,
+) -> Referential:
+    """Cree un referentiel VIDE, a la main (B2.4). Ses domaines et ses mesures
+    s'ajoutent ensuite un par un.
+
+    L'identifiant est refuse s'il est deja pris, jamais reutilise : creer un
+    referentiel qui en ecraserait un autre changerait le questionnaire de
+    clients qui ne l'ont pas demande.
+    """
+    from django.utils.text import slugify
+
+    slug = (slug or "").strip()
+    name = (name or "").strip()
+    version = str(version or "").strip()
+    manquants = [
+        libelle
+        for libelle, valeur in (("identifiant", slug), ("nom", name), ("version", version))
+        if not valeur
+    ]
+    if manquants:
+        raise AssessmentsError("Champs obligatoires manquants : " + ", ".join(manquants) + ".")
+    if slugify(slug) != slug:
+        raise AssessmentsError(
+            "L'identifiant ne peut contenir que des minuscules, des chiffres et des tirets."
+        )
+    if kind not in Referential.Kind.values:
+        raise AssessmentsError("Nature de droits inconnue.")
+    if kind == Referential.Kind.CUSTOM and owner_tenant is None:
+        raise AssessmentsError("Un référentiel propre à un client doit désigner ce client.")
+    if Referential.objects.filter(slug=slug).exists():
+        raise ReferentialConflictError(f"L'identifiant « {slug} » est déjà pris.")
+    return Referential.objects.create(
+        slug=slug,
+        name=name,
+        version=version,
+        publisher=(publisher or "").strip(),
+        kind=kind,
+        licence_notice=(licence_notice or "").strip()[:300],
+        description=(description or "").strip(),
+        source_url=(source_url or "").strip(),
+        owner_tenant=owner_tenant,
+        is_active=True,
+    )
+
+
+def add_domain(*, referential, code, name, description="") -> Domain:
+    """Ajoute un domaine, range apres les autres."""
+    from django.utils.text import slugify
+
+    code = (code or "").strip()
+    name = (name or "").strip()
+    if not code or not name:
+        raise AssessmentsError("Le code et le nom du domaine sont obligatoires.")
+    if slugify(code) != code:
+        raise AssessmentsError(
+            "Le code du domaine ne peut contenir que des minuscules, des chiffres et des tirets."
+        )
+    if Domain.objects.filter(referential=referential, code=code).exists():
+        raise ReferentialConflictError(f"Le domaine « {code} » existe déjà dans ce référentiel.")
+    dernier = (
+        Domain.objects.filter(referential=referential).aggregate(models.Max("order"))["order__max"]
+        or 0
+    )
+    return Domain.objects.create(
+        referential=referential,
+        code=code,
+        name=name,
+        description=(description or "").strip(),
+        order=dernier + 1,
+    )
+
+
+def referential_outline(referential) -> dict:
+    """La structure COMPLETE d'un referentiel, pour la console (lot B).
+
+    Differente de ``get_referential_structure`` sur deux points voulus : un
+    domaine VIDE y figure — on vient de le creer, et on veut y ajouter la
+    premiere mesure —, et les compositions y sont listees avec leur
+    proprietaire, clients compris.
+    """
+    domaines = []
+    for domaine in Domain.objects.filter(referential=referential).order_by("order", "code"):
+        domaines.append(
+            {
+                "code": domaine.code,
+                "name": domaine.name,
+                "order": domaine.order,
+                "measures": [
+                    {
+                        "id": mesure.id,
+                        "code": mesure.code,
+                        "official_title": mesure.official_title,
+                        "plain_language": mesure.plain_language,
+                        "level": mesure.level,
+                        "effort": mesure.effort,
+                        "impact": mesure.impact,
+                        "source_url": mesure.source_url,
+                    }
+                    for mesure in Measure.objects.filter(domain=domaine).order_by("order", "code")
+                ],
+            }
+        )
+
+    compositions = []
+    for composition in (
+        MeasureSubset.objects.filter(referential=referential)
+        .select_related("owner_tenant")
+        .order_by("name")
+    ):
+        compositions.append(
+            {
+                "slug": composition.slug,
+                "name": composition.name,
+                "description": composition.description,
+                "is_active": composition.is_active,
+                "owner_tenant": (
+                    str(composition.owner_tenant_id) if composition.owner_tenant_id else None
+                ),
+                "owner_tenant_name": (
+                    composition.owner_tenant.name if composition.owner_tenant_id else None
+                ),
+                "measure_codes": list(
+                    SubsetMeasure.objects.filter(subset=composition)
+                    .order_by("order")
+                    .values_list("measure__code", flat=True)
+                ),
+            }
+        )
+
+    return {
+        "slug": referential.slug,
+        "name": referential.name,
+        "version": referential.version,
+        "publisher": referential.publisher,
+        "kind": referential.kind,
+        "kind_label": referential.get_kind_display(),
+        "licence_notice": referential.licence_notice,
+        "owner_tenant_name": (
+            referential.owner_tenant.name if referential.owner_tenant_id else None
+        ),
+        "assigned_tenants": count_active_assignments(referential),
+        "domains": domaines,
+        "subsets": compositions,
+    }
+
+
 def add_measure(
     *,
     referential: Referential,
@@ -451,6 +646,16 @@ def add_measure(
     code = (code or "").strip()
     if not code:
         raise MeasureNotInReferentialError("Le code de la mesure est obligatoire.")
+    if not (official_title or "").strip() or not (plain_language or "").strip():
+        # Meme regle que l'import et que la veille : une mesure sans enonce
+        # donnerait une question vide a l'ecran du client. La regle vit ICI,
+        # dans le seul point d'entree des ajouts a l'unite, pour qu'aucun
+        # appelant — console, veille, demain autre chose — ne puisse l'oublier.
+        raise AssessmentsError(
+            "L'intitulé officiel et l'énoncé en langage clair sont obligatoires."
+        )
+    if effort not in Measure.Effort.values or impact not in Measure.Impact.values:
+        raise AssessmentsError("Effort et impact : « low », « medium » ou « high ».")
     if Measure.objects.filter(referential=referential, code=code).exists():
         raise MeasureNotInReferentialError(
             f"Une mesure « {code} » existe déjà dans ce référentiel."
