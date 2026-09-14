@@ -88,6 +88,30 @@ export const platformApi = {
     apiClient.delete(`/api/v1/platform/clients/${id}/referentials/`, {
       data: { referential: slug },
     }),
+  // --- Edition du catalogue (lot B) ---------------------------------------
+  // Le modele se telecharge en BLOB, avec le jeton : un simple lien vers une
+  // route authentifiee repondrait 401 dans le navigateur.
+  referentialTemplate: () =>
+    apiClient.get('/api/v1/platform/referentials/template/', { responseType: 'blob' }),
+  importReferential: (payload) => apiClient.post('/api/v1/platform/referentials/import/', payload),
+  createReferential: (payload) => apiClient.post('/api/v1/platform/referentials/', payload),
+  referentialOutline: (slug) => apiClient.get(`/api/v1/platform/referentials/${slug}/`),
+  addReferentialDomain: (slug, payload) =>
+    apiClient.post(`/api/v1/platform/referentials/${slug}/domains/`, payload),
+  addReferentialMeasure: (slug, payload) =>
+    apiClient.post(`/api/v1/platform/referentials/${slug}/measures/`, payload),
+  composeSubset: (slug, payload) =>
+    apiClient.post(`/api/v1/platform/referentials/${slug}/subsets/`, payload),
+  clientOverrides: (id, referential) =>
+    apiClient.get(`/api/v1/platform/clients/${id}/overrides/`, {
+      params: referential ? { referential } : {},
+    }),
+  setClientOverride: (id, payload) =>
+    apiClient.put(`/api/v1/platform/clients/${id}/overrides/`, payload),
+  clearClientOverride: (id, measureId) =>
+    apiClient.delete(`/api/v1/platform/clients/${id}/overrides/`, {
+      data: { measure_id: measureId },
+    }),
   // --- Veille reglementaire (V2-7) ----------------------------------------
   // Console UNIQUEMENT : la veille alimente le catalogue partage, et une
   // suggestion non triee n'a rien a faire dans un espace client.

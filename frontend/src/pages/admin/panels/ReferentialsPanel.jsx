@@ -7,6 +7,10 @@ import Card, { CardHeader } from '../../../components/ui/Card'
 import EmptyState from '../../../components/ui/EmptyState'
 import { SkeletonCard } from '../../../components/ui/Skeleton'
 import { useToast } from '../../../components/ui/Toast'
+import CreationReferentiel from './referentiels/CreationReferentiel'
+import EditionReferentiel from './referentiels/EditionReferentiel'
+import ImportReferentiel from './referentiels/ImportReferentiel'
+import ReformulationClient from './referentiels/ReformulationClient'
 
 const KIND_VARIANT = { open: 'ok', licensed: 'warning', custom: 'brand' }
 
@@ -15,14 +19,15 @@ function dateCourte(valeur) {
 }
 
 /**
- * Le catalogue de référentiels et leur attribution par client (V2-4).
+ * Le catalogue de référentiels : l'attribuer, l'importer, le créer, le
+ * composer, le reformuler (V2-4, lot B).
  *
- * La file des demandes vivait ici en V2-4, quand un référentiel était la
- * seule chose qu'un client pouvait demander. V2-6 l'a sortie dans son propre
- * onglet : elle porte désormais aussi les demandes de fonctionnalités, et
- * c'est devenu un suivi commercial plutôt qu'un simple « accorder / refuser ».
+ * La V2-4 avait livré les modèles et l'API ; ce panneau n'offrait qu'une
+ * liste déroulante d'attribution. Importer, créer un référentiel, composer un
+ * questionnaire de dix mesures ou reformuler un énoncé pour un client
+ * demandaient une commande Django — un produit invisible pour qui l'exploite.
  *
- * `kind` est affiché en évidence : c'est la question qui se pose avant
+ * `kind` reste affiché en évidence : c'est la question qui se pose avant
  * d'attribuer ISO 27001 ou le NIST — avons-nous le droit d'en servir le
  * contenu, et sous quelle licence (voir docs/format_import_referentiel.md).
  */
@@ -55,12 +60,21 @@ export default function ReferentialsPanel({ clients = [] }) {
     chargerAttributions(clientChoisi)
   }, [clientChoisi, chargerAttributions])
 
+  // Après une modification du catalogue, les compteurs et la liste des
+  // référentiels attribuables doivent suivre — sinon l'écran contredit ce
+  // qu'on vient de faire.
+  const catalogueModifie = useCallback(() => {
+    chargerCatalogue()
+    if (clientChoisi) chargerAttributions(clientChoisi)
+  }, [chargerCatalogue, chargerAttributions, clientChoisi])
+
   async function attribuer(slug) {
     setEnCours(slug)
     try {
       const response = await platformApi.assignReferential(clientChoisi, slug)
       setAttributions(response.data)
       showToast({ type: 'success', message: 'Référentiel attribué.' })
+      chargerCatalogue()
     } catch (err) {
       showToast({
         type: 'error',
@@ -82,6 +96,7 @@ export default function ReferentialsPanel({ clients = [] }) {
         // clique.
         message: 'Référentiel retiré. Les diagnostics déjà produits restent consultables.',
       })
+      chargerCatalogue()
     } catch {
       showToast({ type: 'error', message: 'Retrait impossible.' })
     } finally {
@@ -96,7 +111,7 @@ export default function ReferentialsPanel({ clients = [] }) {
       <Card>
         <CardHeader
           title="Attribuer à un client"
-          description="Un client ne voit que les référentiels qui lui sont attribués."
+          description="Un client ne voit que les référentiels qui lui sont attribués. Pour lui attribuer un questionnaire plus court, composez-le pour lui ci-dessous."
         />
         <label className="t-eyebrow" htmlFor="client-referentiels">
           Client
@@ -124,10 +139,7 @@ export default function ReferentialsPanel({ clients = [] }) {
                   <li className="py-2 text-sm text-ink-500">Aucun.</li>
                 )}
                 {attributions.assigned.map((ligne) => (
-                  <li
-                    key={ligne.slug}
-                    className="flex items-center justify-between gap-3 py-2"
-                  >
+                  <li key={ligne.slug} className="flex items-center justify-between gap-3 py-2">
                     <div className="min-w-0">
                       <p className="truncate text-sm text-ink-700">{ligne.name}</p>
                       <p className="text-xs text-ink-500">
@@ -185,6 +197,17 @@ export default function ReferentialsPanel({ clients = [] }) {
         )}
       </Card>
 
+      <ImportReferentiel onImporte={catalogueModifie} />
+      <CreationReferentiel onCree={catalogueModifie} />
+      {catalogue.length > 0 && (
+        <EditionReferentiel
+          catalogue={catalogue}
+          clients={clients}
+          onModifie={catalogueModifie}
+        />
+      )}
+      {catalogue.length > 0 && <ReformulationClient catalogue={catalogue} clients={clients} />}
+
       <Card>
         <CardHeader
           title="Catalogue"
@@ -194,7 +217,7 @@ export default function ReferentialsPanel({ clients = [] }) {
           <EmptyState
             icon={BookOpen}
             title="Aucun référentiel chargé"
-            description="Importez-en un avec « manage.py import_referential » (voir docs/format_import_referentiel.md)."
+            description="Importez-en un avec le formulaire ci-dessus, ou créez-le à la main."
           />
         ) : (
           <div className="overflow-x-auto">
