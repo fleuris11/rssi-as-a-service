@@ -132,6 +132,10 @@ export const platformApi = {
   search: (q) => apiClient.get('/api/v1/platform/search/', { params: { q } }),
   // L'export est un téléchargement de fichier : on renvoie l'URL, le
   // navigateur s'en charge (une réponse CSV lue en JSON serait illisible).
+  // Un lien vers cette URL partait SANS le jeton — l'API authentifie par
+  // en-tete — et repondait 401 : l'export se charge desormais en blob.
+  exportCsv: (kind) =>
+    apiClient.get(`/api/v1/platform/export/${kind}/`, { responseType: 'blob' }),
   exportUrl: (kind) => `/api/v1/platform/export/${kind}/`,
 }
 

@@ -11,6 +11,7 @@ import Card, { CardHeader } from '../../../components/ui/Card'
 import Modal from '../../../components/ui/Modal'
 import { SkeletonCard } from '../../../components/ui/Skeleton'
 import { useToast } from '../../../components/ui/Toast'
+import { telechargerBlob } from './referentiels/outils'
 
 const STATUS_VARIANT = {
   active: 'ok',
@@ -854,6 +855,17 @@ export default function ClientsPanel({
   initialTenantId = null,
   onFocusConsumed,
 }) {
+  const { showToast: signaler } = useToast()
+  // L'API authentifie par jeton en en-tete : le lien d'export partait sans
+  // lui et le navigateur recevait un 401 au lieu du fichier.
+  async function exporterClients() {
+    try {
+      const reponse = await platformApi.exportCsv('tenants')
+      telechargerBlob(reponse.data, 'clients.csv')
+    } catch {
+      signaler({ type: 'error', message: 'L’export n’a pas pu être produit.' })
+    }
+  }
   // La recherche globale ouvre directement une fiche : arriver sur la liste
   // puis devoir y retrouver l'entreprise qu'on vient de nommer annulerait
   // l'intérêt de la recherche.
@@ -900,12 +912,13 @@ export default function ClientsPanel({
         title="Clients"
         action={
           <span className="flex gap-2">
-            <a
-              href={platformApi.exportUrl('tenants')}
+            <button
+              type="button"
+              onClick={exporterClients}
               className="transition-smooth rounded-md px-3 py-1.5 text-sm text-ink-600 hover:text-ink-900"
             >
               Exporter en CSV
-            </a>
+            </button>
             <Button icon={Plus} size="sm" onClick={() => setCreating(true)}>
               Nouveau client
             </Button>

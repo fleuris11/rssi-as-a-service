@@ -31,6 +31,7 @@ vi.mock('../../api/endpoints', () => ({
     listMembers: vi.fn(),
     search: vi.fn(),
     exportUrl: vi.fn(() => '/export.csv'),
+    exportCsv: vi.fn(),
   },
 }))
 
