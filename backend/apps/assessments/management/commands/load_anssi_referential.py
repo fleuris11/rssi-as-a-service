@@ -14,7 +14,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
-from apps.assessments import importers
+from apps.assessments import essentielles, importers
 from apps.assessments.models import Referential
 
 DEFAULT_FIXTURE = Path(settings.BASE_DIR) / "data" / "anssi_hygiene.json"
@@ -50,3 +50,10 @@ class Command(BaseCommand):
                 f"{report.domains} domaines, {report.measures} mesures."
             )
         )
+
+        # La migration 0005 ne pose rien sur une base neuve : elle s'exécute
+        # avant ce chargement. C'est donc ICI que la composition de départ est
+        # garantie, pour toute installation (voir apps/assessments/essentielles.py).
+        composition = essentielles.ensure_essential_subset(report.referential)
+        if composition is not None:
+            self.stdout.write(f"Composition « {composition.name} » disponible.")

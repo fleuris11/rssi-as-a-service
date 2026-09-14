@@ -38,7 +38,18 @@ test('inscription, diagnostic complet et plan d’action généré', async ({ pa
   await waitForContentLoaded(page)
   await expect(page.getByRole('heading', { name: 'Diagnostic de maturité' })).toBeVisible()
 
+  // Lot B : l'écran est un ACCUEIL. Une composition plus courte est proposée,
+  // et l'écran ne choisit plus les 42 questions à la place du client.
+  //
+  // Voir « Les 10 mesures essentielles » ici prouve aussi, de bout en bout,
+  // qu'une installation NEUVE la reçoit : la migration qui la posait
+  // s'exécutait avant le chargement de l'ANSSI et ne créait rien. C'est le
+  // chargeur qui la garantit désormais (apps/assessments/essentielles.py).
+  await expect(page.getByText(/Les 10 mesures essentielles — 10 mesures/)).toBeVisible()
   await auditAccessibility(page)
+
+  // Ce parcours veut le diagnostic COMPLET : c'est lui qui produit 42 écarts.
+  await page.getByRole('button', { name: 'Démarrer ce diagnostic' }).click()
 
   const finishButton = page.getByRole('button', { name: 'Terminer l’évaluation' })
   const nextButton = page.getByRole('button', { name: 'Suivant' })
