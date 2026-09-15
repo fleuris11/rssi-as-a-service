@@ -483,6 +483,45 @@ DEMO_REFERENTIEL_ASSUREUR = {
 }
 
 
+# --- Inventaire de démonstration (15/09/2026) : un diagnostic, un plan qui avance
+#
+# Relevé en production : le client de démonstration avait un diagnostic
+# OUVERT, sans une seule réponse. Tout ce qui en découle était donc vide devant
+# un prospect — le tableau de bord n'affichait que l'accueil « Bienvenue »,
+# sans indicateur ni courbe ; les résultats, le plan d'action et le rapport de
+# comité n'avaient rien à montrer.
+
+ANSSI_SLUG = "anssi-hygiene-informatique"
+
+#: Le diagnostic est terminé il y a dix semaines : dans la période par défaut du
+#: tableau de bord (le trimestre), les courbes du plan ont de quoi se dessiner.
+DIAGNOSTIC_IL_Y_A_JOURS = 70
+
+#: Il y a combien de jours chacune des premières actions a été terminée : un
+#: plan qui avance régulièrement, pas six actions closes le même jour.
+ACTIONS_TERMINEES_IL_Y_A = (62, 51, 40, 28, 17, 6)
+
+#: Documents COMPOSÉS à partir des données du client, sans appel d'IA. La
+#: charte, seule rédigée par l'IA, n'est pas générée ici : le jeu ne doit
+#: dépendre ni de l'API ni du quota.
+DEMO_DOCUMENTS = (
+    ("security_policy", True),  # validée
+    ("incident_procedure", False),  # brouillon
+    ("committee_report", False),  # brouillon, composé APRÈS le plan
+)
+
+
+def demo_answer(code: str) -> str:
+    """La réponse de démonstration à une mesure, toujours la même.
+
+    Quatre mesures sur dix « oui », deux « partiellement », quatre « non » :
+    un score autour de 50 sur 100 — un niveau qui progresse mais reste
+    insuffisant, avec un plan d'action d'une vingtaine d'actions.
+    """
+    rang = int(code) if code.isdigit() else sum(map(ord, code))
+    return ("yes", "partial", "no", "yes", "no")[rang % 5]
+
+
 class Command(BaseCommand):
     help = "Crée ou réinitialise le tenant de démonstration client (Phase 8A)."
 
@@ -515,6 +554,8 @@ class Command(BaseCommand):
             self._ensure_synthesis(tenant)
             self._ensure_watched_accounts(tenant, admin)
             self._ensure_referentiels(tenant, admin)
+            self._ensure_diagnostic(tenant, admin)
+            self._ensure_documents(tenant, admin)
             self._mute_emails(tenant)
 
         total = BreachFinding.all_objects.filter(tenant=tenant).count()
@@ -651,6 +692,113 @@ class Command(BaseCommand):
                 created_by=admin,
             )
 
+    def _ensure_diagnostic(self, tenant: Tenant, admin) -> None:
+        """Un diagnostic ANSSI terminé, et le plan d'action qui en sort.
+
+        Tout passe par les services : réponses, clôture (qui fige le score),
+        génération du plan — le même enchaînement que l'écran. Seules les DATES
+        sont reculées ensuite, parce qu'une démonstration jouée le jour même
+        n'aurait aucune évolution à montrer.
+
+        Un SEUL diagnostic, et jamais rejoué. Refaire le diagnostic dans le
+        produit ajoute un second jeu d'actions au plan consolidé, sans retirer
+        le premier (constaté le 15/09/2026 : 42 actions, puis 84). Un second
+        diagnostic de démonstration montrerait ce doublon à l'écran.
+        """
+        from apps.actions import services as actions_services
+        from apps.actions.models import ActionItem
+        from apps.assessments import services as assessments_services
+        from apps.assessments.models import Assessment
+
+        anssi = assessments_services.get_referential(slug=ANSSI_SLUG)
+        if anssi is None:
+            self.stdout.write(
+                self.style.WARNING(
+                    "Référentiel ANSSI absent : aucun diagnostic de démonstration. Lancer "
+                    "load_anssi_referential, puis rejouer la commande."
+                )
+            )
+            return
+        if assessments_services.get_latest_completed_assessment(tenant, referential=anssi):
+            return
+        if not assessments_services.is_granted(tenant, anssi):
+            assessments_services.assign_referential(
+                tenant=tenant, referential=anssi, granted_by=admin, note="Démonstration."
+            )
+
+        # Reprend le diagnostic ouvert s'il y en a un : c'était l'état relevé
+        # en production, un diagnostic commencé et jamais rempli.
+        evaluation = assessments_services.start_or_resume_assessment(
+            tenant=tenant, user=admin, referential=anssi
+        )
+        for mesure in assessments_services.get_assessment_measures(evaluation):
+            assessments_services.submit_answer(
+                assessment=evaluation, measure=mesure, value=demo_answer(mesure.code)
+            )
+        assessments_services.complete_assessment(evaluation)
+        actions_services.generate_action_plan(evaluation)
+
+        termine = timezone.now() - timedelta(days=DIAGNOSTIC_IL_Y_A_JOURS)
+        Assessment.all_objects.filter(pk=evaluation.pk).update(
+            started_at=termine - timedelta(days=2), completed_at=termine
+        )
+        ActionItem.all_objects.filter(tenant=tenant, assessment=evaluation).update(
+            created_at=termine
+        )
+        self._faire_avancer_le_plan(tenant, evaluation)
+
+    def _faire_avancer_le_plan(self, tenant: Tenant, evaluation) -> None:
+        """Un plan en mouvement : du fait, de l'en cours, de l'en retard.
+
+        Les actions rapides à fort impact sont faites d'abord — l'ordre que le
+        plan lui-même recommande. Statuts, échéances et assignations passent par
+        les services ; seules les dates de fin sont reculées.
+        """
+        from apps.actions import services as actions_services
+        from apps.actions.models import ActionItem
+
+        membres = {role: User.objects.get(email=email) for email, _p, _n, role in DEMO_USERS}
+        contributeur = membres[Membership.Role.CONTRIBUTOR]
+        administratrice = membres[Membership.Role.ADMIN]
+        aujourd_hui = timezone.localdate()
+        maintenant = timezone.now()
+
+        actions = actions_services.list_action_items(tenant, assessment=evaluation)
+        for rang, action in enumerate(actions):
+            if rang % 3 == 0:
+                actions_services.assign_action_item(action, contributeur)
+            elif rang % 3 == 1:
+                actions_services.assign_action_item(action, administratrice)
+
+            if rang < len(ACTIONS_TERMINEES_IL_Y_A):
+                actions_services.update_status(action, ActionItem.Status.DONE)
+                ActionItem.all_objects.filter(pk=action.pk).update(
+                    completed_at=maintenant - timedelta(days=ACTIONS_TERMINEES_IL_Y_A[rang])
+                )
+            elif rang < 10:
+                actions_services.update_status(action, ActionItem.Status.IN_PROGRESS)
+                # Deux en retard, deux dans les temps.
+                ecart = -5 if rang < 8 else 20
+                actions_services.set_due_date(action, aujourd_hui + timedelta(days=ecart))
+            elif rang < 14:
+                ecart = -10 if rang < 13 else 30
+                actions_services.set_due_date(action, aujourd_hui + timedelta(days=ecart))
+
+    def _ensure_documents(self, tenant: Tenant, admin) -> None:
+        """Trois documents composés, dont un validé : l'historique daté et
+        l'éditeur ont de quoi se montrer. Jamais la charte, rédigée par l'IA."""
+        from apps.ai_assistant import services as ai_services
+        from apps.ai_assistant.models import GeneratedDocument
+
+        for type_document, valider in DEMO_DOCUMENTS:
+            if GeneratedDocument.all_objects.filter(tenant=tenant, type=type_document).exists():
+                continue
+            document = ai_services.compose_document(
+                tenant=tenant, user=admin, document_type=type_document
+            )
+            if valider:
+                ai_services.validate_document(document)
+
     def _mute_emails(self, tenant: Tenant) -> None:
         """Le tenant de démonstration n'envoie aucun email. Jamais.
 
@@ -735,10 +883,24 @@ class Command(BaseCommand):
         )
 
     def _reset_demo_data(self, tenant: Tenant) -> None:
-        """Efface uniquement les données CTI/alertes du tenant de démo —
-        jamais le tenant, ses utilisateurs ou ses actifs (rejouer la commande
-        doit rester rapide et ne pas invalider une session ouverte pendant
-        une démo)."""
+        """Efface les données que la démonstration modifie — jamais le tenant,
+        ses utilisateurs ou ses actifs (rejouer la commande doit rester rapide
+        et ne pas invalider une session ouverte pendant une démo).
+
+        Le diagnostic, le plan et les documents composés en font partie : une
+        démonstration fait avancer une action ou valide un document, et la
+        suivante doit repartir du même état. La charte rédigée par l'IA est
+        conservée : la régénérer consommerait le quota.
+        """
+        from apps.actions.models import ActionItem
+        from apps.ai_assistant.models import GeneratedDocument
+        from apps.assessments.models import Assessment
+
+        ActionItem.all_objects.filter(tenant=tenant).delete()
+        Assessment.all_objects.filter(tenant=tenant).delete()
+        GeneratedDocument.all_objects.filter(
+            tenant=tenant, source=GeneratedDocument.Source.COMPOSED
+        ).delete()
         SecretRevealAudit.all_objects.filter(tenant=tenant).delete()
         BreachFinding.all_objects.filter(tenant=tenant).delete()
         BreachIntelligenceUsage.all_objects.filter(tenant=tenant).delete()
