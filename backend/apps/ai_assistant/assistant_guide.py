@@ -160,17 +160,12 @@ def related_links(texte: str) -> list[dict]:
     """Les écrans dont parle une réponse, dans l'ordre où elle en parle."""
     if not texte:
         return []
+    # Une entrée par route dans LIENS et une seule correspondance par motif :
+    # un doublon est impossible par construction, sans garde à maintenir.
     trouves = []
     for route, libelle, motif in LIENS:
         correspondance = re.search(motif, texte, flags=re.IGNORECASE)
         if correspondance:
             trouves.append((correspondance.start(), route, libelle))
     trouves.sort()
-
-    liens, vus = [], set()
-    for _position, route, libelle in trouves:
-        if route in vus:
-            continue
-        vus.add(route)
-        liens.append({"to": route, "label": libelle})
-    return liens[:LIMITE_LIENS]
+    return [{"to": route, "label": libelle} for _position, route, libelle in trouves][:LIMITE_LIENS]
