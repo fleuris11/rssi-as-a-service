@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PlatformAdminPage from './PlatformAdminPage'
 
@@ -33,6 +34,13 @@ vi.mock('../../api/endpoints', () => ({
     exportUrl: vi.fn(() => '/export.csv'),
     exportCsv: vi.fn(),
   },
+  // Lot C, point 20 : la console porte sa propre cloche.
+  notificationsApi: {
+    unreadCount: vi.fn(() => Promise.resolve({ data: { unread: 0 } })),
+    inbox: vi.fn(() => Promise.resolve({ data: { results: [] } })),
+    markRead: vi.fn(),
+    markAllRead: vi.fn(),
+  },
 }))
 
 const showToast = vi.fn()
@@ -41,6 +49,16 @@ vi.mock('../../components/ui/Toast', () => ({
 }))
 
 const { platformApi } = await import('../../api/endpoints')
+
+// Lot C : la console lit `?onglet=` et porte la cloche, qui navigue. Elle se
+// rend donc dans un routeur, comme dans l'application.
+function rendre(entree = '/admin/plateforme') {
+  return render(
+    <MemoryRouter initialEntries={[entree]}>
+      <PlatformAdminPage />
+    </MemoryRouter>
+  )
+}
 
 const CAPACITY = {
   resources: [
@@ -143,7 +161,7 @@ describe('PlatformAdminPage', () => {
   })
 
   it('affiche l’occupation du pool partagé et ce qu’il en reste', async () => {
-    render(<PlatformAdminPage />)
+    rendre()
 
     expect(
       await screen.findByText('Emplacements de surveillance continue')
@@ -153,7 +171,7 @@ describe('PlatformAdminPage', () => {
   })
 
   it('rappelle que le plafond est celui de la plateforme, pas d’un client', async () => {
-    render(<PlatformAdminPage />)
+    rendre()
 
     expect(
       await screen.findByText(/s’appliquent à la plateforme entière, pas à/)
@@ -161,7 +179,7 @@ describe('PlatformAdminPage', () => {
   })
 
   it('annonce à l’avance l’offre qui ne tiendrait PAS dans le pool restant', async () => {
-    render(<PlatformAdminPage />)
+    rendre()
     await screen.findByText('Projection par offre')
 
     // Veille (1 emplacement) tiendrait, Pilotage (3) non : c'est l'information
@@ -177,7 +195,7 @@ describe('PlatformAdminPage', () => {
     // d'ouvrir cette page (revue V2-7).
     platformApi.listReferentials.mockRejectedValue(new Error('503'))
 
-    render(<PlatformAdminPage />)
+    rendre()
 
     expect(
       await screen.findByText('Emplacements de surveillance continue')
@@ -187,7 +205,7 @@ describe('PlatformAdminPage', () => {
 
   it('ne charge le catalogue de référentiels qu’à l’ouverture de la veille', async () => {
     const user = userEvent.setup()
-    render(<PlatformAdminPage />)
+    rendre()
     await screen.findByText('Emplacements de surveillance continue')
 
     // Rien tant qu'on n'a pas ouvert l'onglet.
@@ -200,7 +218,7 @@ describe('PlatformAdminPage', () => {
 
   it('ouvre la fiche d’un client depuis la liste', async () => {
     const user = userEvent.setup()
-    render(<PlatformAdminPage />)
+    rendre()
 
     await user.click(await screen.findByRole('tab', { name: /Clients/ }))
     await user.click(await screen.findByText('Menuiserie Lambert'))
@@ -213,7 +231,7 @@ describe('PlatformAdminPage', () => {
   it('garde le titre et les onglets visibles pendant le chargement', async () => {
     // Une page entièrement remplacée par des squelettes ne dit même pas où
     // l'on se trouve — et la sonde de santé prend plusieurs secondes.
-    render(<PlatformAdminPage />)
+    rendre()
 
     expect(screen.getByText('Administration de la plateforme')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /Ressources/ })).toBeInTheDocument()
@@ -225,12 +243,34 @@ describe('PlatformAdminPage', () => {
 
   it('reste utilisable quand la sonde de santé échoue', async () => {
     platformApi.health.mockRejectedValue(new Error('celery injoignable'))
-    render(<PlatformAdminPage />)
+    rendre()
 
     // Les ressources rares s'affichent quand même : la santé est un onglet
     // parmi d'autres, pas un préalable au reste de la page.
     expect(
       await screen.findByText('Emplacements de surveillance continue')
     ).toBeInTheDocument()
+  })
+
+  it('ouvre l’onglet désigné par une notification', async () => {
+    // Lot C, point 20 : une notification d'exploitant mène à l'onglet
+    // concerné, pas à l'accueil de la console.
+    rendre('/admin/plateforme?onglet=watch')
+
+    expect(await screen.findByRole('tab', { name: /Veille/ })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    await waitFor(() => expect(platformApi.listReferentials).toHaveBeenCalled())
+  })
+
+  it('retombe sur les ressources quand l’onglet demandé n’existe pas', async () => {
+    rendre('/admin/plateforme?onglet=inexistant')
+
+    expect(await screen.findByRole('tab', { name: /Ressources/ })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    await screen.findByText('Emplacements de surveillance continue')
   })
 })

@@ -2,6 +2,7 @@ import { Menu } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { pageTitleFor } from '../config/navigation'
 import { EXECUTIVE, TECHNICAL, useDisplayProfile } from '../context/useDisplayProfile'
+import NotificationBell from './NotificationBell'
 
 const PROFILS = [
   { value: EXECUTIVE, label: 'Dirigeant' },
@@ -67,7 +68,9 @@ export default function Topbar({ onOpenMenu }) {
           persistent location label, not the document heading. Two <h1>s
           with the same text is both bad a11y and ambiguous for tests. */}
       <p className="text-sm font-semibold text-ink-800">{title}</p>
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-2">
+        {/* Lot C, point 20 : la cloche, sur chaque écran de l'application. */}
+        <NotificationBell />
         <ProfileSwitch />
       </div>
     </header>

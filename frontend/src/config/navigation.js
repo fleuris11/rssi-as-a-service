@@ -56,6 +56,7 @@ export const NAV_ITEMS = [
 // still need a topbar title.
 const SECONDARY_TITLES = {
   '/resultats': 'Résultats',
+  '/notifications': 'Notifications',
   '/preferences': 'Préférences',
   '/securite': 'Sécurité',
   '/admin/breachsense': 'Administration — Renseignement sur la menace',

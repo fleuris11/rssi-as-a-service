@@ -14,8 +14,10 @@ import {
   Users,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { platformApi } from '../../api/endpoints'
 import GlobalSearch from '../../components/admin/GlobalSearch'
+import NotificationBell from '../../components/NotificationBell'
 import Badge from '../../components/ui/Badge'
 import Card, { CardHeader } from '../../components/ui/Card'
 import { SkeletonCard } from '../../components/ui/Skeleton'
@@ -308,7 +310,14 @@ function AuditPanel({ audit }) {
 
 export default function PlatformAdminPage() {
   const { showToast } = useToast()
-  const [activeTab, setActiveTab] = useState('capacity')
+  // Lot C, point 20 : une notification d'exploitant mène à l'onglet concerné
+  // (« ?onglet=requests »). Un identifiant inconnu retombe sur l'accueil de
+  // la console plutôt que sur un écran vide.
+  const [searchParams] = useSearchParams()
+  const ongletDemande = searchParams.get('onglet')
+  const [activeTab, setActiveTab] = useState(
+    TABS.some((tab) => tab.id === ongletDemande) ? ongletDemande : 'capacity'
+  )
   const [loading, setLoading] = useState(true)
   const [capacity, setCapacity] = useState(null)
   const [tenants, setTenants] = useState([])
@@ -407,8 +416,11 @@ export default function PlatformAdminPage() {
             compromissions des clients.
           </p>
         </div>
-        <div className="w-full max-w-md">
-          <div className="rounded-md bg-brand-900 p-1">
+        <div className="flex w-full max-w-md items-center gap-2">
+          {/* La console est hors du gabarit client : sans sa propre cloche,
+              l'exploitant ne verrait jamais une demande arriver. */}
+          <NotificationBell />
+          <div className="flex-1 rounded-md bg-brand-900 p-1">
             <GlobalSearch
               onSelectTenant={(id) => {
                 setFocusedTenant(id)

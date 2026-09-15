@@ -17,6 +17,7 @@ import DiagnosticPage from './pages/DiagnosticPage'
 import DocumentsPage from './pages/DocumentsPage'
 import ExposurePage from './pages/ExposurePage'
 import NotificationPreferencesPage from './pages/NotificationPreferencesPage'
+import NotificationsPage from './pages/NotificationsPage'
 import ResultsPage from './pages/ResultsPage'
 import SurveillancePage from './pages/SurveillancePage'
 import TwoFactorSettingsPage from './pages/TwoFactorSettingsPage'
@@ -48,6 +49,7 @@ export default function AppRoutes() {
           <Route path="/comptes-surveilles" element={<WatchedAccountsPage />} />
           <Route path="/veille" element={<WatchPage />} />
           <Route path="/mes-demandes" element={<RequestsPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/assistant" element={<AssistantPage />} />
           <Route path="/preferences" element={<NotificationPreferencesPage />} />

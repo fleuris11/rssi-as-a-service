@@ -399,6 +399,12 @@ export const reportingApi = {
 }
 
 export const notificationsApi = {
+  // Lot C, point 20 : le centre de notifications. Suit la PERSONNE, pas
+  // l'entreprise sélectionnée.
+  inbox: (params = {}) => apiClient.get('/api/v1/notifications/inbox/', { params }),
+  unreadCount: () => apiClient.get('/api/v1/notifications/inbox/count/'),
+  markRead: (ids) => apiClient.post('/api/v1/notifications/inbox/read/', { ids }),
+  markAllRead: () => apiClient.post('/api/v1/notifications/inbox/read/', { all: true }),
   getPreferences: () => apiClient.get('/api/v1/notifications/preferences/'),
   updatePreferences: (payload) =>
     apiClient.patch('/api/v1/notifications/preferences/', payload),
