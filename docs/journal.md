@@ -6191,3 +6191,111 @@ Vérifié en production :
   sans jeton après : elles existent et elles sont protégées.
 - Parcours e2e du client qui importe son référentiel (couvert en Vitest et
   pytest, pas encore en navigateur).
+
+## 15 septembre 2026 (suite) — Lot C : une restitution qui s'adapte à qui la lit
+
+### Ce qui a été livré
+
+- **C1 — Profils Dirigeant / Technique.** L'interrupteur existait mais ne
+  changeait presque rien. Il change désormais la restitution, jamais le
+  contenu (ADR-031 puis **ADR-036**) : côté dirigeant, vocabulaire courant,
+  une alerte commence par ce qu'elle implique et ce qu'il faut faire, les
+  détails sont repliés, un score est lu (« 92 sur 100 — votre niveau est
+  solide ») ; côté technique, champs bruts dépliés, identifiants, sources et
+  dates précises visibles. Les écrans techniques (Surveillance,
+  Compromissions) restent accessibles au dirigeant, regroupés sous « Détails
+  techniques ». Le serveur ignore le profil ; replié veut dire `hidden`,
+  jamais retiré du DOM. Appliqué à Surveillance, Compromissions, Exposition,
+  Résultats, Plan d'action, Veille et comptes surveillés.
+- **C2 — Tableau de bord RSSI.** Sélecteur de période, comparaison à la
+  période précédente par défaut, quatre courbes qui répondent chacune à une
+  question (score d'exposition, fuites ouvertes / traitées, maturité,
+  avancement du plan), valeur + tendance + lien pour chaque indicateur,
+  export PDF de comité et export tableur sur la période. Agrégats en base.
+- **C3 — Documents** rangés par usage (cadrer, sensibiliser, répondre à un
+  client ou un assureur, comité), avec finalité et public, aperçu avant
+  génération (sans appel IA), historique daté et versionné, référent
+  pré-rempli depuis les administrateurs du client.
+- **C4 — Assistant** : questions de départ tirées de la situation réelle du
+  client, renvois vers l'écran concerné sous les réponses (table de routes
+  fermée), mention unique et discrète de la pseudonymisation.
+- **20 — Centre de notifications** générique (**ADR-037**) : cloche, liste,
+  lu / non lu, recherche. Branché sur les demandes de fonctionnalité ou de
+  référentiel, les comptes désignés, les nouvelles fuites sur ces comptes, le
+  rapport de comité mensuel (tâche Beat, le 1er à 7 h) et la veille publiée.
+  Côté exploitant aussi, avec `?onglet=` pour mener au bon onglet.
+- **21 — Premiers pas** d'un nouveau client : déclarer un actif, faire le
+  diagnostic, comprendre son premier résultat. Les deux premières étapes se
+  lisent dans les données ; seule la troisième (et le masquage) est mémorisée
+  par personne. Le message « le premier scan remonte tout l'historique, c'est
+  normal » est donné au moment de déclarer l'actif.
+- **22 — Recherche et filtres** sur chaque écran qui peut dépasser vingt
+  lignes : Compromissions (recherche, gravité, actif — côté serveur, la liste
+  étant paginée), Veille client (recherche, nature, pages — elle était
+  tronquée à vingt publications sans page suivante), Plan d'action (recherche,
+  « en retard seulement »), Surveillance (recherche, type d'actif), Mes
+  demandes, Notifications, et en console : demandes, prospects, file de
+  veille, journal. Recherche insensible à la casse et aux accents.
+
+### Décisions
+
+- **La recherche des compromissions ne porte jamais sur l'identifiant en
+  clair.** ADR-027 sert l'adresse en clair ou masquée selon le rôle ; une
+  recherche sur `identifier_plain` répondrait « trouvé / pas trouvé » à qui
+  n'a droit qu'à la forme masquée, et reconstituerait l'adresse lettre par
+  lettre. Elle porte sur l'actif, le type et la source. Un test l'épingle.
+- **Courbe du score d'exposition : un calcul par point** plutôt qu'un calcul
+  en mémoire sur tout l'historique. Mesuré sur le même jeu : 0,33 s contre
+  1,21 s. Un premier banc d'essai était biaisé (cache chaud d'un côté) ; refait
+  à conditions égales avant de trancher. Le budget de requêtes du rapport,
+  passé de 17 à 40 avec les courbes, est épinglé à 56 dans
+  `test_performance.py`.
+- **Écrans laissés sans recherche, délibérément** : Documents (7 modèles),
+  Exposition (synthèse par actif ; la liste exhaustive est Compromissions),
+  Offres, Administrateurs et Corbeille (quelques lignes par construction). La
+  file de veille en console est plafonnée à 200 par le service et entièrement
+  chargée : sa recherche est locale.
+
+### Défauts trouvés en chemin
+
+1. **`CardHeader` ignorait son sous-titre** : six écrans le passaient, aucun
+   ne l'affichait. Corrigé à part (`c725af8`).
+2. **Le journal de la console tombait tant qu'il n'était pas chargé** :
+   la recherche ajoutée lisait `audit.entries` avant la garde. Relevé en
+   écrivant le test, corrigé avant commit.
+3. **`useDisplayProfile` levait une exception hors du fournisseur
+   d'authentification** (écrans publics) : remplacé par `useOptionalAuth`.
+4. Un test attendait que le détail d'une fuite soit **retiré** du DOM en profil
+   dirigeant, contre ADR-031 : il vérifie désormais qu'il est masqué.
+
+### Neutralisations
+
+Chaque garde a été neutralisée et le test correspondant lancé. Trois
+neutralisations sont d'abord **restées vertes**, et c'étaient des tests trop
+faibles, renforcés avant commit : l'état initial du plan dans le tableau de bord
+(C2), le chargement d'une conversation (C4), et un test de veille qui passait
+sans client (aucun destinataire, donc rien à vérifier) et dépendait de l'ordre
+des fixtures. Point 21 : **7 sur 7 rougissent**. Point 22 : **21 sur 22**
+rougissent au premier passage ; la survivante (la vue des compromissions
+n'envoyait plus la recherche) passait parce que le test d'API combinait
+recherche et gravité, et que la seule fuite critique était aussi celle
+recherchée. Paramètres testés un par un : elle rougit.
+
+**Des verdicts C4 étaient faux.** Le module de tests de l'assistant contenait
+une erreur de syntaxe (`for lien inliens`) depuis son commit : il n'était
+jamais collecté, et le harnais comptait l'erreur de collecte comme un test
+rouge. Relevé par `ruff check` sur toutes les apps, pas par les tests.
+Corrigé, et le harnais n'annonce plus « rougit » que sur un échec réel.
+Rejouées : 4 neutralisations rougissent ; la cinquième (retirer la garde
+anti-doublon des renvois) reste verte à juste titre — un doublon était
+impossible par construction. Garde morte retirée. Une collecte complète
+(1 724 tests, aucune erreur) vérifie qu'aucun autre module n'est dans ce cas.
+
+### Difficultés
+
+- Sous charge, la suite front complète fait échouer `ExposurePage` par délai ;
+  le fichier passe seul, deux fois. Instabilité de charge, pas de régression.
+- Un test du filtre par nature passait pour une mauvaise raison : il filtrait
+  sur la première valeur du choix, qui est aussi la valeur par défaut.
+- Les tests PDF (WeasyPrint) échouent sous Windows, faute de bibliothèques ;
+  ils passent en CI.
