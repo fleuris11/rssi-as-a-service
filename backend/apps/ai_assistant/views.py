@@ -8,7 +8,7 @@ from apps.billing import api_guards, features
 from apps.tenants.permissions import IsTenantAdmin, IsTenantMember, IsTenantMemberReadOnlyForReader
 from apps.tenants.throttling import TenantAIRateThrottle
 
-from . import services
+from . import assistant_guide, services
 from .permissions import IsAIEnabled
 from .serializers import (
     AIJobSerializer,
@@ -64,6 +64,21 @@ class AssistantPreviewView(APIView):
         return Response(services.preview_assistant_context(request.tenant))
 
 
+class AssistantSuggestionsView(APIView):
+    """GET /api/v1/ai/assistant/suggestions/ — les questions de départ.
+
+    Lot C, point 17 : tirées de la situation réelle du client, par des
+    règles. Aucun appel d'IA, aucun quota consommé. Gardée par
+    ``IsAIEnabled`` comme le reste de l'assistant : proposer des questions à
+    un client qui ne peut pas les poser serait une promesse vide.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember, IsAIEnabled]
+
+    def get(self, request):
+        return Response({"results": assistant_guide.suggestions(request.tenant)})
+
+
 def _get_document_or_404(request, document_id):
     document = services.get_document(tenant=request.tenant, document_id=document_id)
     if document is None:
@@ -85,21 +100,6 @@ class DocumentCatalogView(APIView):
         return Response(services.document_catalog(request.tenant))
 
 
-class GeneratedDocumentListCreateView(generics.ListAPIView):
-    # ``IsAIEnabled`` retire en V2-5 : la bibliotheque n'est plus une
-    # fonctionnalite d'IA. Couper l'IA (US-4.3) doit desactiver ce qui appelle
-    # l'IA, pas reprendre au client les documents qu'il a produits ni ceux
-    # qu'aucune IA ne redige. La garde est descendue la ou elle a un sens :
-    # dans ``create_document_job``, pour la seule charte.
-    permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader]
-    throttle_classes = [TenantAIRateThrottle]
-    serializer_class = GeneratedDocumentSerializer
-
-    def get_queryset(self):
-        return services.list_documents(self.request.tenant)
-
-    def post(self, request, *args, **kwargs):
-        serializer = GeneratedDocumentCreateSerializer(data=request.data)
 class DocumentPreviewView(APIView):
     """GET /api/v1/ai/documents/preview/<type>/ — le document AVANT sa génération.
 
@@ -124,6 +124,21 @@ class DocumentPreviewView(APIView):
         return Response(apercu)
 
 
+class GeneratedDocumentListCreateView(generics.ListAPIView):
+    # ``IsAIEnabled`` retire en V2-5 : la bibliotheque n'est plus une
+    # fonctionnalite d'IA. Couper l'IA (US-4.3) doit desactiver ce qui appelle
+    # l'IA, pas reprendre au client les documents qu'il a produits ni ceux
+    # qu'aucune IA ne redige. La garde est descendue la ou elle a un sens :
+    # dans ``create_document_job``, pour la seule charte.
+    permission_classes = [permissions.IsAuthenticated, IsTenantMemberReadOnlyForReader]
+    throttle_classes = [TenantAIRateThrottle]
+    serializer_class = GeneratedDocumentSerializer
+
+    def get_queryset(self):
+        return services.list_documents(self.request.tenant)
+
+    def post(self, request, *args, **kwargs):
+        serializer = GeneratedDocumentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         document_type = serializer.validated_data["type"]
 

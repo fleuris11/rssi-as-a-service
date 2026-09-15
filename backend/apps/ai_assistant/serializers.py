@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from . import assistant_guide
 from .models import AIJob, Conversation, GeneratedDocument, Message
 
 
@@ -58,10 +59,20 @@ class ConversationSerializer(serializers.ModelSerializer):
 
 
 class MessageSerializer(serializers.ModelSerializer):
+    # Lot C, point 18 : les écrans vers lesquels une réponse renvoie, déduits
+    # du texte par une table fermée de routes (`assistant_guide.LIENS`). Jamais
+    # sur les messages de l'utilisateur : ce n'est pas lui qu'on oriente.
+    links = serializers.SerializerMethodField()
+
     class Meta:
         model = Message
-        fields = ["id", "role", "content", "created_at"]
+        fields = ["id", "role", "content", "created_at", "links"]
         read_only_fields = fields
+
+    def get_links(self, obj) -> list[dict]:
+        if obj.role != Message.Role.ASSISTANT:
+            return []
+        return assistant_guide.related_links(obj.content)
 
 
 class MessageCreateSerializer(serializers.Serializer):
