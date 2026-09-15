@@ -175,6 +175,36 @@ class TestDashboardAndAlerts:
         assert row["latest_checks"]["http_uptime"]["status"] == "ok"
         assert len(row["open_alerts"]) == 1
 
+    def test_une_alerte_dit_ce_qu_elle_implique_et_ce_qu_il_faut_faire(
+        self, api_client, tenant, tenant_owner
+    ):
+        """Lot C : l'écran ne montrait que le type d'alerte. Le texte existait
+        pour l'email ; l'écran reçoit désormais le MÊME, mot pour mot — deux
+        rédactions d'un même fait finiraient par diverger."""
+        from apps.monitoring import plain_language
+
+        headers = _auth(api_client, tenant_owner, tenant)
+        asset = services.create_asset(
+            tenant=tenant,
+            user=tenant_owner,
+            type=Asset.Type.EMAIL_DOMAIN,
+            value="example.com",
+            ownership_confirmed=True,
+        )
+        Alert.all_objects.create(
+            tenant=tenant,
+            asset=asset,
+            alert_type=Alert.AlertType.EMAIL_MISCONFIGURED,
+            severity=Alert.Severity.WARNING,
+        )
+
+        response = api_client.get(reverse("monitoring-dashboard"), **headers)
+
+        alerte = response.data[0]["open_alerts"][0]
+        attendu = plain_language.explain(Alert.AlertType.EMAIL_MISCONFIGURED)
+        assert alerte["meaning"] == attendu["meaning"]
+        assert alerte["recommended_action"] == attendu["action"]
+
     def test_open_alerts_endpoint(self, api_client, tenant, tenant_owner):
         headers = _auth(api_client, tenant_owner, tenant)
         asset = services.create_asset(

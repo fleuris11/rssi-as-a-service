@@ -3,7 +3,7 @@ from urllib.parse import urlparse
 
 from rest_framework import serializers
 
-from . import services
+from . import plain_language, services
 from .models import Alert, Asset, AssetOwnershipProof, CheckResult
 
 DOMAIN_RE = re.compile(
@@ -112,6 +112,12 @@ class CheckResultSerializer(serializers.ModelSerializer):
 class AlertSerializer(serializers.ModelSerializer):
     asset_id = serializers.IntegerField(source="asset.id", read_only=True)
     asset_value = serializers.CharField(source="asset.value", read_only=True)
+    # Lot C : ce que l'alerte veut dire et ce qu'il faut faire, depuis la MÊME
+    # source que l'email d'alerte. L'écran n'affichait que le type (« En-têtes
+    # de sécurité manquants ») : le dirigeant lisait un constat sans impact ni
+    # action, alors que le texte existait déjà pour son courriel.
+    meaning = serializers.SerializerMethodField()
+    recommended_action = serializers.SerializerMethodField()
 
     class Meta:
         model = Alert
@@ -125,8 +131,16 @@ class AlertSerializer(serializers.ModelSerializer):
             "details",
             "opened_at",
             "resolved_at",
+            "meaning",
+            "recommended_action",
         ]
         read_only_fields = fields
+
+    def get_meaning(self, obj):
+        return plain_language.explain(obj.alert_type)["meaning"]
+
+    def get_recommended_action(self, obj):
+        return plain_language.explain(obj.alert_type)["action"]
 
 
 class AssetDashboardSerializer(serializers.Serializer):
