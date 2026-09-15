@@ -6149,9 +6149,45 @@ deux couches fait rougir le test. La redondance est conservée délibérément
 - Deux tests passaient ou échouaient selon l'ordre des fixtures (attribution
   automatique du conftest) : précondition désormais POSÉE et vérifiée dans le
   test.
+- **La CI e2e a refusé deux fois, à raison.** `verifier.sh` était vert en
+  local, mais il ne lance pas Playwright.
+  1. Contraste : la mention de licence (`text-ink-400`, 2,64:1) existait
+     déjà, mais n'était jamais visible au moment de l'audit. L'accueil la
+     montre désormais avant tout questionnaire : l'audit l'a vue.
+  2. Course dans le parcours : l'écran n'ouvre plus l'évaluation tout seul,
+     et les réponses étaient comptées avant le retour de la requête de
+     démarrage. Au passage, le lien « Diagnostic » non exact attrapait aussi
+     « Démarrer le diagnostic » du tableau de bord. C'était la cause du
+     premier essai déjà instable sur `3e14ef0`, en production.
+- Sur la CI verte (`c33ff82`), le parcours du diagnostic passe du premier
+  coup, et `f-platform-admin` aussi : ses deux délais dépassés à la connexion
+  ne se reproduisent pas. Il reste un seul test instable au premier essai,
+  `zz-seuil-a11y`, qui l'était déjà sur `3e14ef0`.
 
 ### Reste à faire
 
-- Vérifier en production le compteur « Clients » après déploiement.
+- `zz-seuil-a11y` échoue au premier essai à chaque exécution (délai dépassé
+  à l'inscription) : à instruire, c'est antérieur à ce lot.
+- Le jeu de démonstration enrichi n'a pas été rejoué en production : c'est
+  à décider avant la prochaine démonstration.
+
+### Mise en production
+
+Déployé le 15/09/2026 sur `c33ff82`, après une CI verte. Point de repli :
+tag `avant-fin-lot-b` sur `3e14ef0`, et
+`~/sauvegarde-avant-fin-lot-b-20260914-2229.sql.gz`, dont on a vérifié
+qu'elle était complète (64 tables et le marqueur de fin).
+
+Vérifié en production :
+
+- **Le compteur « Clients » dit vrai** : 7, soit exactement le comptage
+  direct en base des attributions actives, pour 7 clients existants.
+- Le chargeur annonce « Les 10 mesures essentielles » disponible : 10
+  mesures, propriétaire plateforme, description accentuée.
+- Les deux gardes de propriété refusent, en production, de laisser un client
+  réécrire la composition commune ou remplacer l'ANSSI par un import. Testé
+  dans des transactions annulées : rien n'a été écrit, les deux sont intacts.
+- Les routes d'édition de la console passent de 404 avant déploiement à 401
+  sans jeton après : elles existent et elles sont protégées.
 - Parcours e2e du client qui importe son référentiel (couvert en Vitest et
   pytest, pas encore en navigateur).
