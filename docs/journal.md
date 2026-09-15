@@ -6299,3 +6299,48 @@ impossible par construction. Garde morte retirée. Une collecte complète
   sur la première valeur du choix, qui est aussi la valeur par défaut.
 - Les tests PDF (WeasyPrint) échouent sous Windows, faute de bibliothèques ;
   ils passent en CI.
+- Deux commits locaux mélangés : des hunks d'`endpoints.js` stagés à la main
+  sont partis avec le commit suivant, `git commit` prenant tout l'index.
+  Relevé en relisant `git show --stat` avant de pousser ; les trois commits
+  concernés, non poussés, ont été refaits.
+- L'audit axe élargi à douze écrans dépassait le délai de 60 s du test (aucune
+  violation en cause) : délai porté à 180 s.
+- Le script d'attente de la CI passait un SHA court à l'API GitHub, qui ne
+  filtre que sur le SHA complet : cinquante minutes d'attente pour « aucun
+  run ». Le SHA est désormais résolu avant l'appel.
+
+### Vérification en navigateur
+
+Neuf écrans (tableau de bord, surveillance, compromissions, plan d'action,
+documents, veille, mes demandes, notifications, assistant), dans les deux
+profils, en bureau (1440 px) et en mobile (390 px), sur un client neuf de la
+pile locale : **36 rendus, aucun débordement horizontal**, aucun groupe de plus
+de deux boutons au même libellé. Audit axe-core sans violation critique sur les
+douze écrans authentifiés, dont les six du lot C.
+
+### Mise en production
+
+Déployé le 15/09/2026 sur `a34417b`, après une CI verte (e2e compris). Point
+de repli : tag `avant-lot-c` sur `c33ff82`, et
+`~/sauvegarde-avant-lot-c-20260915-1339.sql.gz`, vérifiée complète (64 tables
+et le marqueur de fin).
+
+Vérifié en production :
+
+- Migrations `accounts.0005`, `notifications.0004` et
+  `threat_intelligence.0010` appliquées ; six conteneurs actifs.
+- Les routes du centre de notifications, des étapes d'accueil, des suggestions
+  de l'assistant et de l'aperçu des documents passent de **404 avant
+  déploiement à 401 sans jeton après** : elles existent et sont protégées.
+- La tâche du rapport de comité est planifiée dans le Beat de production
+  (`0 7 1 * *`).
+- Le code servi contient les écrans du lot C (premiers pas, recherches, centre
+  de notifications, profils), relevé dans les modules chargés à la demande.
+
+### Reste à faire
+
+- Parcours complet en navigateur **avec des données** (fuites, plan, alertes)
+  en profil dirigeant : les captures portent sur un client neuf, donc surtout
+  sur des états vides.
+- Premier envoi réel du rapport de comité le 1er octobre à 7 h : à contrôler.
+- `zz-seuil-a11y` reste instable au premier essai (antérieur au lot).
