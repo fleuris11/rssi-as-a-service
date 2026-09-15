@@ -273,4 +273,24 @@ describe('PlatformAdminPage', () => {
     )
     await screen.findByText('Emplacements de surveillance continue')
   })
+
+  it('cherche dans le journal par auteur, action ou client', async () => {
+    // Lot C, point 22 : le journal grandit à chaque action d'administration.
+    platformApi.audit.mockResolvedValue({
+      data: {
+        entries: [
+          { at: '2026-09-10T08:00:00Z', kind: 'admin', actor: 'ops@exemple.test', action: 'Offre modifiée', tenant: 'Menuiserie Lambert', detail: '' },
+          { at: '2026-09-11T08:00:00Z', kind: 'reveal', actor: 'rssi@exemple.test', action: 'Secret révélé', tenant: 'Cabinet Durand', detail: '' },
+        ],
+      },
+    })
+    const user = userEvent.setup()
+    rendre('/admin/plateforme?onglet=audit')
+
+    await user.type(await screen.findByRole('searchbox', { name: 'Rechercher dans le journal' }), 'revele')
+
+    expect(screen.getByText('Cabinet Durand')).toBeInTheDocument()
+    expect(screen.queryByText('Offre modifiée')).not.toBeInTheDocument()
+    expect(screen.getByText('1 entrée(s) sur 2')).toBeInTheDocument()
+  })
 })

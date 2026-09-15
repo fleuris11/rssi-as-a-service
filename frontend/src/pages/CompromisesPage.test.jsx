@@ -122,7 +122,12 @@ describe('CompromisesPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Les consulter' }))
     // La signature porte desormais la page en second argument ; ce que ce
     // test verifie reste l onglet vise.
-    expect(threatIntelligenceApi.listFindings).toHaveBeenCalledWith('treated', expect.anything())
+    // Lot C, point 22 : l'appel porte aussi les filtres (troisième argument).
+    expect(threatIntelligenceApi.listFindings).toHaveBeenCalledWith(
+      'treated',
+      expect.anything(),
+      expect.anything()
+    )
   })
 
   it('ne dit rien quand l’analyse n’a revu aucune fuite déjà traitée', async () => {

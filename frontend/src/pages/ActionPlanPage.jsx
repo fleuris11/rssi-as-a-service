@@ -6,6 +6,8 @@ import Badge from '../components/ui/Badge'
 import Card from '../components/ui/Card'
 import { TechnicalDetail, TechnicalValue } from '../components/DisplayProfile'
 import EmptyState from '../components/ui/EmptyState'
+import SearchInput from '../components/ui/SearchInput'
+import { filtrerParTexte } from '../utils/recherche'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
 
@@ -184,6 +186,10 @@ export default function ActionPlanPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const domainFilter = searchParams.get('domaine') || ''
   const referentielFilter = searchParams.get('referentiel') || ''
+  // Lot C, point 22 : un plan dépasse vite vingt actions, et plusieurs
+  // référentiels en font vite quatre-vingts.
+  const [recherche, setRecherche] = useState('')
+  const [enRetardSeulement, setEnRetardSeulement] = useState(false)
   const [items, setItems] = useState([])
   const [members, setMembers] = useState([])
   const [projected, setProjected] = useState(null)
@@ -253,12 +259,23 @@ export default function ActionPlanPage() {
 
   const filteredItems = useMemo(
     () =>
-      items.filter(
-        (item) =>
-          (!domainFilter || item.domain_name === domainFilter) &&
-          (!referentielFilter || item.referential_slug === referentielFilter)
+      filtrerParTexte(
+        items.filter(
+          (item) =>
+            (!domainFilter || item.domain_name === domainFilter) &&
+            (!referentielFilter || item.referential_slug === referentielFilter) &&
+            (!enRetardSeulement || item.is_overdue)
+        ),
+        recherche,
+        (item) => [
+          item.measure.statement,
+          item.measure.official_title,
+          item.measure.code,
+          item.domain_name,
+          item.assignee_email,
+        ]
       ),
-    [items, domainFilter, referentielFilter]
+    [items, domainFilter, referentielFilter, enRetardSeulement, recherche]
   )
 
   function changerFiltre(cle, valeur) {
@@ -348,6 +365,31 @@ export default function ActionPlanPage() {
           </label>
         )}
       </div>
+
+      {items.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <SearchInput
+            label="Rechercher une action"
+            value={recherche}
+            onChange={setRecherche}
+            placeholder="Mesure, domaine, responsable…"
+            className="flex-1 sm:max-w-xs"
+          />
+          <label className="flex items-center gap-2 text-sm text-ink-600">
+            <input
+              type="checkbox"
+              checked={enRetardSeulement}
+              onChange={(e) => setEnRetardSeulement(e.target.checked)}
+            />
+            En retard seulement
+          </label>
+          {(recherche.trim() || enRetardSeulement) && (
+            <span className="text-xs text-ink-500">
+              {filteredItems.length} action(s) affichée(s)
+            </span>
+          )}
+        </div>
+      )}
 
       {referentiels.length > 1 && !referentielFilter && (
         // La règle de consolidation est dite là où l'on voit les actions

@@ -7,6 +7,8 @@ import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
 import Modal from '../components/ui/Modal'
+import SearchInput from '../components/ui/SearchInput'
+import { filtrerParTexte } from '../utils/recherche'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
 
@@ -162,6 +164,10 @@ export default function SurveillancePage() {
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState(null)
   const [modalOpen, setModalOpen] = useState(false)
+  // Lot C, point 22 : aucun plafond ne borne les actifs DÉCLARÉS (l'offre ne
+  // plafonne que la surveillance continue) — la liste peut dépasser vingt.
+  const [recherche, setRecherche] = useState('')
+  const [typeFiltre, setTypeFiltre] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -218,6 +224,11 @@ export default function SurveillancePage() {
   }
 
   const openAlertsCount = dashboard.reduce((sum, row) => sum + row.open_alerts.length, 0)
+  const affiches = filtrerParTexte(
+    dashboard.filter((row) => !typeFiltre || row.asset.type === typeFiltre),
+    recherche,
+    (row) => [row.asset.value]
+  )
 
   return (
     <div className="space-y-6">
@@ -244,11 +255,38 @@ export default function SurveillancePage() {
         />
       </Modal>
 
+      {!loading && dashboard.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchInput
+            label="Rechercher un actif"
+            value={recherche}
+            onChange={setRecherche}
+            placeholder="Adresse du site ou du domaine…"
+            className="flex-1 sm:max-w-xs"
+          />
+          <select
+            aria-label="Filtrer par type d’actif"
+            value={typeFiltre}
+            onChange={(e) => setTypeFiltre(e.target.value)}
+            className="rounded-md border border-ink-200 px-2 py-1.5 text-sm text-ink-700"
+          >
+            <option value="">Tous les types</option>
+            {ASSET_TYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-4">
           <SkeletonCard />
           <SkeletonCard />
         </div>
+      ) : dashboard.length > 0 && affiches.length === 0 ? (
+        <p className="text-sm text-ink-500">Aucun actif ne correspond à cette recherche.</p>
       ) : dashboard.length === 0 ? (
         <EmptyState
           icon={Globe}
@@ -262,7 +300,7 @@ export default function SurveillancePage() {
         />
       ) : (
         <div className="space-y-4">
-          {dashboard.map((row) => {
+          {affiches.map((row) => {
             const status = overallStatus(row)
             const TypeIcon = row.asset.type === 'website' ? Globe : Mail
             return (

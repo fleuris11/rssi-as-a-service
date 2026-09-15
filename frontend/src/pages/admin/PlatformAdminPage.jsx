@@ -18,6 +18,8 @@ import { useSearchParams } from 'react-router-dom'
 import { platformApi } from '../../api/endpoints'
 import GlobalSearch from '../../components/admin/GlobalSearch'
 import NotificationBell from '../../components/NotificationBell'
+import SearchInput from '../../components/ui/SearchInput'
+import { filtrerParTexte } from '../../utils/recherche'
 import Badge from '../../components/ui/Badge'
 import Card, { CardHeader } from '../../components/ui/Card'
 import { SkeletonCard } from '../../components/ui/Skeleton'
@@ -266,6 +268,16 @@ function HealthPanel({ health }) {
 }
 
 function AuditPanel({ audit }) {
+  // Lot C, point 22 : le journal grandit à chaque action d'administration.
+  const [recherche, setRecherche] = useState('')
+  // `audit?.` : le filtre est calculé AVANT la garde ci-dessous (règle des
+  // hooks) — sans lui, un journal pas encore chargé faisait tomber l'écran.
+  const entrees = filtrerParTexte(audit?.entries ?? [], recherche, (entree) => [
+    entree.actor,
+    entree.action,
+    entree.tenant,
+    entree.detail,
+  ])
   if (!audit) return null
   return (
     <Card>
@@ -274,6 +286,20 @@ function AuditPanel({ audit }) {
         Actions d’administration et révélations de secrets. Les administrateurs plateforme ne sont
         pas au-dessus de l’audit.
       </p>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <SearchInput
+          label="Rechercher dans le journal"
+          value={recherche}
+          onChange={setRecherche}
+          placeholder="Auteur, action, client…"
+          className="flex-1 sm:max-w-sm"
+        />
+        {recherche && (
+          <span className="text-xs text-ink-500">
+            {entrees.length} entrée(s) sur {audit.entries.length}
+          </span>
+        )}
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead>
@@ -286,7 +312,7 @@ function AuditPanel({ audit }) {
             </tr>
           </thead>
           <tbody>
-            {audit.entries.map((entry, index) => (
+            {entrees.map((entry, index) => (
               <tr key={`${entry.at}-${index}`} className="border-b border-ink-100 last:border-0">
                 <td className="py-2 pr-4 text-ink-500">
                   {new Date(entry.at).toLocaleString('fr-FR')}

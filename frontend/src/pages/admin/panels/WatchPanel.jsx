@@ -13,8 +13,10 @@ import Badge from '../../../components/ui/Badge'
 import Button from '../../../components/ui/Button'
 import Card, { CardHeader } from '../../../components/ui/Card'
 import EmptyState from '../../../components/ui/EmptyState'
+import SearchInput from '../../../components/ui/SearchInput'
 import { SkeletonCard } from '../../../components/ui/Skeleton'
 import { useToast } from '../../../components/ui/Toast'
+import { filtrerParTexte } from '../../../utils/recherche'
 
 const STATUT_VARIANT = {
   new: 'warning',
@@ -329,6 +331,9 @@ export default function WatchPanel({ referentiels = [] }) {
   const [file, setFile] = useState(null)
   const [sources, setSources] = useState([])
   const [filtre, setFiltre] = useState('new')
+  // Lot C, point 22 : l'onglet « Toutes » porte jusqu'à deux cents suggestions
+  // (plafond du service) ; elles sont toutes chargées, la recherche est locale.
+  const [recherche, setRecherche] = useState('')
   const [occupe, setOccupe] = useState(null)
 
   const charger = useCallback(async () => {
@@ -395,6 +400,11 @@ export default function WatchPanel({ referentiels = [] }) {
 
   const enPanne = file.health.failing
   const aConfigurer = file.health.unconfigured
+  const suggestions = filtrerParTexte(file.results, recherche, (s) => [
+    s.title,
+    s.source_publisher,
+    s.source_name,
+  ])
 
   return (
     <div className="space-y-4">
@@ -479,8 +489,21 @@ export default function WatchPanel({ referentiels = [] }) {
       <Card padding="p-0">
         <div className="p-5 pb-0">
           <CardHeader title="Suggestions" />
+          {file.results.length > 0 && (
+            <SearchInput
+              label="Rechercher une suggestion"
+              value={recherche}
+              onChange={setRecherche}
+              placeholder="Titre, émetteur…"
+              className="mb-3 sm:max-w-xs"
+            />
+          )}
         </div>
-        {file.results.length === 0 ? (
+        {file.results.length > 0 && suggestions.length === 0 ? (
+          <p className="px-5 pb-5 text-sm text-ink-500">
+            Aucune suggestion ne correspond à cette recherche.
+          </p>
+        ) : file.results.length === 0 ? (
           <div className="p-5 pt-0">
             <EmptyState
               icon={Newspaper}
@@ -490,7 +513,7 @@ export default function WatchPanel({ referentiels = [] }) {
           </div>
         ) : (
           <ul className="divide-y divide-ink-100 px-5 pb-3">
-            {file.results.map((suggestion) => (
+            {suggestions.map((suggestion) => (
               <Suggestion
                 key={suggestion.id}
                 suggestion={suggestion}

@@ -6,7 +6,7 @@ import {
   ShieldCheck,
   ShieldOff,
 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { monitoringApi, threatIntelligenceApi } from '../api/endpoints'
 import FeatureGate from '../components/FeatureGate'
 import OwnershipProofModal from '../components/OwnershipProofModal'
@@ -15,6 +15,7 @@ import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
+import SearchInput from '../components/ui/SearchInput'
 import { grouperParGravite, teinteGravite } from './compromises/groupesGravite'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import Tabs from '../components/ui/Tabs'
@@ -527,22 +528,39 @@ export default function CompromisesPage() {
 
   const poll = usePolling(threatIntelligenceApi.getScanJob)
 
+  // Lot C, point 22 : recherche, gravité et actif, appliqués PAR LE SERVEUR —
+  // la liste est paginée, filtrer la seule page affichée mentirait sur le
+  // reste. La recherche part après une courte pause de frappe.
+  const [recherche, setRecherche] = useState('')
+  const [rechercheDifferee, setRechercheDifferee] = useState('')
+  const [gravite, setGravite] = useState('')
+  const [actifFiltre, setActifFiltre] = useState('')
+  useEffect(() => {
+    const minuterie = setTimeout(() => setRechercheDifferee(recherche.trim()), 300)
+    return () => clearTimeout(minuterie)
+  }, [recherche])
+  const filtres = useMemo(
+    () => ({ q: rechercheDifferee, severity: gravite, asset: actifFiltre }),
+    [rechercheDifferee, gravite, actifFiltre]
+  )
+  const filtresActifs = Boolean(rechercheDifferee || gravite || actifFiltre)
+
   const loadFindings = useCallback(
     async (tab, page = 1) => {
-      const response = await threatIntelligenceApi.listFindings(tab, page)
+      const response = await threatIntelligenceApi.listFindings(tab, page, filtres)
       setFindings(response.data.results)
       setTotalFindings(response.data.count ?? response.data.results.length)
       setHasNext(Boolean(response.data.next))
       setPage(page)
     },
-    []
+    [filtres]
   )
 
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
       const [findingsRes, statusRes, assetsRes, monitoredRes] = await Promise.all([
-        threatIntelligenceApi.listFindings(activeTab),
+        threatIntelligenceApi.listFindings(activeTab, 1, filtres),
         threatIntelligenceApi.status(),
         monitoringApi.listAssets(),
         threatIntelligenceApi.listMonitoredAssets(),
@@ -573,7 +591,7 @@ export default function CompromisesPage() {
   useEffect(() => {
     if (!loading) loadFindings(activeTab)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab])
+  }, [activeTab, filtres])
 
   // Un seul endroit décide de ce qui se dit quand une analyse se termine —
   // qu'elle ait été lancée dans cet onglet ou retrouvée en cours au
@@ -706,6 +724,42 @@ export default function CompromisesPage() {
 
       <Tabs tabs={TABS} activeId={activeTab} onChange={setActiveTab} />
 
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput
+          label="Rechercher une compromission"
+          value={recherche}
+          onChange={setRecherche}
+          placeholder="Actif, type de fuite…"
+          className="flex-1 sm:max-w-xs"
+        />
+        <select
+          aria-label="Filtrer par gravité"
+          value={gravite}
+          onChange={(e) => setGravite(e.target.value)}
+          className="rounded-md border border-ink-200 px-2 py-1.5 text-sm text-ink-700"
+        >
+          <option value="">Toutes les gravités</option>
+          <option value="critical">Critique</option>
+          <option value="high">Élevée</option>
+          <option value="attention">Attention</option>
+        </select>
+        {assets.length > 1 && (
+          <select
+            aria-label="Filtrer par actif"
+            value={actifFiltre}
+            onChange={(e) => setActifFiltre(e.target.value)}
+            className="max-w-[16rem] rounded-md border border-ink-200 px-2 py-1.5 text-sm text-ink-700"
+          >
+            <option value="">Tous les actifs</option>
+            {assets.map((asset) => (
+              <option key={asset.id} value={asset.id}>
+                {asset.value}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
       {dejaTraiteesRevues > 0 && activeTab !== 'treated' && (
         <p className="-mt-2 text-sm text-ink-500">
           La dernière analyse a revu{' '}
@@ -726,7 +780,15 @@ export default function CompromisesPage() {
       )}
 
       {findings.length === 0 ? (
-        activeTab === 'open' ? (
+        // Un filtre qui ne trouve rien n'est PAS « aucune fuite en cours » :
+        // annoncer la bonne nouvelle ici serait faux.
+        filtresActifs ? (
+          <EmptyState
+            icon={ShieldAlert}
+            title="Aucune compromission ne correspond"
+            description="Modifiez la recherche ou les filtres pour élargir la liste."
+          />
+        ) : activeTab === 'open' ? (
           // Une absence de fuite n'est pas une absence de données : c'est le
           // résultat que le client paie pour obtenir. Il était écrit en gris,
           // sous un pictogramme d'alerte, et se lisait comme une panne.

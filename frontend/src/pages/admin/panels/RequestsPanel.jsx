@@ -5,6 +5,8 @@ import Badge from '../../../components/ui/Badge'
 import Button from '../../../components/ui/Button'
 import Card, { CardHeader } from '../../../components/ui/Card'
 import EmptyState from '../../../components/ui/EmptyState'
+import SearchInput from '../../../components/ui/SearchInput'
+import { filtrerParTexte } from '../../../utils/recherche'
 import { SkeletonCard } from '../../../components/ui/Skeleton'
 import { useToast } from '../../../components/ui/Toast'
 
@@ -51,6 +53,8 @@ export default function RequestsPanel() {
   const [enCours, setEnCours] = useState(null)
   const [reponseOuverte, setReponseOuverte] = useState(null)
   const [reponse, setReponse] = useState('')
+  const [recherche, setRecherche] = useState('')
+  const [typeFiltre, setTypeFiltre] = useState('')
 
   const charger = useCallback(async () => {
     const response = await platformApi.listAccessRequests()
@@ -89,8 +93,16 @@ export default function RequestsPanel() {
 
   if (!file) return <SkeletonCard />
 
-  const ouvertes = file.results.filter((d) => d.is_open)
-  const conclues = file.results.filter((d) => !d.is_open).slice(0, 12)
+  // Lot C, point 22 : la file de tous les clients dépasse vite vingt lignes.
+  const types = [...new Map(file.results.map((d) => [d.subject_type, d.subject_type_label])).entries()]
+  const filtrees = filtrerParTexte(
+    file.results.filter((d) => !typeFiltre || d.subject_type === typeFiltre),
+    recherche,
+    (d) => [d.tenant_name, d.subject_label, d.requested_by_email, d.reason]
+  )
+  const filtresActifs = Boolean(recherche.trim() || typeFiltre)
+  const ouvertes = filtrees.filter((d) => d.is_open)
+  const conclues = filtrees.filter((d) => !d.is_open).slice(0, 12)
 
   return (
     <div className="space-y-4">
@@ -115,7 +127,38 @@ export default function RequestsPanel() {
           ))}
         </div>
 
-        {ouvertes.length === 0 ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <SearchInput
+            label="Rechercher une demande"
+            value={recherche}
+            onChange={setRecherche}
+            placeholder="Client, objet, demandeur…"
+            className="flex-1 sm:max-w-xs"
+          />
+          {types.length > 1 && (
+            <select
+              aria-label="Filtrer par type de demande"
+              value={typeFiltre}
+              onChange={(e) => setTypeFiltre(e.target.value)}
+              className="rounded-md border border-ink-200 px-2 py-1.5 text-sm text-ink-700"
+            >
+              <option value="">Tous les types</option>
+              {types.map(([cle, libelle]) => (
+                <option key={cle} value={cle}>
+                  {libelle}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {ouvertes.length === 0 && filtresActifs ? (
+          <EmptyState
+            icon={Inbox}
+            title="Aucune demande ne correspond"
+            description="Modifiez la recherche ou le type pour élargir la liste."
+          />
+        ) : ouvertes.length === 0 ? (
           <EmptyState
             tone="positive"
             icon={Inbox}

@@ -259,7 +259,8 @@ export const assessmentsApi = {
 // B5.18 : la veille vue du client — lecture seule, et seulement ce qui a ete
 // juge pertinent. Ni la file de tri, ni l etat des sources.
 export const watchApi = {
-  feed: () => apiClient.get('/api/v1/watch/'),
+  // Lot C, point 22 : `page`, `q` (titre, émetteur) et `kind` (nature).
+  feed: (params = {}) => apiClient.get('/api/v1/watch/', { params }),
 }
 
 export const accessRequestsApi = {
@@ -321,9 +322,15 @@ export const threatIntelligenceApi = {
   // entrees figeaient le navigateur). L'ecran n'exposait pourtant aucune
   // navigation : un client avec 165 compromissions en voyait 20, sans savoir
   // que les autres existaient. `page` rend le reste atteignable.
-  listFindings: (status, page = 1) =>
+  // Lot C, point 22 : `filtres` porte la recherche (`q`), la gravité
+  // (`severity`) et l'actif (`asset`). Les valeurs vides ne partent pas.
+  listFindings: (status, page = 1, filtres = {}) =>
     apiClient.get('/api/v1/threat-intelligence/findings/', {
-      params: { ...(status ? { status } : {}), ...(page > 1 ? { page } : {}) },
+      params: {
+        ...(status ? { status } : {}),
+        ...(page > 1 ? { page } : {}),
+        ...Object.fromEntries(Object.entries(filtres).filter(([, valeur]) => valeur)),
+      },
     }),
   updateFindingStatus: (id, status) =>
     apiClient.patch(`/api/v1/threat-intelligence/findings/${id}/`, { status }),

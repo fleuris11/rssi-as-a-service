@@ -5,9 +5,11 @@ import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import Card, { CardHeader } from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
+import SearchInput from '../components/ui/SearchInput'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
 import { useEntitlements } from '../context/EntitlementsContext'
+import { filtrerParTexte } from '../utils/recherche'
 
 // Ce que chaque étape veut dire POUR LE CLIENT. La console parle de suivi
 // commercial ; lui veut savoir si quelqu'un s'occupe de sa demande.
@@ -70,6 +72,9 @@ export default function RequestsPage() {
   const [ouvert, setOuvert] = useState(null)
   const [motif, setMotif] = useState('')
   const [envoi, setEnvoi] = useState(null)
+  // Lot C, point 22 : les demandes closes s'accumulent avec les années.
+  const [recherche, setRecherche] = useState('')
+  const [ouvertesSeulement, setOuvertesSeulement] = useState(false)
   const toastRef = useRef(showToast)
   toastRef.current = showToast
 
@@ -93,6 +98,11 @@ export default function RequestsPage() {
     demandes.filter((d) => d.is_open).map((d) => [`${d.subject_type}:${d.subject_key}`, d])
   )
   const horsOffre = (features || []).filter((f) => !f.included)
+  const affichees = filtrerParTexte(
+    demandes.filter((d) => !ouvertesSeulement || d.is_open),
+    recherche,
+    (d) => [d.subject_label, d.subject_type_label, d.reason, d.response]
+  )
 
   async function handleDemander(feature) {
     setEnvoi(feature.key)
@@ -147,8 +157,28 @@ export default function RequestsPage() {
       <Card padding="p-0">
         <div className="p-5 pb-0">
           <CardHeader title="Vos demandes" />
+          {demandes.length > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-3">
+              <SearchInput
+                label="Rechercher une demande"
+                value={recherche}
+                onChange={setRecherche}
+                className="flex-1 sm:max-w-xs"
+              />
+              <label className="flex items-center gap-2 text-sm text-ink-600">
+                <input
+                  type="checkbox"
+                  checked={ouvertesSeulement}
+                  onChange={(e) => setOuvertesSeulement(e.target.checked)}
+                />
+                En cours seulement
+              </label>
+            </div>
+          )}
         </div>
-        {demandes.length === 0 ? (
+        {demandes.length > 0 && affichees.length === 0 ? (
+          <p className="px-5 pb-5 text-sm text-ink-500">Aucune demande ne correspond.</p>
+        ) : demandes.length === 0 ? (
           <div className="p-5 pt-0">
             <EmptyState
               icon={Send}
@@ -158,7 +188,7 @@ export default function RequestsPage() {
           </div>
         ) : (
           <ul className="divide-y divide-ink-100 px-5 pb-3">
-            {demandes.map((demande) => {
+            {affichees.map((demande) => {
               const etape = ETAPES[demande.status] || ETAPES.pending
               const Icone = etape.icon
               return (

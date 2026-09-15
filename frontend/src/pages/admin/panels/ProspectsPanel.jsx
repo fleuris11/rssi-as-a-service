@@ -6,6 +6,8 @@ import Badge from '../../../components/ui/Badge'
 import Button from '../../../components/ui/Button'
 import Card, { CardHeader } from '../../../components/ui/Card'
 import Modal from '../../../components/ui/Modal'
+import SearchInput from '../../../components/ui/SearchInput'
+import { filtrerParTexte } from '../../../utils/recherche'
 import { SkeletonCard } from '../../../components/ui/Skeleton'
 import { useToast } from '../../../components/ui/Toast'
 
@@ -281,6 +283,8 @@ export default function ProspectsPanel({ onConvertToClient }) {
   const [board, setBoard] = useState(null)
   const [creating, setCreating] = useState(false)
   const [filter, setFilter] = useState('open')
+  // Lot C, point 22 : le filtre « Tous » dépasse vite vingt prospects.
+  const [recherche, setRecherche] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -301,6 +305,13 @@ export default function ProspectsPanel({ onConvertToClient }) {
   }, [load])
 
   if (!prospects) return <SkeletonCard />
+
+  const affiches = filtrerParTexte(prospects, recherche, (p) => [
+    p.company,
+    p.full_name,
+    p.email,
+    p.role,
+  ])
 
   return (
     <div className="space-y-6">
@@ -374,8 +385,17 @@ export default function ProspectsPanel({ onConvertToClient }) {
           }
         />
 
+        {prospects.length > 0 && (
+          <SearchInput
+            label="Rechercher un prospect"
+            value={recherche}
+            onChange={setRecherche}
+            placeholder="Entreprise, contact, email…"
+            className="mb-3 sm:max-w-xs"
+          />
+        )}
         <ul className="space-y-3">
-          {prospects.map((prospect) => (
+          {affiches.map((prospect) => (
             <ProspectCard
               key={prospect.id}
               prospect={prospect}
@@ -384,6 +404,11 @@ export default function ProspectsPanel({ onConvertToClient }) {
             />
           ))}
         </ul>
+        {prospects.length > 0 && affiches.length === 0 && (
+          <p className="py-6 text-center text-sm text-ink-500">
+            Aucun prospect ne correspond à cette recherche.
+          </p>
+        )}
         {prospects.length === 0 && (
           <p className="py-6 text-center text-sm text-ink-500">Aucun prospect pour ce filtre.</p>
         )}
