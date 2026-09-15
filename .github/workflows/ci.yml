@@ -62,20 +62,24 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
 
-      # WeasyPrint (export PDF de la charte, US-4.1) a besoin de Pango/Cairo/
-      # GDK-Pixbuf au niveau système — voir backend/Dockerfile pour le même
-      # jeu de paquets côté image de production.
+      # Bibliothèques système de WeasyPrint : le même jeu que backend/Dockerfile,
+      # où chacune est justifiée. Les garder alignées — le test
+      # config/tests/test_verification_pdf.py échoue ici si l'une manque.
       - name: Install WeasyPrint system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
             libpango-1.0-0 \
-            libpangocairo-1.0-0 \
-            libgdk-pixbuf-2.0-0 \
-            libcairo2 \
+            libpangoft2-1.0-0 \
+            libharfbuzz0b \
+            libharfbuzz-subset0 \
+            libfontconfig1 \
+            fonts-liberation \
             libffi8 \
-            shared-mime-info \
-            fonts-liberation
+            libpangocairo-1.0-0 \
+            libcairo2 \
+            libgdk-pixbuf-2.0-0 \
+            shared-mime-info
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
@@ -266,6 +270,13 @@ jobs:
 
       - name: Build backend image
         run: docker build -t rssi-backend:ci -f backend/Dockerfile backend
+
+      # Une vraie génération PDF DANS l'image construite, pas sur le runner :
+      # c'est l'image qui part en production, et c'est elle qui avait oublié
+      # libharfbuzz-subset. L'entrypoint est court-circuité (il attend une
+      # base) ; la vérification n'importe ni Django ni secret.
+      - name: PDF generation inside the image
+        run: docker run --rm --entrypoint python rssi-backend:ci -m config.verification_pdf
 
       - name: Scan image (Trivy)
         # Épinglé au COMMIT, pas au tag. Deux raisons, dont une constatée ici :
