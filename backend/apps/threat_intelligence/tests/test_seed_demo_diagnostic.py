@@ -127,6 +127,20 @@ class TestUnPlanQuiAvance:
         assert maturite["score"] is not None
         assert len(maturite["history"]) == 1
 
+    def test_le_tableau_de_bord_a_des_prochaines_actions_a_montrer(self):
+        """Le bloc « Prochaines actions » affiche les actions rapides à fort
+        impact non faites : il ne doit pas être vide en démonstration."""
+        call_command("seed_demo_tenant")
+
+        rapides_a_faire = [
+            action
+            for action in actions_services.list_action_items(_demo())
+            if action.status != ActionItem.Status.DONE
+            and action.measure.impact == "high"
+            and action.measure.effort == "low"
+        ]
+        assert rapides_a_faire
+
     def test_des_actions_sont_assignees_aux_membres(self):
         call_command("seed_demo_tenant")
 

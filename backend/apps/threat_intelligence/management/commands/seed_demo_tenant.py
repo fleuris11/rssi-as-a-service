@@ -501,6 +501,10 @@ DIAGNOSTIC_IL_Y_A_JOURS = 70
 #: plan qui avance régulièrement, pas six actions closes le même jour.
 ACTIONS_TERMINEES_IL_Y_A = (62, 51, 40, 28, 17, 6)
 
+#: Actions en tête du plan laissées à faire, pour que le tableau de bord ait
+#: des « prochaines actions » à montrer.
+RAPIDES_LAISSEES_A_FAIRE = 3
+
 #: Documents COMPOSÉS à partir des données du client, sans appel d'IA. La
 #: charte, seule rédigée par l'IA, n'est pas générée ici : le jeu ne doit
 #: dépendre ni de l'API ni du quota.
@@ -764,6 +768,11 @@ class Command(BaseCommand):
         maintenant = timezone.now()
 
         actions = actions_services.list_action_items(tenant, assessment=evaluation)
+        # Les trois premières actions rapides à fort impact restent À FAIRE :
+        # c'est ce qu'affiche le bloc « Prochaines actions » du tableau de
+        # bord. Toutes faites, le bloc disait « aucune action rapide en
+        # attente » — vrai, et vide devant un prospect (capture du 15/09).
+        actions = actions[RAPIDES_LAISSEES_A_FAIRE:] + actions[:RAPIDES_LAISSEES_A_FAIRE]
         for rang, action in enumerate(actions):
             if rang % 3 == 0:
                 actions_services.assign_action_item(action, contributeur)
