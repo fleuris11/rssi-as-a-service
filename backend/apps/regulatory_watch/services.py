@@ -16,6 +16,8 @@ from django.utils import timezone
 from apps.assessments import services as assessments_services
 from apps.monitoring.checks.http_client import CheckNetworkError, safe_get  # noqa: F401
 from apps.monitoring.checks.ssrf import SSRFError
+from apps.notifications import inbox
+from apps.tenants import services as tenants_services
 
 from . import feeds
 from .models import WatchSource, WatchUpdate
@@ -295,6 +297,7 @@ def review_update(
         # conséquence d'une intégration réelle (integrate_as_measure).
         raise WatchError("Décision inconnue.")
 
+    etait_publique = update.status in STATUTS_PUBLICS
     update.status = status
     update.reviewed_by = reviewer
     update.reviewed_at = timezone.now()
@@ -310,7 +313,30 @@ def review_update(
         champs.append("target_referential")
 
     update.save(update_fields=champs)
+    if not etait_publique and status in STATUTS_PUBLICS:
+        _prevenir_de_la_publication(update)
     return update
+
+
+def _prevenir_de_la_publication(update: WatchUpdate) -> None:
+    """Lot C, point 20 : une publication RETENUE entre dans la veille de chaque
+    client. Ses administrateurs en sont prévenus — une fois : la clé par
+    publication fait qu'une intégration après rétention ne notifie pas à
+    nouveau. Une suggestion non triée ou écartée ne prévient personne : ce
+    n'est pas une information (ADR-034).
+    """
+    for tenant in tenants_services.list_active_tenants():
+        inbox.notify_tenant_admins(
+            tenant,
+            kind=inbox.Kind.WATCH_UPDATE_PUBLISHED,
+            title=f"Veille : {update.title}"[:200],
+            body=(
+                f"Publié par {update.source.publisher}. Le texte officiel est accessible "
+                "depuis la veille."
+            ),
+            link="/veille",
+            dedupe_key=f"veille:{update.id}",
+        )
 
 
 def integrate_as_measure(
@@ -392,6 +418,9 @@ def integrate_as_measure(
         update.reviewed_by = reviewer
         update.reviewed_at = timezone.now()
         update.save(update_fields=["status", "target_referential", "reviewed_by", "reviewed_at"])
+    # Directement intégrée sans passer par « retenue » : elle devient publique
+    # maintenant. Déjà retenue : la clé d'idempotence évite un second envoi.
+    _prevenir_de_la_publication(update)
     return mesure
 
 

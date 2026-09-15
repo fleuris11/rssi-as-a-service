@@ -37,6 +37,7 @@ from django.db.models.functions import Coalesce, NullIf
 from django.utils import timezone
 
 from apps.billing import entitlements
+from apps.notifications import inbox
 
 from .models import (
     BreachFinding,
@@ -136,7 +137,7 @@ def declare_watched_account(
 
     try:
         with transaction.atomic():
-            return WatchedAccount.all_objects.create(
+            compte = WatchedAccount.all_objects.create(
                 tenant=tenant,
                 value=valeur,
                 label=(label or "").strip(),
@@ -149,6 +150,19 @@ def declare_watched_account(
             )
     except IntegrityError as exc:
         raise WatchedAccountError("Ce compte est déjà surveillé.") from exc
+
+    # Lot C, point 20 : l'exploitant sait qu'une déclaration engageant la
+    # licence a été faite. JAMAIS l'adresse surveillée dans la notification :
+    # elle est déjà un traitement de données personnelles encadré (ADR-033),
+    # on ne la recopie pas dans une cloche.
+    inbox.notify_staff(
+        kind=inbox.Kind.WATCHED_ACCOUNT_DECLARED,
+        title=f"{tenant.name} a déclaré un compte à surveiller",
+        body=f"Catégorie : {compte.get_category_display()}. Déclaration v{DECLARATION_VERSION}.",
+        link="/admin/plateforme?onglet=tenants",
+        dedupe_key=f"compte-designe:{compte.id}",
+    )
+    return compte
 
 
 def remove_watched_account(
@@ -469,6 +483,21 @@ def execute_watched_account_scan(*, tenant, accounts: list[WatchedAccount]) -> d
 
     if comptes_en_echec and total_created == 0 and len(comptes_en_echec) == len(accounts):
         raise WatchedAccountError("Analyse impossible pour les comptes demandés.")
+
+    # Lot C, point 20 : de NOUVELLES fuites seulement. Une analyse relivrée
+    # ne recrée rien (déduplication à l'ingestion) et ne prévient donc pas
+    # deux fois. Aucune adresse dans le texte : un nombre et un lien.
+    if total_created:
+        inbox.notify_tenant_admins(
+            tenant,
+            kind=inbox.Kind.WATCHED_FINDINGS_NEW,
+            title=(
+                f"{total_created} nouvelle{'s' if total_created > 1 else ''} "
+                f"fuite{'s' if total_created > 1 else ''} sur vos comptes surveillés"
+            ),
+            body="Chaque résultat est détaillé avec ce qu'il implique et ce qu'il faut faire.",
+            link="/comptes-surveilles",
+        )
 
     return {
         "findings_created": total_created,

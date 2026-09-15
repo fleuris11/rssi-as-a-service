@@ -11,6 +11,8 @@ import logging
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from apps.notifications import inbox
+
 from . import subjects
 from .models import AccessRequest
 
@@ -67,7 +69,7 @@ def create_request(*, tenant, user, subject_type: str, subject_key: str, reason:
         # transaction de la requête cassée, et le refus poli deviendrait une
         # erreur 500 sur l'appel suivant.
         with transaction.atomic():
-            return AccessRequest.all_objects.create(
+            demande = AccessRequest.all_objects.create(
                 tenant=tenant,
                 requested_by=user,
                 subject_type=subject_type,
@@ -78,6 +80,17 @@ def create_request(*, tenant, user, subject_type: str, subject_key: str, reason:
     except IntegrityError as exc:
         # Deux envois simultanés : la contrainte partielle a tranché.
         raise deja_en_cours from exc
+
+    # Lot C, point 20 : une demande qui arrive doit se voir dans la console
+    # sans l'ouvrir au bon onglet par hasard.
+    inbox.notify_staff(
+        kind=inbox.Kind.ACCESS_REQUEST_NEW,
+        title=f"Nouvelle demande de {tenant.name} : {label}",
+        body=(reason or "")[:500],
+        link="/admin/plateforme?onglet=requests",
+        dedupe_key=f"demande:{demande.id}:nouvelle",
+    )
+    return demande
 
 
 def list_requests(tenant, *, status=None):
@@ -187,6 +200,23 @@ def advance_request(access_request, *, status: str, response: str = "", actor=No
         access_request.handled_by = actor
         champs += ["handled_at", "handled_by"]
     access_request.save(update_fields=champs)
+
+    # Lot C, point 20 : le client qui a demandé apprend que quelqu'un s'en
+    # occupe, puis ce qui a été décidé — sans revenir voir sa page au hasard.
+    # Seul le demandeur : ses collègues n'ont rien demandé.
+    if access_request.requested_by_id:
+        inbox.notify(
+            [access_request.requested_by],
+            tenant=access_request.tenant,
+            kind=inbox.Kind.ACCESS_REQUEST_UPDATED,
+            title=(
+                f"Votre demande « {access_request.subject_label} » : "
+                f"{access_request.get_status_display().lower()}"
+            ),
+            body=access_request.response or "",
+            link="/mes-demandes",
+            dedupe_key=f"demande:{access_request.id}:{status}",
+        )
     return access_request, attribue
 
 

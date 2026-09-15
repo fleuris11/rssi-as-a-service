@@ -39,6 +39,52 @@ def send_weather_email_for_tenant(self, tenant_id):
     return bool(message)
 
 
+@shared_task
+def notify_committee_reports():
+    """Le 1er du mois : le rapport de comité du mois écoulé est prêt.
+
+    Lot C, point 20. Le rapport existait (V2-3) mais personne n'était prévenu
+    qu'il était temps de le présenter. Idempotent par construction : la clé
+    ``comite:<client>:<mois>`` fait qu'une tâche relivrée, ou lancée deux fois
+    à la main, ne prévient personne deux fois.
+    """
+    from . import inbox
+
+    aujourd_hui = timezone.localdate()
+    mois_ecoule = (aujourd_hui.replace(day=1) - timezone.timedelta(days=1)).replace(day=1)
+    libelle = MOIS_FR[mois_ecoule.month - 1]
+    prevenus = 0
+    for tenant in tenants_services.list_active_tenants():
+        prevenus += inbox.notify_tenant_admins(
+            tenant,
+            kind=inbox.Kind.COMMITTEE_REPORT_READY,
+            title=f"Votre rapport de comité de {libelle} {mois_ecoule.year} est prêt",
+            body=(
+                "Les chiffres du mois écoulé, comparés à la période précédente, avec les faits "
+                "marquants et ce qui reste à arbitrer. Prêt à présenter en PDF."
+            ),
+            link="/rapports",
+            dedupe_key=f"comite:{tenant.id}:{mois_ecoule:%Y-%m}",
+        )
+    return prevenus
+
+
+MOIS_FR = (
+    "janvier",
+    "février",
+    "mars",
+    "avril",
+    "mai",
+    "juin",
+    "juillet",
+    "août",
+    "septembre",
+    "octobre",
+    "novembre",
+    "décembre",
+)
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
 def send_realtime_alert_email(self, alert_id):
     from apps.monitoring import services as monitoring_services
