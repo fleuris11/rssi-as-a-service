@@ -1,4 +1,4 @@
-import { Download, FileText, Minus, TrendingDown, TrendingUp } from 'lucide-react'
+import { Download, FileText } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   CartesianGrid,
@@ -10,6 +10,13 @@ import {
   YAxis,
 } from 'recharts'
 import { reportingApi } from '../api/endpoints'
+import {
+  COULEUR_TRAIT,
+  formatJour,
+  formatNombre,
+  Indicateur,
+  SelecteurDePeriode,
+} from '../components/reporting/Indicateurs'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import Card, { CardHeader } from '../components/ui/Card'
@@ -17,114 +24,9 @@ import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
 import { useAuth } from '../context/AuthContext'
 
-const COULEUR_TRAIT = '#2a4f84' // brand-600, même teinte que le radar du diagnostic
-
-function formatJour(valeur) {
-  if (!valeur) return '—'
-  return new Date(valeur).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
-}
-
-function formatNombre(valeur, suffixe = '') {
-  if (valeur === null || valeur === undefined) return 'non mesuré'
-  return `${String(valeur).replace('.', ',')}${suffixe}`
-}
-
-/**
- * L'écart par rapport au point de comparaison.
- *
- * Le SENS vient du serveur (`is_improvement`) et n'est pas déduit du signe :
- * une baisse est une bonne nouvelle pour les fuites et une mauvaise pour la
- * maturité. Décider ici reviendrait à recopier la règle dans chaque
- * composant, et une flèche verte sur « fuites en hausse » est le genre
- * d'erreur qu'on ne voit qu'en comité.
- */
-function Evolution({ evolution, suffixe = '' }) {
-  if (!evolution || evolution.delta === null) {
-    return <span className="t-meta">pas de point de comparaison</span>
-  }
-  if (evolution.direction === 'stable') {
-    return (
-      <span className="inline-flex items-center gap-1 text-sm text-ink-500">
-        <Minus className="size-3.5" aria-hidden="true" />
-        stable
-      </span>
-    )
-  }
-  const Fleche = evolution.direction === 'hausse' ? TrendingUp : TrendingDown
-  const teinte =
-    evolution.is_improvement === true
-      ? 'text-ok-strong'
-      : evolution.is_improvement === false
-        ? 'text-critical-strong'
-        : 'text-ink-500'
-  return (
-    <span
-      className={`inline-flex items-center gap-1 text-sm ${teinte}`}
-      // Exposé pour que les tests vérifient le SENS lu, et non la couleur
-      // obtenue : une classe change au premier ajustement de charte, la
-      // règle qu'elle traduit ne doit pas.
-      data-improvement={String(evolution.is_improvement)}
-    >
-      <Fleche className="size-3.5" aria-hidden="true" />
-      {formatNombre(Math.abs(evolution.delta), suffixe)}
-    </span>
-  )
-}
-
-function Indicateur({ titre, valeur, quoi, evolution, suffixe }) {
-  return (
-    <Card padding="p-4">
-      <p className="t-eyebrow">{titre}</p>
-      <div className="mt-1 flex items-baseline gap-3">
-        <span className="font-display text-3xl font-semibold text-ink-900">{valeur}</span>
-        <Evolution evolution={evolution} suffixe={suffixe} />
-      </div>
-      {/* Ce que le chiffre veut dire. Un tableau de bord sans cette ligne
-          oblige son lecteur à connaître déjà la réponse. */}
-      <p className="mt-2 text-xs text-ink-500">{quoi}</p>
-    </Card>
-  )
-}
-
-function SelecteurDePeriode({ periodes, courante, onChange, personnalisee, onPersonnalisee }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {periodes.map((p) => (
-        <button
-          key={p.key}
-          type="button"
-          onClick={() => onChange(p.key)}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-smooth ${
-            courante === p.key
-              ? 'bg-brand-600 text-white'
-              : 'bg-ink-50 text-ink-600 hover:bg-ink-100'
-          }`}
-        >
-          {p.label}
-        </button>
-      ))}
-      {courante === 'custom' && (
-        <span className="flex items-center gap-2 text-sm text-ink-600">
-          <input
-            type="date"
-            value={personnalisee.start}
-            onChange={(e) => onPersonnalisee({ ...personnalisee, start: e.target.value })}
-            className="rounded-md border border-ink-200 px-2 py-1 text-sm"
-            aria-label="Date de début"
-          />
-          <span>au</span>
-          <input
-            type="date"
-            value={personnalisee.end}
-            onChange={(e) => onPersonnalisee({ ...personnalisee, end: e.target.value })}
-            className="rounded-md border border-ink-200 px-2 py-1 text-sm"
-            aria-label="Date de fin"
-          />
-        </span>
-      )}
-    </div>
-  )
-}
+// Lot C : l'indicateur, sa tendance et le sélecteur de période vivent dans
+// `components/reporting/Indicateurs.jsx`, partagés avec le tableau de bord.
+// Deux copies auraient fini par ne plus lire l'évolution dans le même sens.
 
 /**
  * Le stock de compromissions ouvertes, jour par jour.
