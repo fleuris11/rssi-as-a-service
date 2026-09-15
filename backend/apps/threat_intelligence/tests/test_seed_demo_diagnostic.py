@@ -27,14 +27,17 @@ from apps.ai_assistant.models import AIUsageLog, GeneratedDocument
 from apps.assessments import services as assessments_services
 from apps.assessments.models import Assessment
 from apps.tenants.models import Membership, Tenant
+from apps.threat_intelligence import services as ti_services
 from apps.threat_intelligence.management.commands.seed_demo_tenant import (
     ACTIONS_TERMINEES_IL_Y_A,
     ANSSI_SLUG,
     DEMO_DOCUMENTS,
     DEMO_TENANT_SLUG,
     DIAGNOSTIC_IL_Y_A_JOURS,
+    FUITES_DEJA_TRAITEES,
     demo_answer,
 )
+from apps.threat_intelligence.models import BreachFinding
 
 pytestmark = pytest.mark.django_db
 
@@ -145,6 +148,47 @@ class TestUnPlanQuiAvance:
         call_command("seed_demo_tenant")
 
         assert ActionItem.all_objects.filter(tenant=_demo(), assignee__isnull=False).exists()
+
+
+class TestDesFuitesDejaTraitees:
+    def test_la_courbe_des_fuites_traitees_n_est_pas_plate(self):
+        call_command("seed_demo_tenant")
+        debut, fin = _trimestre()
+
+        serie = ti_services.open_findings_series(_demo(), start=debut, end=fin)
+
+        assert serie[-1]["treated"] == len(FUITES_DEJA_TRAITEES)
+
+    def test_la_fuite_du_scenario_de_revelation_reste_ouverte(self):
+        """Le moment fort de la démonstration : la fuite de Marie Durand sur un
+        service externe, avec un mot de passe révélable."""
+        call_command("seed_demo_tenant")
+
+        assert BreachFinding.all_objects.filter(
+            tenant=_demo(),
+            status=BreachFinding.Status.OPEN,
+            has_secret=True,
+            identifier_plain__startswith="marie.durand@",
+        ).exists()
+
+    def test_rejouer_ne_retraite_rien(self):
+        call_command("seed_demo_tenant")
+        dates = set(
+            BreachFinding.all_objects.filter(
+                tenant=_demo(), status=BreachFinding.Status.TREATED
+            ).values_list("treated_at", flat=True)
+        )
+
+        call_command("seed_demo_tenant")
+
+        assert (
+            set(
+                BreachFinding.all_objects.filter(
+                    tenant=_demo(), status=BreachFinding.Status.TREATED
+                ).values_list("treated_at", flat=True)
+            )
+            == dates
+        )
 
 
 class TestDocumentsComposes:

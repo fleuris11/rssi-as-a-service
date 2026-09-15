@@ -493,6 +493,12 @@ DEMO_REFERENTIEL_ASSUREUR = {
 
 ANSSI_SLUG = "anssi-hygiene-informatique"
 
+#: (source, identifiant, traitée il y a N jours) : deux fuites secondaires.
+FUITES_DEJA_TRAITEES = (
+    ("creds", f"contact@{DEMO_DOMAIN}", 45),
+    ("combo", f"paul.leroy@{DEMO_DOMAIN}", 18),
+)
+
 #: Le diagnostic est terminé il y a dix semaines : dans la période par défaut du
 #: tableau de bord (le trimestre), les courbes du plan ont de quoi se dessiner.
 DIAGNOSTIC_IL_Y_A_JOURS = 70
@@ -555,6 +561,7 @@ class Command(BaseCommand):
             admin = self._ensure_users(tenant)
             assets = self._ensure_assets(tenant, admin)
             created = self._ensure_findings(tenant, assets)
+            self._traiter_des_fuites(tenant, admin)
             self._ensure_synthesis(tenant)
             self._ensure_watched_accounts(tenant, admin)
             self._ensure_referentiels(tenant, admin)
@@ -694,6 +701,31 @@ class Command(BaseCommand):
                 ),
                 context_note="Reformulé pour un cabinet d’expertise comptable.",
                 created_by=admin,
+            )
+
+    def _traiter_des_fuites(self, tenant: Tenant, admin) -> None:
+        """Deux fuites secondaires déjà traitées, à des dates passées.
+
+        Capture du tableau de bord de démonstration : la courbe « compromissions
+        ouvertes et traitées » restait plate à zéro. Elle répondait à sa propre
+        question — « traite-t-on les fuites ? » — par non, devant un prospect.
+
+        Ni la fuite du scénario de révélation, ni celle dont le secret est
+        purgé : elles doivent rester visibles sur l'écran Exposition. Le statut
+        passe par le service ; seule la date de traitement est reculée.
+        """
+        for source, identifiant, il_y_a in FUITES_DEJA_TRAITEES:
+            fuite = BreachFinding.all_objects.filter(
+                tenant=tenant,
+                source_endpoint=source,
+                identifier_plain=identifiant,
+                status=BreachFinding.Status.OPEN,
+            ).first()
+            if fuite is None:
+                continue
+            services.set_finding_status(fuite, status=BreachFinding.Status.TREATED, user=admin)
+            BreachFinding.all_objects.filter(pk=fuite.pk).update(
+                treated_at=timezone.now() - timedelta(days=il_y_a)
             )
 
     def _ensure_diagnostic(self, tenant: Tenant, admin) -> None:
