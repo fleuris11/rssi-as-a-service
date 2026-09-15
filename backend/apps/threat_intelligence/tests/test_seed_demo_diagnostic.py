@@ -23,7 +23,7 @@ from django.utils import timezone
 
 from apps.actions import services as actions_services
 from apps.actions.models import ActionItem
-from apps.ai_assistant.models import AIUsageLog, GeneratedDocument
+from apps.ai_assistant.models import AIUsageLog, Conversation, GeneratedDocument
 from apps.assessments import services as assessments_services
 from apps.assessments.models import Assessment
 from apps.tenants.models import Membership, Tenant
@@ -223,6 +223,18 @@ class TestRejouer:
             ActionItem.all_objects.filter(tenant=tenant).count(),
             GeneratedDocument.all_objects.filter(tenant=tenant).count(),
         ) == avant
+
+    def test_la_remise_a_zero_vide_la_conversation_de_l_assistant(self):
+        """L'écran rouvre la conversation la plus récente ; ses questions de
+        départ ne s'affichent que si elle est vide."""
+        call_command("seed_demo_tenant")
+        tenant = _demo()
+        administratrice = Membership.all_objects.get(tenant=tenant, role=Membership.Role.ADMIN).user
+        Conversation.all_objects.create(tenant=tenant, created_by=administratrice)
+
+        call_command("seed_demo_tenant", reset=True)
+
+        assert not Conversation.all_objects.filter(tenant=tenant).exists()
 
     def test_la_remise_a_zero_rend_le_plan_dans_son_etat_initial(self):
         """Une démonstration fait avancer une action : la suivante doit

@@ -31,6 +31,7 @@ from apps.notifications import services as notifications_services
 from apps.threat_intelligence import services
 from apps.threat_intelligence.management.commands.seed_demo_tenant import (
     DEMO_TENANT_SLUG,
+    FUITES_DEJA_TRAITEES,
     demo_findings_payloads,
 )
 from apps.threat_intelligence.models import BreachFinding
@@ -41,6 +42,9 @@ pytestmark = pytest.mark.django_db
 # recopier une liste qui divergerait au premier ajout de payload de démo.
 SEEDED_ENDPOINTS = {endpoint for endpoint, _payload, _idx in demo_findings_payloads()}
 SEEDED_TOTAL = len(demo_findings_payloads())
+# Le jeu traite quelques fuites secondaires (courbe « ouvertes et traitées » du
+# tableau de bord) : le contrat porte sur les fuites OUVERTES.
+SEEDED_OPEN = SEEDED_TOTAL - len(FUITES_DEJA_TRAITEES)
 PRE_INCIDENT_ENDPOINTS = set(services.PRE_INCIDENT_ENDPOINTS)
 
 
@@ -86,7 +90,7 @@ class TestAssistantContextScope:
         open_count = BreachFinding.all_objects.filter(
             tenant=demo_tenant, status=BreachFinding.Status.OPEN
         ).count()
-        assert open_count == SEEDED_TOTAL
+        assert open_count == SEEDED_OPEN
         assert len(context["compromissions_ouvertes"]) == open_count
 
 
@@ -107,7 +111,7 @@ class TestWeatherContextScope:
 
         context = notifications_services.build_weather_context(demo_tenant)
 
-        assert context["breach_total"] == SEEDED_TOTAL, (
+        assert context["breach_total"] == SEEDED_OPEN, (
             "La météo doit compter les signaux avant-coureurs : un total inférieur "
             "signifie que `include_pre_incident=True` a disparu du chemin."
         )
@@ -145,7 +149,7 @@ class TestExposureSynthesisContextScope:
         qui inclut déjà les signaux pré-incident. Épinglé pour que ce chemin
         reste distinct de celui de la liste."""
         context = ai_services.build_exposure_synthesis_context(demo_tenant)
-        assert context["nombre_total_de_fuites_ouvertes"] == SEEDED_TOTAL
+        assert context["nombre_total_de_fuites_ouvertes"] == SEEDED_OPEN
 
 
 class TestFindingsListScope:

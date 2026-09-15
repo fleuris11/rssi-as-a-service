@@ -932,11 +932,17 @@ class Command(BaseCommand):
         démonstration fait avancer une action ou valide un document, et la
         suivante doit repartir du même état. La charte rédigée par l'IA est
         conservée : la régénérer consommerait le quota.
+
+        La conversation de l'assistant aussi : l'écran rouvre toujours la plus
+        récente, et les questions de départ ne s'affichent que sur une
+        conversation vide. Relevé en production : une conversation de deux
+        messages restée d'une démonstration précédente les masquait.
         """
         from apps.actions.models import ActionItem
-        from apps.ai_assistant.models import GeneratedDocument
+        from apps.ai_assistant.models import Conversation, GeneratedDocument
         from apps.assessments.models import Assessment
 
+        Conversation.all_objects.filter(tenant=tenant).delete()
         ActionItem.all_objects.filter(tenant=tenant).delete()
         Assessment.all_objects.filter(tenant=tenant).delete()
         GeneratedDocument.all_objects.filter(
