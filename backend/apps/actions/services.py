@@ -5,7 +5,10 @@ so it consistently uses ``all_objects`` with an explicit ``tenant=`` filter
 rather than the request-scoped manager.
 """
 
+from datetime import timedelta
+
 from django.db.models import Count, Q
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from apps.assessments import services as assessments_services
@@ -205,6 +208,58 @@ def action_plan_indicators(tenant, *, start, end, today=None) -> dict:
         # sur ISO ne dit pas la même chose que 40 % partout.
         "by_referential": plan_by_referential(tenant),
     }
+
+
+def action_plan_series(tenant, *, start, end) -> list[dict]:
+    """L'avancement du plan, jour par jour, en QUATRE requêtes au total.
+
+    Lot C : « le plan d'action avance-t-il ? ». Pour chaque jour : combien
+    d'actions existaient, combien étaient terminées, et le taux. Même méthode
+    que la série des fuites (ADR-028) — l'état au début de la période, puis
+    les ajouts et les fins jour par jour, agrégés par la base.
+
+    Ce qui n'est pas reconstructible est dit comme tel : rouvrir une action
+    efface sa date de fin (V2-3). Une action terminée puis rouverte ne
+    figure donc pas comme « terminée » les jours où elle l'a été. Le choix
+    minore le passé plutôt que d'inventer une histoire qu'aucune date ne porte.
+    """
+    du_tenant = ActionItem.all_objects.filter(tenant=tenant)
+
+    def seaux(champ):
+        lignes = (
+            du_tenant.filter(**{f"{champ}__gte": start, f"{champ}__lte": end})
+            .annotate(jour=TruncDate(champ))
+            .values("jour")
+            .annotate(n=Count("id"))
+        )
+        return {ligne["jour"]: ligne["n"] for ligne in lignes}
+
+    initial = du_tenant.aggregate(
+        total=Count("id", filter=Q(created_at__lt=start)),
+        done=Count("id", filter=Q(completed_at__lt=start)),
+    )
+    ajouts = seaux("created_at")
+    fins = seaux("completed_at")
+
+    total, faites = initial["total"], initial["done"]
+    serie = []
+    jour = timezone.localtime(start).date()
+    dernier = timezone.localtime(end).date()
+    while jour <= dernier:
+        total += ajouts.get(jour, 0)
+        faites += fins.get(jour, 0)
+        serie.append(
+            {
+                "date": jour,
+                "done": faites,
+                "total": total,
+                # Sans action, le taux n'existe pas : « 0 % » dirait qu'un plan
+                # existe et que rien n'est fait, ce qui est faux.
+                "completion_rate": round(100 * faites / total, 1) if total else None,
+            }
+        )
+        jour += timedelta(days=1)
+    return serie
 
 
 def assign_action_item(item: ActionItem, user) -> ActionItem:

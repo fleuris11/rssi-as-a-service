@@ -37,7 +37,12 @@ VOLUME = 28_450
 #: ce qui est vérifié n'est pas un chiffre exact — il bougerait au premier
 #: indicateur ajouté — mais le fait qu'il ne DÉPEND PAS du volume. Le test
 #: compare d'ailleurs deux volumes très différents.
-BUDGET_REQUETES = 40
+#:
+#: Lot C : 40 → 56. Le tableau de bord atteignait déjà 40 requêtes, et les
+#: courbes en ajoutent un nombre FIXE — treize pour le score d'exposition (un
+#: point par requête, retenu sur mesure : 0,33 s contre 1,21 s en mémoire, voir
+#: test_performance_courbes.py), trois pour le plan. Aucune ne dépend du volume.
+BUDGET_REQUETES = 56
 
 
 #: Un secret chiffré réel fait quelques centaines d'octets (jeton Fernet).
@@ -218,5 +223,82 @@ class TestCoutDuTableauDeBord:
             print(f"\n  série de {len(serie)} jours : {len(requetes)} requêtes")
 
         assert len(serie) == periode.days
-        # Trois requêtes : détections par jour, clôtures par jour, état initial.
+        # Quatre requêtes : détections, clôtures, traitements par jour (lot C),
+        # état initial.
         assert len(requetes) <= 4
+
+    def test_les_courbes_du_lot_c_sur_le_volume_reel(self, tenant_charge, capsys):
+        """Lot C, point 11 : « mesure et donne les chiffres ».
+
+        Compare, sur les 28 450 fuites, ce que coûtait le tableau de bord SANS
+        les nouvelles courbes (les indicateurs de la V2-3, appelés seuls) et ce
+        qu'il coûte AVEC. Et mesure le chemin naïf de la courbe du score — un
+        appel à ``exposure_score_at`` par point — pour que le choix d'une seule
+        requête soit mesuré et non affirmé.
+        """
+        from apps.actions import services as actions_services
+        from apps.threat_intelligence import services as ti_services
+
+        periode = periods.resolve(periods.PRESET_QUARTER)
+
+        debut = time.perf_counter()
+        with CaptureQueriesContext(connection) as avant:
+            ti_services.breach_indicators(tenant_charge, start=periode.start, end=periode.end)
+            actions_services.action_plan_indicators(
+                tenant_charge, start=periode.start, end=periode.end
+            )
+            ti_services.exposure_by_asset(tenant_charge, at=periode.end)
+        temps_avant = time.perf_counter() - debut
+
+        debut = time.perf_counter()
+        with CaptureQueriesContext(connection) as score:
+            serie = ti_services.exposure_score_series(
+                tenant_charge, start=periode.start, end=periode.end
+            )
+        temps_score = time.perf_counter() - debut
+
+        debut = time.perf_counter()
+        with CaptureQueriesContext(connection) as naif:
+            pas = (periode.end - periode.start) / (ti_services.EXPOSURE_SCORE_POINTS - 1)
+            instants = [
+                periode.start + pas * r for r in range(ti_services.EXPOSURE_SCORE_POINTS - 1)
+            ] + [periode.end]
+            attendu = [ti_services.exposure_score_at(tenant_charge, m) for m in instants]
+        temps_naif = time.perf_counter() - debut
+
+        debut = time.perf_counter()
+        with CaptureQueriesContext(connection) as plan:
+            actions_services.action_plan_series(tenant_charge, start=periode.start, end=periode.end)
+        temps_plan = time.perf_counter() - debut
+
+        debut = time.perf_counter()
+        with CaptureQueriesContext(connection) as complet:
+            services.build_dashboard(tenant_charge, periode)
+        temps_complet = time.perf_counter() - debut
+
+        with capsys.disabled():
+            print(f"\n  volume                                  : {VOLUME} fuites")
+            print(
+                f"  indicateurs V2-3 seuls (avant lot C)    : {len(avant)} requêtes, "
+                f"{temps_avant:.2f} s"
+            )
+            print(
+                f"  courbe du score, une requête            : {len(score)} requête, "
+                f"{temps_score:.2f} s"
+            )
+            print(
+                f"  courbe du score, chemin naïf par point  : {len(naif)} requêtes, "
+                f"{temps_naif:.2f} s"
+            )
+            print(
+                f"  courbe du plan                          : {len(plan)} requêtes, "
+                f"{temps_plan:.2f} s"
+            )
+            print(
+                f"  tableau de bord complet (après lot C)   : {len(complet)} requêtes, "
+                f"{temps_complet:.2f} s"
+            )
+
+        assert [p["score"] for p in serie] == attendu
+        assert len(score) == ti_services.EXPOSURE_SCORE_POINTS
+        assert len(complet) <= BUDGET_REQUETES

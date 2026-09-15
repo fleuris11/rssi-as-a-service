@@ -128,10 +128,41 @@ def csv_rows(donnees: dict) -> list[list]:
 
     if exposition["series"]:
         lignes.append([])
-        lignes.append(["— Compromissions ouvertes, jour par jour —"])
-        lignes.append(["Date", "Ouvertes"])
+        lignes.append(["— Compromissions ouvertes et traitées, jour par jour —"])
+        lignes.append(["Date", "Ouvertes", "Traitées depuis le début de la période"])
         for point in exposition["series"]:
-            lignes.append([_jour(point["date"]), _fr(point["open"])])
+            lignes.append([_jour(point["date"]), _fr(point["open"]), _fr(point.get("treated"))])
+
+    # Lot C : les trois autres courbes de l'écran, ligne à ligne. Un tableur
+    # qui n'aurait que la première obligerait à relever les autres à la main —
+    # précisément la soirée de travail que ce tableau de bord doit supprimer.
+    if exposition.get("score_series"):
+        lignes.append([])
+        lignes.append(["— Score d'exposition dans le temps —"])
+        lignes.append(["Date", "Score (sur 100, plus bas est mieux)"])
+        for point in exposition["score_series"]:
+            lignes.append([_jour(point["date"]), _fr(point["score"])])
+
+    if maturite.get("history"):
+        lignes.append([])
+        lignes.append(["— Diagnostics de maturité terminés sur la période —"])
+        lignes.append(["Date", "Score (sur 100)", "Référentiel"])
+        for point in maturite["history"]:
+            lignes.append([_jour(point["date"]), _fr(point["score"]), point["referential"]])
+
+    if plan.get("series"):
+        lignes.append([])
+        lignes.append(["— Avancement du plan d'action, jour par jour —"])
+        lignes.append(["Date", "Actions terminées", "Actions au total", "Avancement (%)"])
+        for point in plan["series"]:
+            lignes.append(
+                [
+                    _jour(point["date"]),
+                    _fr(point["done"]),
+                    _fr(point["total"]),
+                    _fr(point["completion_rate"]),
+                ]
+            )
 
     return lignes
 

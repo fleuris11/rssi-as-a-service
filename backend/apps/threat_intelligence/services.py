@@ -1099,25 +1099,70 @@ def breach_indicators(tenant, *, start, end, previous_start=None) -> dict:
 
 
 def open_findings_series(tenant, *, start, end) -> list[dict]:
-    """Nombre de fuites ouvertes, jour par jour, en TROIS requêtes au total.
+    """Fuites ouvertes jour par jour, et fuites TRAITÉES cumulées depuis le
+    début de la période — en QUATRE requêtes au total.
 
     Un compte par jour demanderait une requête par jour. On part du compte à
     l'ouverture de la période, puis on applique les détections et les clôtures
     quotidiennes : la base agrège, Python ne fait qu'additionner des seaux.
+
+    Lot C : « ouvertes contre traitées ». Le stock seul ne dit pas si l'équipe
+    traite : il baisse aussi quand on IGNORE des fuites. Le cumul des seules
+    fuites traitées répond à la question qu'un comité pose vraiment — est-ce
+    qu'on corrige, ou est-ce qu'on écarte ?
     """
     du_tenant = BreachFinding.all_objects.filter(tenant=tenant)
     detections = _seaux_quotidiens(du_tenant, "detected_at", start, end)
     clotures = _seaux_quotidiens(du_tenant, "treated_at", start, end)
+    traitements = _seaux_quotidiens(
+        du_tenant.filter(status=BreachFinding.Status.TREATED), "treated_at", start, end
+    )
 
     courant = _open_at(tenant, start).count()
+    traitees = 0
     serie = []
     jour = start.date()
     dernier = end.date()
     while jour <= dernier:
         courant += detections.get(jour, 0) - clotures.get(jour, 0)
-        serie.append({"date": jour, "open": max(0, courant)})
+        traitees += traitements.get(jour, 0)
+        serie.append({"date": jour, "open": max(0, courant), "treated": traitees})
         jour += timedelta(days=1)
     return serie
+
+
+#: Points de la courbe du score d'exposition. Treize points couvrent un
+#: trimestre semaine par semaine ; au-delà, une courbe n'affiche pas plus de
+#: tendance, elle affiche plus de bruit.
+EXPOSURE_SCORE_POINTS = 13
+
+
+def exposure_score_series(tenant, *, start, end, points=EXPOSURE_SCORE_POINTS) -> list[dict]:
+    """Le score d'exposition à intervalles réguliers sur la période.
+
+    Le score ne s'agrège pas en SQL : il dépend de la gravité, de la
+    fraîcheur À LA DATE DU POINT et de l'existence d'un secret. Chaque point
+    est donc ``exposure_score_at`` à cet instant — la même fonction que la
+    carte, et par construction le même chiffre.
+
+    Une requête par point : un nombre FIXE (treize), qui ne dépend ni du
+    volume ni de la durée de la période. L'alternative — une seule requête et
+    l'état de chaque point reconstruit en mémoire — a été écrite, puis
+    abandonnée sur mesure : sur 28 450 fuites réparties sur six mois, 0,33 s
+    pour treize requêtes contre 1,21 s en mémoire (meilleur de trois essais,
+    chemins alternés — voir ``reporting/tests/test_performance_courbes.py``).
+    La base filtre les fuites ouvertes à un instant plus vite que Python.
+    """
+    if points < 2 or end <= start:
+        instants = [end]
+    else:
+        pas = (end - start) / (points - 1)
+        instants = [start + pas * rang for rang in range(points - 1)] + [end]
+
+    return [
+        {"date": timezone.localtime(moment).date(), "score": exposure_score_at(tenant, moment)}
+        for moment in instants
+    ]
 
 
 def exposure_by_asset(tenant, *, at) -> list[dict]:

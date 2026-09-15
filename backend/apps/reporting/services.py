@@ -66,6 +66,7 @@ def build_dashboard(tenant, period: periods.Period) -> dict:
     surveillance_precedente = monitoring_services.monitoring_indicators(
         tenant, start=period.previous_start, end=period.previous_end
     )
+    serie_du_plan = actions_services.action_plan_series(tenant, start=period.start, end=period.end)
 
     return {
         "period": period.as_dict(),
@@ -84,8 +85,27 @@ def build_dashboard(tenant, period: periods.Period) -> dict:
                 sens="baisse_positive",
             ),
             "by_asset": ti_services.exposure_by_asset(tenant, at=period.end),
+            # Lot C : « le score d'exposition baisse-t-il ? ». Une courbe
+            # échantillonnée : le score ne s'agrège pas en SQL (gravité,
+            # fraîcheur, secret), il se calcule sur des n-uplets.
+            "score_series": ti_services.exposure_score_series(
+                tenant, start=period.start, end=period.end
+            ),
         },
-        "action_plan": plan,
+        "action_plan": {
+            **plan,
+            # Lot C : « le plan avance-t-il ? ». Le taux seul ne dit pas si la
+            # part faite monte parce qu'on termine des actions ou parce qu'on
+            # n'en ajoute plus.
+            "series": serie_du_plan,
+            # Tendance lue sur la courbe elle-même, du premier au dernier jour
+            # de la période : la carte et la courbe ne peuvent pas se
+            # contredire.
+            "completion_evolution": _evolution(
+                serie_du_plan[-1]["completion_rate"] if serie_du_plan else None,
+                serie_du_plan[0]["completion_rate"] if serie_du_plan else None,
+            ),
+        },
         "maturity": {
             **maturite,
             "evolution": _evolution(maturite["score"], maturite["previous_score"]),
