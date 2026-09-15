@@ -6344,3 +6344,164 @@ Vérifié en production :
   sur des états vides.
 - Premier envoi réel du rapport de comité le 1er octobre à 7 h : à contrôler.
 - `zz-seuil-a11y` reste instable au premier essai (antérieur au lot).
+
+## 15 septembre 2026 (soir) — libharfbuzz-subset, et l'inventaire de la démonstration
+
+### Partie A — ce que WeasyPrint attend réellement de l'image
+
+Le rapport de revue disait « libharfbuzz-subset absente ». Avant de l'ajouter,
+relevé de ce que WeasyPrint 70.0 ouvre vraiment (`weasyprint/text/ffi.py`,
+lu dans le conteneur) et de ce que l'image contient (`dpkg`, `ldconfig`) :
+
+| Bibliothèque ouverte | Obligatoire en 70.0 | Dans l'image avant | Comment |
+|---|---|---|---|
+| gobject-2.0 | oui | oui | par dépendance de Pango |
+| pango-1.0 | oui | oui | déclarée |
+| harfbuzz | oui | oui | par dépendance de Pango |
+| **harfbuzz-subset** | non (repli fontTools + avertissement « sera requise ») | **non** | — |
+| harfbuzz-vector | non (glyphes couleur SVG) | non | pas empaquetée dans Debian 13 |
+| fontconfig | oui | oui | par dépendance de Pango |
+| pangoft2-1.0 | oui | oui | **seulement** par dépendance de `libpangocairo` |
+
+Écart constaté :
+
+1. `libharfbuzz-subset0` manquait (paquet disponible, 1,5 Mo installé).
+2. `libpangoft2-1.0-0`, **obligatoire**, n'était là que parce que
+   `libpangocairo` l'amène. Retirer `libpangocairo` en croyant nettoyer du Cairo
+   aurait emporté une bibliothèque obligatoire, sans erreur de construction.
+3. Quatre paquets installés ne sont ouverts par aucune version de WeasyPrint
+   ≥ 53 : `libpangocairo-1.0-0`, `libcairo2`, `libgdk-pixbuf-2.0-0`,
+   `shared-mime-info`. **Conservés** : ce correctif ajoute sans rien retirer ;
+   gain mesuré ci-dessous, retrait à décider à part.
+
+Constat avant correctif, dans le conteneur : le PDF sort, mais les polices sont
+réduites par le repli fontTools, et `import weasyprint` émet
+`DeprecationWarning: HarfBuzz-Subset will be required by future versions`.
+
+**Le test.** `config/verification_pdf.py` produit un vrai PDF (texte accentué)
+et observe le chemin pris pour réduire les polices. Il échoue si WeasyPrint ne
+se charge pas, si le document ne sort pas, si aucune police n'est intégrée, ou
+si le repli fontTools est pris. Aucun nom de bibliothèque en dur. Lancé :
+
+- par pytest (`config/tests/test_verification_pdf.py`, 5 tests dont 3 ignorés
+  sous Windows, où GTK n'est pas installé) ;
+- **dans l'image construite** par la CI (`container-scan`), entrypoint
+  court-circuité, sans base ni secret.
+
+Vérifié dans le conteneur, avant puis après :
+
+- **sans** `libharfbuzz-subset0` : `ÉCHEC — … réduites par le repli fontTools :
+  libharfbuzz-subset est absente`, code de retour 1 ;
+- **avec** le paquet installé (même base Debian 13.6, même version
+  10.2.0-1+deb13u1 que le Dockerfile installera) : `OK — WeasyPrint 70.0 : PDF
+  de 7168 octets, 2 police(s) réduite(s) par HarfBuzz`, plus d'avertissement
+  de dépréciation à l'import ; les 5 tests de vérification et les 3 tests de
+  génération réelle (document, rapport de comité) passent.
+
+**Piège relevé en vérifiant** : le conteneur de développement porte DEUX
+installations de WeasyPrint — 69.0 dans `/usr/local` (image ancienne), 70.0
+dans `~/.local` de l'utilisateur applicatif. Une première vérification lancée
+en `root` testait la 69.0. Refaite sous l'utilisateur applicatif, sur la
+version que `requirements.txt` exige.
+
+**La reconstruction complète de l'image n'a pas pu être faite sur ce poste** :
+deux essais, deux échecs sur `pip install` (`ReadTimeoutError` vers
+`files.pythonhosted.org` après 13 minutes), sans rapport avec le correctif.
+Elle est faite par la CI, qui construit l'image depuis zéro et y lance la
+vérification (étape « PDF generation inside the image »). Relevé dans le
+journal du job `container-scan` sur `3a42942` : `libharfbuzz-subset0
+10.2.0-1+deb13u1` installée à la construction, puis `OK — WeasyPrint 70.0 : PDF
+de 7168 octets, 2 police(s) réduite(s) par HarfBuzz`. Job `backend` : 1 744
+tests passent, dont les 5 de vérification.
+
+**La CI a refusé un commit intermédiaire, à raison** : en traitant deux fuites
+du jeu de démonstration, j'avais rendu faux le contrat de périmètre partagé
+(`test_shared_scope_contract`), qui attendait les 14 fuites ouvertes. Je ne
+l'avais pas relancé localement, seulement les tests du jeu. Le contrat compte
+désormais les fuites ouvertes, dérivées du jeu.
+
+**Le défaut était déjà visible en production**, sans que personne le lise : à
+chaque rapport de comité, les journaux du conteneur portent `WARNING weasyprint
+Using fontTools instead of HarfBuzz-Subset for font "Liberation Sans". This
+will be unsupported in future versions` (relevé le 15/09/2026, avant
+déploiement du correctif).
+
+Gain d'un éventuel retrait des quatre paquets non ouverts, simulé par `apt`
+dans le conteneur : 24 paquets entraînés (Cairo, GDK-Pixbuf, X11, libtiff,
+libjpeg, libwebp…), **19 455 Ko installés**. Non fait : décision à part.
+
+### Partie B — l'inventaire, et ce qu'il a révélé
+
+Inventaire des écrans et du jeu de démonstration **relevé en production** (en
+lecture seule), pour la réécriture du dossier de démonstration commerciale.
+
+**Défaut du produit trouvé en chemin, non corrigé ici** : refaire un diagnostic
+sur le même référentiel **double le plan d'action**. `generate_action_plan`
+crée une action par (évaluation, mesure) et la liste du plan consolide toutes
+les évaluations. Vérifié dans une transaction annulée : 42 actions après le
+premier diagnostic, 84 après le second, pour 42 mesures. À traiter dans un lot
+dédié (choix : ne garder que le dernier diagnostic par référentiel, ou
+rattacher les actions à la mesure plutôt qu'à l'évaluation).
+
+**Le client de démonstration en production était vide là où ça compte** :
+diagnostic ouvert sans une réponse, donc tableau de bord réduit à l'accueil,
+résultats, plan d'action, courbes et rapport de comité vides ; aucun compte
+surveillé (l'enrichissement des lots A et B n'avait pas été rejoué) ; deux
+brouillons de charte, aucun document composé. Enrichi (`seed_demo_tenant`) :
+un diagnostic ANSSI terminé il y a 70 jours par les services (score 48,8 sur
+100), un plan de 26 actions dont 6 faites à des dates échelonnées, 4 en cours,
+16 à faire, 5 en retard, 18 assignées ; deux fuites secondaires traitées ;
+trois documents composés dont un validé ; la conversation de l'assistant vidée
+par la remise à zéro. Toujours un SEUL
+diagnostic, à cause du défaut ci-dessus. Aucune dépendance à l'IA.
+
+Autres constats pour la démonstration : les domaines du jeu
+(`cabinet-durand-demo.fr`) ne sont pas enregistrés (RDAP 404) — la surveillance
+réelle les contrôle toutes les 10 minutes et ouvre des alertes « site
+indisponible » ; le runbook de démonstration (« 3 actifs, le premier à 100 »)
+ne correspond plus à la production (2 actifs exposés, 92 et 56).
+
+Deux enrichissements sont venus des captures du jeu, pas de la lecture du code :
+le bloc « Prochaines actions » vide (le jeu terminait d'abord les actions
+rapides, que le bloc est chargé de montrer) et la courbe des fuites traitées
+plate à zéro. Une conversation d'assistant restée en production masquait les
+questions de départ : la remise à zéro la vide désormais.
+
+Défaut d'affichage relevé sur capture, non corrigé : les graduations de la
+courbe « Avancement du plan d'action » sont tronquées (« 0 %, 5 %, 0 %… »).
+
+### Mise en production
+
+Déployé le 15/09/2026 sur `3a42942`, après une CI verte. Point de repli : tag
+`avant-inventaire-demo` sur `a34417b`, et
+`~/sauvegarde-avant-inventaire-demo-20260915-1952.sql.gz`, vérifiée complète
+(65 tables et le marqueur de fin).
+
+Vérifié en production :
+
+- `python -m config.verification_pdf` dans les conteneurs `web` ET `worker` :
+  `OK — WeasyPrint 70.0 : PDF de 7168 octets, 2 police(s) réduite(s) par
+  HarfBuzz`.
+- Un rapport de comité produit après déploiement (23 101 octets) ne journalise
+  plus l'avertissement fontTools relevé avant.
+- Jeu de démonstration rechargé avec remise à zéro (`--allow-production`) :
+  14 fuites dont 12 ouvertes, 4 mots de passe révélables, exposition 100 / 50 /
+  46, un compte surveillé (11 observations en 7 groupes), diagnostic ANSSI
+  terminé à 48,8, plan de 26 actions à 23,1 %, trois documents composés,
+  conversation vide, quatre questions de départ.
+- Temps de calcul relevés en lecture seule : tableau de bord 0,10 à 0,12 s,
+  rapport de comité PDF 0,41 à 1,00 s, exposition du client le plus volumineux
+  (165 fuites) 0,04 s.
+
+### Reste à faire
+
+- **Refaire un diagnostic double le plan d'action** : défaut produit, à traiter
+  dans un lot dédié.
+- Graduations tronquées de la courbe d'avancement du plan.
+- Le jeu de démonstration contrôle des domaines inexistants : décider s'il doit
+  pointer vers un domaine que nous contrôlons pour que la surveillance soit
+  montrable.
+- Retrait éventuel des quatre paquets système non ouverts par WeasyPrint
+  (~19,5 Mo), décision à part.
+- `docs/demo_runbook.md` ne correspond plus aux écrans : à réécrire à partir
+  de l'inventaire remis ce jour.
