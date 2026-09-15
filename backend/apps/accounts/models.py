@@ -67,6 +67,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     display_profile = models.CharField(
         max_length=12, choices=DisplayProfile.choices, default=DisplayProfile.EXECUTIVE
     )
+    # Lot C, point 21 : la séquence d'accueil. Seule la TROISIÈME étape est
+    # mémorisée ici. Les deux premières — un actif déclaré, un diagnostic
+    # terminé — se lisent dans les données du client et ne peuvent donc pas
+    # mentir. Des dates plutôt que des booléens : on sait quand la personne a
+    # franchi l'étape, ce qui sert au suivi des nouveaux clients.
+    onboarding_result_seen_at = models.DateTimeField(null=True, blank=True)
+    onboarding_dismissed_at = models.DateTimeField(null=True, blank=True)
     date_joined = models.DateTimeField(auto_now_add=True)
 
     objects = UserManager()

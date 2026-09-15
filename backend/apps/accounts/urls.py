@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenBlacklistView
 from .views import (
     InvitationView,
     LoginView,
+    MeOnboardingView,
     MeView,
     RegisterView,
     ThrottledTokenRefreshView,
@@ -21,6 +22,8 @@ urlpatterns = [
     path("token/blacklist/", TokenBlacklistView.as_view(), name="token-blacklist"),
     path("token/verify-2fa/", TwoFactorVerifyView.as_view(), name="token-verify-2fa"),
     path("me/", MeView.as_view(), name="auth-me"),
+    # Lot C, point 21 : la séquence d'accueil d'un nouveau client.
+    path("me/onboarding/", MeOnboardingView.as_view(), name="auth-me-onboarding"),
     path(
         "invitation/<str:token>/",
         InvitationView.as_view(),

@@ -1,4 +1,5 @@
 from django.contrib.auth import authenticate
+from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -7,9 +8,11 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from . import services
 from .serializers import (
+    ONBOARDING_STEPS,
     DisplayProfileSerializer,
     InvitationAcceptSerializer,
     LoginSerializer,
+    OnboardingStepSerializer,
     RegisterSerializer,
     TwoFactorConfirmSerializer,
     TwoFactorDisableSerializer,
@@ -150,6 +153,26 @@ class MeView(APIView):
         serializer.is_valid(raise_exception=True)
         request.user.display_profile = serializer.validated_data["display_profile"]
         request.user.save(update_fields=["display_profile"])
+        return Response(UserSerializer(request.user).data)
+
+
+class MeOnboardingView(APIView):
+    """POST /api/v1/auth/me/onboarding/ — ``{"step": "result_seen"|"dismissed"}``.
+
+    Lot C, point 21. N'agit que sur la personne connectée : il n'existe aucun
+    moyen de franchir l'étape d'un autre. Idempotent — la date de la PREMIÈRE
+    fois est conservée, un second appel ne la réécrit pas.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = OnboardingStepSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        champ = ONBOARDING_STEPS[serializer.validated_data["step"]]
+        if getattr(request.user, champ) is None:
+            setattr(request.user, champ, timezone.now())
+            request.user.save(update_fields=[champ])
         return Response(UserSerializer(request.user).data)
 
 

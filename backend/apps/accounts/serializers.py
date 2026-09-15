@@ -10,6 +10,7 @@ User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
     memberships = serializers.SerializerMethodField()
+    onboarding = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -25,11 +26,31 @@ class UserSerializer(serializers.ModelSerializer):
             # avant d'avoir choisi une entreprise.
             "display_profile",
             "memberships",
+            # Lot C, point 21 : ce que la séquence d'accueil ne peut pas lire
+            # dans les données du client.
+            "onboarding",
         ]
         read_only_fields = fields
 
     def get_memberships(self, user):
         return MembershipSummarySerializer(list_user_memberships(user), many=True).data
+
+    def get_onboarding(self, user) -> dict:
+        return {
+            "result_seen": user.onboarding_result_seen_at is not None,
+            "dismissed": user.onboarding_dismissed_at is not None,
+        }
+
+
+#: Les étapes de l'accueil que la personne franchit elle-même.
+ONBOARDING_STEPS = {
+    "result_seen": "onboarding_result_seen_at",
+    "dismissed": "onboarding_dismissed_at",
+}
+
+
+class OnboardingStepSerializer(serializers.Serializer):
+    step = serializers.ChoiceField(choices=sorted(ONBOARDING_STEPS))
 
 
 class DisplayProfileSerializer(serializers.Serializer):
