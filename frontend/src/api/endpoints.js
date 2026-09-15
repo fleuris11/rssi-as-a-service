@@ -409,17 +409,20 @@ export const aiApi = {
   updateSettings: (payload) => apiClient.patch('/api/v1/ai/settings/', payload),
   previewCharter: () => apiClient.get('/api/v1/ai/preview/charter/'),
   previewAssistant: () => apiClient.get('/api/v1/ai/preview/assistant/'),
+  // Lot C : les questions de départ, tirées de la situation du client. Aucun
+  // appel d'IA derrière — des règles côté serveur.
+  assistantSuggestions: () => apiClient.get('/api/v1/ai/assistant/suggestions/'),
 
   // La bibliothèque documentaire (V2-5) : les sept documents que la
   // plateforme sait produire, l'état de chacun, et ce qui manque pour qu'il
   // soit personnalisé.
   documentCatalog: () => apiClient.get('/api/v1/ai/documents/catalog/'),
-  listDocuments: () => apiClient.get('/api/v1/ai/documents/'),
-  // Réponse en 201 avec le document prêt pour un document composé, en 202
-  // avec un job pour la charte, qui passe par l'IA.
   // Lot C : le document AVANT sa génération — rien n'est enregistré, aucune
   // version n'est consommée. Pour la charte, le plan qu'elle suivra.
   previewDocument: (type) => apiClient.get(`/api/v1/ai/documents/preview/${type}/`),
+  listDocuments: () => apiClient.get('/api/v1/ai/documents/'),
+  // Réponse en 201 avec le document prêt pour un document composé, en 202
+  // avec un job pour la charte, qui passe par l'IA.
   generateDocument: (type) => apiClient.post('/api/v1/ai/documents/', { type }),
   getDocument: (id) => apiClient.get(`/api/v1/ai/documents/${id}/`),
   updateDocument: (id, contentMarkdown) =>
