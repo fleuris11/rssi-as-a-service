@@ -1,8 +1,9 @@
 from datetime import time
 
+from django.conf import settings
 from django.db import models
 
-from apps.tenants.models import TenantScopedModel
+from apps.tenants.models import Tenant, TenantScopedModel
 
 
 class NotificationPreferences(TenantScopedModel):
@@ -59,3 +60,59 @@ class EmailLog(TenantScopedModel):
 
     def __str__(self):
         return f"{self.kind} → {self.recipient} ({self.sent_at:%Y-%m-%d %H:%M})"
+
+
+class Notification(models.Model):
+    """Une notification DANS l'application (lot C, point 20 ; ADR-037).
+
+    **Pas un ``TenantScopedModel``, et c'est une décision.** Une notification
+    appartient à une PERSONNE : celles de l'exploitant ne concernent aucun
+    client en particulier, et quelqu'un qui suit trois entreprises lit ses
+    notifications dans une seule cloche. ``tenant`` dit de quel client il
+    s'agit quand il y en a un ; la lecture est cloisonnée par destinataire,
+    puis par appartenance (``inbox.visible_for``).
+
+    On passe par ``apps.notifications.inbox``, jamais par ce modèle.
+    """
+
+    class Kind(models.TextChoices):
+        # Côté exploitant.
+        ACCESS_REQUEST_NEW = "access_request_new", "Nouvelle demande d'un client"
+        WATCHED_ACCOUNT_DECLARED = "watched_account_declared", "Compte désigné déclaré"
+        # Côté client.
+        ACCESS_REQUEST_UPDATED = "access_request_updated", "Suivi d'une demande"
+        WATCHED_FINDINGS_NEW = "watched_findings_new", "Nouvelles fuites sur un compte surveillé"
+        COMMITTEE_REPORT_READY = "committee_report_ready", "Rapport de comité disponible"
+        WATCH_UPDATE_PUBLISHED = "watch_update_published", "Publication de veille retenue"
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications"
+    )
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    kind = models.CharField(max_length=40, choices=Kind.choices)
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True)
+    #: Une route de l'application (« /mes-demandes »), jamais une URL externe.
+    link = models.CharField(max_length=200, blank=True)
+    #: Vide = pas d'idempotence. Sinon, unique par destinataire.
+    dedupe_key = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["recipient", "read_at"], name="notif_destinataire_lu"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["recipient", "dedupe_key"],
+                condition=~models.Q(dedupe_key=""),
+                name="unique_notification_dedupe_par_destinataire",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.kind} → {self.recipient_id}"
