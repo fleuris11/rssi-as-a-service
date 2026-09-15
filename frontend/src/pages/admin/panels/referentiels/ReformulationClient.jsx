@@ -110,7 +110,7 @@ export default function ReformulationClient({ catalogue, clients = [] }) {
               <li key={m.id} className="py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium text-ink-800">
-                    <span className="text-xs text-ink-400">{m.code}</span> {m.official_title}
+                    <span className="text-xs text-ink-500">{m.code}</span> {m.official_title}
                   </p>
                   {surcharge && <Badge variant="brand">Reformulée</Badge>}
                 </div>

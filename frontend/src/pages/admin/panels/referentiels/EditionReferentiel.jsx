@@ -126,7 +126,7 @@ export default function EditionReferentiel({ catalogue, clients = [], onModifie 
                 {plan.domains.map((d) => (
                   <li key={d.code} className="text-sm">
                     <p className="font-medium text-ink-700">
-                      {d.name} <span className="text-xs text-ink-400">({d.code})</span>
+                      {d.name} <span className="text-xs text-ink-500">({d.code})</span>
                     </p>
                     <p className="text-xs text-ink-500">
                       {d.measures.length === 0
@@ -288,7 +288,7 @@ export default function EditionReferentiel({ catalogue, clients = [], onModifie 
                         onChange={() => basculer(m.code)}
                       />
                       <span>
-                        <span className="text-xs text-ink-400">{m.code}</span> {m.official_title}
+                        <span className="text-xs text-ink-500">{m.code}</span> {m.official_title}
                       </span>
                     </label>
                   </li>

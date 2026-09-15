@@ -179,7 +179,7 @@ export default function ImportReferentiel({ onImporte }) {
       {apercu && (
         <div className="mt-4 rounded-md border border-ink-200 bg-canvas p-3">
           <p className="text-sm font-medium text-ink-800">
-            {apercu.name} <span className="text-ink-400">v{apercu.version}</span>
+            {apercu.name} <span className="text-ink-500">v{apercu.version}</span>
           </p>
           <p className="mt-0.5 text-xs text-ink-500">
             {apercu.domain_count} domaine(s), {apercu.measure_count} mesure(s)

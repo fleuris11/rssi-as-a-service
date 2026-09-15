@@ -503,7 +503,7 @@ export default function DiagnosticPage() {
             </p>
           )}
           {referential.licence_notice && (
-            <p className="mt-2 text-xs text-ink-400">{referential.licence_notice}</p>
+            <p className="mt-2 text-xs text-ink-500">{referential.licence_notice}</p>
           )}
           <div className="mt-4 space-y-3">
             {compositions.map((composition) => (
