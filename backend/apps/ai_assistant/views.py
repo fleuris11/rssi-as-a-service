@@ -100,6 +100,30 @@ class GeneratedDocumentListCreateView(generics.ListAPIView):
 
     def post(self, request, *args, **kwargs):
         serializer = GeneratedDocumentCreateSerializer(data=request.data)
+class DocumentPreviewView(APIView):
+    """GET /api/v1/ai/documents/preview/<type>/ — le document AVANT sa génération.
+
+    Lot C, point 14 : « un document qu'il faut télécharger pour savoir s'il
+    convient ne sera pas utilisé ». L'aperçu d'un document composé est le
+    texte exact que produirait la génération, calculé sans rien enregistrer :
+    aucune version consommée, aucune ligne créée. Ouvert aux lecteurs : voir
+    ce qu'un document contiendrait ne modifie rien.
+
+    Pour la charte, rédigée par l'IA, il n'existe aucun texte avant la
+    rédaction : l'aperçu montre le plan qu'elle suivra, et n'appelle PAS
+    l'IA — un aperçu qui consommerait le quota serait une génération cachée.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsTenantMember]
+
+    def get(self, request, document_type):
+        try:
+            apercu = services.preview_document(tenant=request.tenant, document_type=document_type)
+        except services.AIError as exc:
+            raise NotFound(str(exc)) from exc
+        return Response(apercu)
+
+
         serializer.is_valid(raise_exception=True)
         document_type = serializer.validated_data["type"]
 

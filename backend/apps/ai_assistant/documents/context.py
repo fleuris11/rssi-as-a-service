@@ -16,6 +16,7 @@ incidents qui listerait « jean.dupont@… » circulerait ensuite en pièce join
 from apps.actions import services as actions_services
 from apps.assessments import services as assessments_services
 from apps.monitoring import services as monitoring_services
+from apps.tenants import services as tenants_services
 from apps.threat_intelligence import services as ti_services
 
 # Ce qu'on écrit quand la plateforme ne sait pas. Uniforme dans tous les
@@ -34,7 +35,28 @@ def company(tenant) -> dict:
         "contact_email": tenant.contact_email or "",
         "contact_phone": tenant.contact_phone or "",
         "site_web": tenant.website or "",
+        "referents": referents(tenant),
     }
+
+
+def referents(tenant) -> list[dict]:
+    """Les administrateurs ACTIFS de l'entreprise sur la plateforme.
+
+    Lot C, point 16 : trois documents laissaient le référent sécurité « à
+    compléter », alors que la plateforme sait qui administre le compte. Un
+    administrateur désactivé (salarié parti) n'est jamais proposé : le
+    désigner dans une procédure d'incident enverrait l'alerte à quelqu'un qui
+    n'est plus là. Un contributeur non plus — il agit, il ne répond pas de la
+    sécurité de l'entreprise.
+
+    Ce sont des personnes que le client a lui-même invitées : aucune donnée
+    n'entre ici qu'il n'ait saisie.
+    """
+    return [
+        {"nom": adhesion.user.get_full_name().strip(), "email": adhesion.user.email}
+        for adhesion in tenants_services.list_members(tenant).order_by("created_at")
+        if adhesion.role == "admin" and adhesion.user.is_active
+    ]
 
 
 def assets(tenant) -> list[dict]:

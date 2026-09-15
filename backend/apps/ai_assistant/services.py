@@ -542,6 +542,11 @@ def document_catalog(tenant) -> list[dict]:
                 "label": spec.label,
                 "purpose": spec.purpose,
                 "source": spec.source,
+                # Lot C : rangé par usage, avec son destinataire.
+                "usage": spec.usage,
+                "usage_label": documents_registry.USAGES[spec.usage]["label"],
+                "usage_description": documents_registry.USAGES[spec.usage]["description"],
+                "audience": spec.audience,
                 "latest_version": dernier.version if dernier else None,
                 "latest_status": dernier.status if dernier else None,
                 "latest_id": dernier.id if dernier else None,
@@ -549,6 +554,41 @@ def document_catalog(tenant) -> list[dict]:
             }
         )
     return catalogue
+
+
+def preview_document(*, tenant, document_type: str) -> dict:
+    """Le document tel que la génération le produirait, SANS rien enregistrer.
+
+    Lot C, point 14. Composé : le composeur est appelé sur un document non
+    sauvegardé portant la version que recevrait la prochaine génération — le
+    texte est donc identique, en-tête compris, et aucune version n'est
+    consommée. Rédigé par l'IA : aucun texte n'existe avant la rédaction, on
+    renvoie le plan qu'elle suivra, sans appeler l'IA.
+    """
+    spec = documents_registry.get(document_type)
+    if spec is None:
+        raise AIError("Ce document n'existe pas.")
+
+    apercu = {
+        "type": spec.type,
+        "label": spec.label,
+        "source": spec.source,
+        "audience": spec.audience,
+        "content_markdown": None,
+        "outline": list(spec.outline),
+        **documents_registry.readiness(tenant, spec),
+    }
+    if spec.build is None:
+        return apercu
+
+    brouillon = GeneratedDocument(
+        tenant=tenant,
+        type=document_type,
+        source=GeneratedDocument.Source.COMPOSED,
+        version=_next_document_version(tenant, document_type),
+    )
+    apercu["content_markdown"] = spec.build(tenant, documents_context.full(tenant), brouillon)
+    return apercu
 
 
 def compose_document(*, tenant, user, document_type: str) -> GeneratedDocument:

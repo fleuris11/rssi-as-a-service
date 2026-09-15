@@ -8,6 +8,7 @@ from .views import (
     ConversationListCreateView,
     DocumentCatalogView,
     GeneratedDocumentDetailView,
+    DocumentPreviewView,
     GeneratedDocumentExportDocxView,
     GeneratedDocumentExportPdfView,
     GeneratedDocumentExportView,
@@ -26,6 +27,11 @@ urlpatterns = [
         "documents/<int:document_id>/",
         GeneratedDocumentDetailView.as_view(),
         name="ai-document-detail",
+    ),
+    path(
+        "documents/preview/<str:document_type>/",
+        DocumentPreviewView.as_view(),
+        name="ai-document-preview",
     ),
     path(
         "documents/<int:document_id>/validate/",

@@ -25,6 +25,38 @@ from . import composers
 SOURCE_COMPOSED = "composed"
 SOURCE_AI = "ai"
 
+#: Lot C, point 12 : les documents se rangent par USAGE, pas par type de
+#: fichier. Un dirigeant ne cherche pas « une procédure » : il cherche de quoi
+#: répondre à son assureur. L'ordre est celui dans lequel un client découvre
+#: ses besoins — se cadrer, embarquer ses équipes, rendre des comptes.
+USAGE_FRAME = "frame"
+USAGE_AWARENESS = "awareness"
+USAGE_ANSWER = "answer"
+USAGE_COMMITTEE = "committee"
+
+USAGES = {
+    USAGE_FRAME: {
+        "label": "Pour cadrer ma sécurité",
+        "description": "Les engagements de l’entreprise, et comment continuer si tout s’arrête.",
+    },
+    USAGE_AWARENESS: {
+        "label": "Pour sensibiliser mes équipes",
+        "description": (
+            "Ce que chaque collaborateur doit savoir, et les règles qui s’imposent à lui."
+        ),
+    },
+    USAGE_ANSWER: {
+        "label": "Pour répondre à un client ou un assureur",
+        "description": (
+            "Les preuves qu’on vous demande : comment vous réagissez, ce que vous avez tracé."
+        ),
+    },
+    USAGE_COMMITTEE: {
+        "label": "Pour un comité",
+        "description": "Où en est la sécurité, ce qui a été fait, ce qui reste à arbitrer.",
+    },
+}
+
 
 @dataclass(frozen=True)
 class DocumentSpec:
@@ -34,6 +66,11 @@ class DocumentSpec:
     #: définition, une raison de cliquer.
     purpose: str
     source: str
+    #: Lot C : l'usage sous lequel le document est rangé (UN seul — un même
+    #: bouton répété dans deux sections donnerait deux commandes au même nom,
+    #: indistinguables au lecteur d'écran), et à qui il s'adresse.
+    usage: str = USAGE_FRAME
+    audience: str = ""
     #: ``None`` pour les documents rédigés par l'IA : leur génération suit le
     #: chemin asynchrone existant (job Celery), pas un appel de fonction.
     build: Callable | None = None
@@ -41,6 +78,9 @@ class DocumentSpec:
     #: réellement personnalisé.
     needs_assessment: bool = False
     needs_assets: bool = False
+    #: Pour un document RÉDIGÉ, l'aperçu ne peut pas montrer un texte qui
+    #: n'existe pas encore : il montre le plan que la rédaction suivra.
+    outline: tuple[str, ...] = ()
 
 
 REGISTRY: dict[str, DocumentSpec] = {
@@ -54,6 +94,8 @@ REGISTRY: dict[str, DocumentSpec] = {
                 "par domaine, avec l'état constaté et ce qu'il reste à mettre en place."
             ),
             source=SOURCE_COMPOSED,
+            usage=USAGE_FRAME,
+            audience="La direction, qui s’engage ; le prestataire informatique, qui l’applique.",
             build=composers.politique_de_securite,
             needs_assessment=True,
             needs_assets=True,
@@ -66,7 +108,19 @@ REGISTRY: dict[str, DocumentSpec] = {
                 "messagerie, télétravail. À annexer au règlement intérieur."
             ),
             source=SOURCE_AI,
+            usage=USAGE_AWARENESS,
+            audience="Tous les collaborateurs, qui la signent ; les représentants du personnel.",
             needs_assessment=True,
+            outline=(
+                "Objet et champ d'application",
+                "Accès et mots de passe",
+                "Messagerie et navigation",
+                "Matériel et postes de travail",
+                "Télétravail et mobilité",
+                "Données personnelles",
+                "Signalement d'un incident",
+                "Contrôles et sanctions",
+            ),
         ),
         DocumentSpec(
             type=GeneratedDocument.DocumentType.INCIDENT_PROCEDURE,
@@ -76,6 +130,11 @@ REGISTRY: dict[str, DocumentSpec] = {
                 "Contient une fiche réflexe à imprimer."
             ),
             source=SOURCE_COMPOSED,
+            usage=USAGE_ANSWER,
+            audience=(
+                "Le référent sécurité et la direction ; à montrer à un assureur ou un "
+                "donneur d’ordre."
+            ),
             build=composers.procedure_incidents,
         ),
         DocumentSpec(
@@ -86,6 +145,10 @@ REGISTRY: dict[str, DocumentSpec] = {
                 "et les fuites que la plateforme a détectées."
             ),
             source=SOURCE_COMPOSED,
+            usage=USAGE_ANSWER,
+            audience=(
+                "La direction et le délégué à la protection des données ; la CNIL sur demande."
+            ),
             build=composers.registre_incidents,
         ),
         DocumentSpec(
@@ -96,6 +159,10 @@ REGISTRY: dict[str, DocumentSpec] = {
                 "sauvegardes, délais visés, contacts d'urgence."
             ),
             source=SOURCE_COMPOSED,
+            usage=USAGE_FRAME,
+            audience=(
+                "La direction, qui décide de l’activer ; les personnes clés de chaque activité."
+            ),
             build=composers.plan_de_continuite,
             needs_assets=True,
         ),
@@ -107,6 +174,8 @@ REGISTRY: dict[str, DocumentSpec] = {
                 "réellement observés dans l'entreprise."
             ),
             source=SOURCE_COMPOSED,
+            usage=USAGE_AWARENESS,
+            audience="Tous les collaborateurs, y compris sans compétence informatique.",
             build=composers.fiche_sensibilisation,
             needs_assessment=True,
         ),
@@ -118,6 +187,8 @@ REGISTRY: dict[str, DocumentSpec] = {
                 "arbitrer — archivé et versionné."
             ),
             source=SOURCE_COMPOSED,
+            usage=USAGE_COMMITTEE,
+            audience="Le comité de direction ou l’associé qui arbitre les budgets.",
             build=composers.rapport_comite,
         ),
     ]

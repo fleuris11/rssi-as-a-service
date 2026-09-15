@@ -51,6 +51,27 @@ def _ou(valeur, defaut: str = A_COMPLETER) -> str:
     return str(valeur)
 
 
+def _referents(entreprise: dict) -> list[dict]:
+    return entreprise.get("referents") or []
+
+
+def _referent_nom(entreprise: dict) -> str:
+    """Le ou les administrateurs de l'entreprise sur la plateforme.
+
+    Lot C, point 16 : le référent sécurité était laissé « à compléter » dans
+    trois documents, alors que la plateforme connaît les administrateurs du
+    client. C'est une PROPOSITION écrite dans un document à relire, pas une
+    désignation : le pied de page le rappelle.
+    """
+    noms = [r["nom"] for r in _referents(entreprise) if r["nom"]]
+    return ", ".join(noms) if noms else A_COMPLETER
+
+
+def _referent_contact(entreprise: dict) -> str:
+    emails = [r["email"] for r in _referents(entreprise) if r["email"]]
+    return ", ".join(emails) if emails else A_COMPLETER
+
+
 def _tableau(entetes: list[str], lignes: list[list[str]], *, a_remplir: bool = False) -> str:
     """Un tableau Markdown.
 
@@ -641,7 +662,8 @@ def procedure_incidents(tenant, ctx: dict, document) -> str:
                 "- Attendre de « voir si ça se règle tout seul ».",
                 "- Prévenir clients ou partenaires avant d'avoir qualifié l'incident.",
                 "",
-                f"**Contacts** — Référent : {A_COMPLETER} · Direction : "
+                f"**Contacts** — Référent : {_referent_nom(entreprise)} "
+                f"({_referent_contact(entreprise)}) · Direction : "
                 f"{_ou(entreprise.get('contact_phone'), A_COMPLETER)} · "
                 f"Prestataire : {A_COMPLETER}",
             ]
@@ -961,7 +983,15 @@ def plan_de_continuite(tenant, ctx: dict, document) -> str:
                             _ou(entreprise.get("contact_phone")),
                             "Décision d'activer ce plan",
                         ],
-                        ["Référent sécurité", A_COMPLETER, A_COMPLETER, "Coordination"],
+                        [
+                            "Référent sécurité",
+                            _referent_nom(entreprise),
+                            # La plateforme connaît l'adresse, pas le
+                            # téléphone : on écrit ce qu'on sait, et on laisse
+                            # la case du numéro à la charge du client.
+                            f"{A_COMPLETER} — {_referent_contact(entreprise)}",
+                            "Coordination",
+                        ],
                         ["Prestataire informatique", A_COMPLETER, A_COMPLETER, "Remise en service"],
                         ["Hébergeur", A_COMPLETER, A_COMPLETER, "Site et messagerie"],
                         ["Assureur", A_COMPLETER, A_COMPLETER, "Déclaration de sinistre"],
@@ -1122,7 +1152,8 @@ def fiche_sensibilisation(tenant, ctx: dict, document) -> str:
                 "Vous avez cliqué, saisi un mot de passe, ou vous n'êtes pas sûr :",
                 "",
                 "1. **Débranchez le réseau** (câble ou Wi-Fi), sans éteindre l'ordinateur.",
-                f"2. **Prévenez** : {A_COMPLETER} (référent sécurité) — "
+                f"2. **Prévenez** : {_referent_nom(entreprise)}, "
+                f"{_referent_contact(entreprise)} (référent sécurité) — "
                 f"{_ou(entreprise.get('contact_email'))} (direction).",
                 "3. **Ne supprimez rien** : les traces servent à comprendre ce qui s'est passé.",
                 "",
