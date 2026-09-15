@@ -28,6 +28,9 @@ test('pages publiques (connexion, inscription) sans violation critique', async (
 })
 
 test('pages principales authentifiées sans violation critique', async ({ page }) => {
+  // Douze écrans, chacun attendant la fin de ses animations avant l'audit :
+  // le délai par défaut de 60 s ne suffit plus depuis le lot C.
+  test.setTimeout(180_000)
   const suffix = uniqueSuffix()
   await registerNewTenant(page, {
     companyName: `E2E A11y ${suffix}`,
@@ -48,6 +51,16 @@ test('pages principales authentifiées sans violation critique', async ({ page }
     { path: '/assistant', heading: 'Assistant' },
     { path: '/preferences', heading: 'Préférences de notification' },
     { path: '/securite', heading: 'Sécurité du compte' },
+    // Lot C : écrans nouveaux ou refaits (centre de notifications, champs de
+    // recherche, documents par usage). Sans titre imposé pour ceux qu'une
+    // offre d'essai peut remplacer par la présentation de la fonctionnalité :
+    // cet état-là est audité aussi.
+    { path: '/notifications', heading: 'Notifications' },
+    { path: '/mes-demandes', heading: 'Mes demandes' },
+    { path: '/plan-action' },
+    { path: '/surveillance' },
+    { path: '/veille' },
+    { path: '/documents' },
   ]
 
   for (const { path, heading, text } of pages) {
