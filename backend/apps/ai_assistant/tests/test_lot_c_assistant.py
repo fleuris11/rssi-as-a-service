@@ -176,7 +176,11 @@ class TestRenvoisVersLesEcrans:
 
         liens = assistant_guide.related_links(texte)
 
-        assert [lien["to"] for lien inliens] == ["/compromissions", "/surveillance", "/plan-action"]
+        assert [lien["to"] for lien in liens] == [
+            "/compromissions",
+            "/surveillance",
+            "/plan-action",
+        ]
 
     def test_jamais_plus_de_trois_liens_ni_de_doublon(self):
         texte = (
@@ -186,7 +190,7 @@ class TestRenvoisVersLesEcrans:
 
         liens = assistant_guide.related_links(texte)
 
-        routes = [lien["to"] for lien inliens]
+        routes = [lien["to"] for lien in liens]
         assert len(routes) == assistant_guide.LIMITE_LIENS
         assert len(set(routes)) == len(routes)
 
@@ -222,4 +226,4 @@ class TestRenvoisVersLesEcrans:
 
         utilisateur, assistant = response.data["results"]
         assert utilisateur["links"] == []
-        assert [lien["to"] for lien inassistant["links"]] == ["/compromissions", "/plan-action"]
+        assert [lien["to"] for lien in assistant["links"]] == ["/compromissions", "/plan-action"]
