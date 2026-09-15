@@ -1,21 +1,19 @@
 import {
   ArrowRight,
-  ClipboardCheck,
   CloudLightning,
   CloudSun,
   Download,
   FileText,
-  KanbanSquare,
-  Radar,
   ShieldAlert,
   Sun,
   Zap,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { actionsApi, assessmentsApi, monitoringApi, reportingApi } from '../api/endpoints'
+import { actionsApi, assessmentsApi, authApi, monitoringApi, reportingApi } from '../api/endpoints'
 import { lectureDuScore } from '../components/DisplayProfile'
-import FeatureGate from '../components/FeatureGate'
+import PremiersPas from '../components/onboarding/PremiersPas'
+import { useOptionalAuth } from '../context/AuthContext'
 import {
   COULEUR_SECONDE,
   COULEUR_TRAIT,
@@ -49,74 +47,6 @@ import { useToast } from '../components/ui/Toast'
  * décidé une fois. L'écran ne recalcule aucun indicateur ; le PDF et le
  * tableur exportent exactement ce qu'il affiche.
  */
-
-function OnboardingSteps() {
-  const steps = [
-    {
-      title: 'Faites votre diagnostic',
-      description: 'Répondez au questionnaire ANSSI pour connaître votre score de maturité.',
-      to: '/diagnostic',
-      cta: 'Démarrer le diagnostic',
-      icon: ClipboardCheck,
-      // Conditionne l'étape à l'offre. Le nom de la clé vient du registre
-      // serveur : l'interface n'invente pas de fonctionnalité.
-      feature: 'anssi_assessment',
-    },
-    {
-      title: 'Suivez votre plan',
-      description: 'Un plan d’action priorisé est généré automatiquement à partir des écarts.',
-      to: '/plan-action',
-      cta: 'Voir le plan',
-      icon: KanbanSquare,
-    },
-    {
-      title: 'Surveillez vos actifs',
-      description: 'Déclarez votre site et vos domaines pour recevoir la météo cyber quotidienne.',
-      to: '/surveillance',
-      cta: 'Ajouter un actif',
-      icon: Radar,
-    },
-  ]
-
-  return (
-    <div className="grid gap-4 md:grid-cols-3">
-      {steps.map((step, index) => (
-        <Card key={step.title} className="flex flex-col">
-          <div className="flex items-center gap-2 text-xs font-medium text-brand-600">
-            <span className="flex size-5 items-center justify-center rounded-full bg-brand-100 text-[11px]">
-              {index + 1}
-            </span>
-            Étape {index + 1}
-          </div>
-          <div className="mt-3 flex size-10 items-center justify-center rounded-md bg-brand-50 text-brand-700">
-            <step.icon className="size-5" aria-hidden="true" />
-          </div>
-          <p className="mt-3 font-display text-base font-semibold text-ink-900">{step.title}</p>
-          <p className="mt-1 flex-1 text-sm text-ink-500">{step.description}</p>
-          {/* L'étape reste VISIBLE et décrite quand elle est hors offre :
-              seul son bouton est désactivé, avec le teaser et l'offre requise. */}
-          {step.feature ? (
-            <FeatureGate feature={step.feature}>
-              <Link to={step.to} className="mt-4 block">
-                <Button variant={index === 0 ? 'primary' : 'secondary'} className="w-full">
-                  {step.cta}
-                  <ArrowRight className="size-4" aria-hidden="true" />
-                </Button>
-              </Link>
-            </FeatureGate>
-          ) : (
-            <Link to={step.to} className="mt-4">
-              <Button variant={index === 0 ? 'primary' : 'secondary'} className="w-full">
-                {step.cta}
-                <ArrowRight className="size-4" aria-hidden="true" />
-              </Button>
-            </Link>
-          )}
-        </Card>
-      ))}
-    </div>
-  )
-}
 
 const METEO = {
   ok: { icon: Sun, label: 'Tout va bien', color: 'text-ok-strong' },
@@ -158,6 +88,20 @@ export default function DashboardPage() {
   const [personnalisee, setPersonnalisee] = useState({ start: '', end: '' })
   const [donnees, setDonnees] = useState(null)
   const [telechargement, setTelechargement] = useState(null)
+  // Lot C, point 21 : ce que l'accueil ne peut pas lire dans les données.
+  // `useOptionalAuth` : l'accueil est de la présentation, il ne doit pas
+  // faire tomber le tableau de bord rendu hors session.
+  const auth = useOptionalAuth()
+  const accueil = auth?.user?.onboarding
+
+  async function franchir(etape) {
+    try {
+      const reponse = await authApi.completeOnboardingStep(etape)
+      auth?.setUser?.(reponse.data)
+    } catch {
+      showToast({ type: 'error', message: 'Ce choix n’a pas pu être enregistré.' })
+    }
+  }
 
   const chargerEtat = useCallback(async () => {
     setChargement(true)
@@ -236,6 +180,13 @@ export default function DashboardPage() {
     )
   }
 
+  // Les deux premières étapes se lisent dans les données : un actif est
+  // surveillé, un diagnostic est terminé. Elles ne peuvent pas mentir.
+  const aUnActif = surveillance.length > 0
+  const resultatCompris = Boolean(accueil?.result_seen)
+  const accueilEnCours =
+    !accueil?.dismissed && !(aUnActif && aDesDonnees && resultatCompris)
+
   if (!aDesDonnees) {
     return (
       <div className="space-y-6">
@@ -247,7 +198,7 @@ export default function DashboardPage() {
             Trois étapes pour avoir une vision complète de votre posture cyber.
           </p>
         </div>
-        <OnboardingSteps />
+        <PremiersPas aUnActif={aUnActif} aUnDiagnostic={false} resultatCompris={false} />
       </div>
     )
   }
@@ -291,6 +242,19 @@ export default function DashboardPage() {
           </Button>
         </div>
       </div>
+
+      {/* Lot C, point 21 : l'accueil reste là, en format compact, tant que
+          les trois étapes ne sont pas franchies — et jusqu'à ce que la
+          personne choisisse de le masquer. */}
+      {accueilEnCours && (
+        <PremiersPas
+          compact
+          aUnActif={aUnActif}
+          aUnDiagnostic={aDesDonnees}
+          resultatCompris={resultatCompris}
+          onMasquer={() => franchir('dismissed')}
+        />
+      )}
 
       {donnees?.exposure.open_by_severity.critical > 0 && (
         <Link

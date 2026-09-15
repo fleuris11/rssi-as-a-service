@@ -10,8 +10,9 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from 'recharts'
-import { assessmentsApi } from '../api/endpoints'
-import { ProfileDate, ScoreReading, TechnicalValue } from '../components/DisplayProfile'
+import { assessmentsApi, authApi } from '../api/endpoints'
+import { lectureDuScore, ProfileDate, ScoreReading, TechnicalValue } from '../components/DisplayProfile'
+import { useOptionalAuth } from '../context/AuthContext'
 import Button from '../components/ui/Button'
 import ScoreGauge from '../components/ui/ScoreGauge'
 import Card, { CardHeader } from '../components/ui/Card'
@@ -36,6 +37,52 @@ function ScoreTooltip({ active, payload }) {
   )
 }
 
+/**
+ * Lot C, point 21 : la troisième étape de l'accueil, « comprendre son
+ * premier résultat ». Affichée tant que la personne ne l'a pas marquée
+ * comprise ; le score, lui, reste affiché dans tous les cas au-dessus.
+ */
+function LirePremierResultat({ score, onCompris }) {
+  return (
+    <Card className="border-l-[3px] border-l-brand-600">
+      <CardHeader
+        title="Comment lire votre premier résultat"
+        description="Trois repères pour savoir quoi faire de ce chiffre."
+      />
+      <ol className="list-decimal space-y-2 pl-5 text-sm text-ink-700">
+        <li>
+          <span className="font-medium">Votre score</span> :{' '}
+          {score === null || score === undefined
+            ? 'il sera calculé dès que des réponses seront prises en compte.'
+            : `${lectureDuScore(score, 'maturity')}. Il mesure ce que l’entreprise a mis en place, pas les fuites qui la concernent.`}
+        </li>
+        <li>
+          <span className="font-medium">Les domaines les plus bas</span> : c’est là que se
+          trouvent vos écarts. Chaque ligne du détail mène aux mesures correspondantes.
+        </li>
+        <li>
+          <span className="font-medium">Votre plan d’action</span> a été préparé à partir de ces
+          écarts, les gestes rapides à fort impact en premier. C’est par lui qu’il faut commencer.
+        </li>
+      </ol>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {/* Libellé sans « plan d’action » : le parcours de bout en bout clique
+            sur le lien « Plan d’action » du menu, et une correspondance
+            partielle trouverait aussi celui-ci. */}
+        <Link to="/plan-action">
+          <Button variant="primary">
+            Commencer par les actions prioritaires
+            <ArrowRight className="size-4" aria-hidden="true" />
+          </Button>
+        </Link>
+        <Button variant="secondary" onClick={onCompris}>
+          C’est compris
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
 function domainBarColor(score) {
   if (score === null || score === undefined) return 'bg-ink-300'
   if (score >= 70) return 'bg-ok-strong'
@@ -52,6 +99,18 @@ export default function ResultsPage() {
   const [consolide, setConsolide] = useState(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  // Lot C, point 21 : la troisième étape de l'accueil.
+  const auth = useOptionalAuth()
+  const resultatCompris = Boolean(auth?.user?.onboarding?.result_seen)
+
+  async function marquerCompris() {
+    try {
+      const reponse = await authApi.completeOnboardingStep('result_seen')
+      auth?.setUser?.(reponse.data)
+    } catch {
+      showToast({ type: 'error', message: 'Ce choix n’a pas pu être enregistré.' })
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -169,6 +228,10 @@ export default function ResultsPage() {
           <TechnicalValue label="évaluation n°" value={assessment.id} />
         </div>
       </Card>
+
+      {auth?.user && !resultatCompris && (
+        <LirePremierResultat score={scores.global_score} onCompris={marquerCompris} />
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>

@@ -185,6 +185,9 @@ export const authApi = {
   // il ne donne accès à rien et se change a tout moment.
   setDisplayProfile: (profile) =>
     apiClient.patch('/api/v1/auth/me/', { display_profile: profile }),
+  // Lot C, point 21 : l'étape d'accueil que la personne franchit elle-même
+  // (« result_seen » ou « dismissed »). Renvoie l'identité à jour.
+  completeOnboardingStep: (step) => apiClient.post('/api/v1/auth/me/onboarding/', { step }),
 }
 
 export const twoFactorApi = {
