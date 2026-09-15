@@ -33,7 +33,9 @@ test('inscription, diagnostic complet et plan d’action généré', async ({ pa
   })
   await expect(page).toHaveURL(/\/tableau-de-bord$/)
 
-  await page.getByRole('link', { name: 'Diagnostic' }).click()
+  // exact : le tableau de bord propose aussi « Démarrer le diagnostic », et
+  // selon l'instant du rendu les deux liens coexistent.
+  await page.getByRole('link', { name: 'Diagnostic', exact: true }).click()
   await page.waitForURL(/\/diagnostic$/)
   await waitForContentLoaded(page)
   await expect(page.getByRole('heading', { name: 'Diagnostic de maturité' })).toBeVisible()
@@ -50,6 +52,9 @@ test('inscription, diagnostic complet et plan d’action généré', async ({ pa
 
   // Ce parcours veut le diagnostic COMPLET : c'est lui qui produit 42 écarts.
   await page.getByRole('button', { name: 'Démarrer ce diagnostic' }).click()
+  // Le questionnaire ne s'affiche qu'au retour de la requête de démarrage :
+  // compter les réponses avant ce rendu en trouverait zéro.
+  await expect(page.getByText(/Domaine 1 \//)).toBeVisible({ timeout: 15_000 })
 
   const finishButton = page.getByRole('button', { name: 'Terminer l’évaluation' })
   const nextButton = page.getByRole('button', { name: 'Suivant' })
