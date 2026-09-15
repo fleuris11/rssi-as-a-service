@@ -11,6 +11,7 @@ pas une conséquence de la collecte.
 import logging
 
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.assessments import services as assessments_services
@@ -473,7 +474,7 @@ def summarize_update(update: WatchUpdate, *, reviewer) -> WatchUpdate:
 STATUTS_PUBLICS = (WatchUpdate.Status.KEPT, WatchUpdate.Status.INTEGRATED)
 
 
-def public_feed(*, limit: int = 20) -> dict:
+def public_feed(*, limit: int = 20, page: int = 1, search: str = "", kind: str = "") -> dict:
     """La veille telle qu'un client la lit.
 
     **Lecture seule, et volontairement partielle.** Le client voit ce qui a
@@ -484,13 +485,27 @@ def public_feed(*, limit: int = 20) -> dict:
     pas une information, c'est une hypothese. La promesse servie avec le flux
     dit d'ailleurs ce que cette veille n'est pas.
     """
-    publications = (
-        WatchUpdate.objects.filter(status__in=STATUTS_PUBLICS)
-        .select_related("source", "target_referential")
-        .order_by("-published_at", "-detected_at")[:limit]
-    )
+    retenues = WatchUpdate.objects.filter(status__in=STATUTS_PUBLICS)
+    # Lot C, point 22 : la veille était tronquée à vingt publications, sans
+    # recherche ni page suivante — la vingt et unième n'existait pas pour le
+    # client. Recherche dans le titre et l'émetteur, filtre par nature, pages.
+    if search:
+        retenues = retenues.filter(
+            Q(title__icontains=search) | Q(source__publisher__icontains=search)
+        )
+    if kind:
+        retenues = retenues.filter(kind=kind)
+    total = retenues.count()
+    page = max(1, page)
+    debut = (page - 1) * limit
+    publications = retenues.select_related("source", "target_referential").order_by(
+        "-published_at", "-detected_at"
+    )[debut : debut + limit]
     return {
         "promise": PROMESSE,
+        "count": total,
+        "page": page,
+        "has_next": debut + limit < total,
         "results": [
             {
                 "id": publication.id,

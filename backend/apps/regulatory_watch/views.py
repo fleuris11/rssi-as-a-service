@@ -24,6 +24,7 @@ from apps.platform_admin.services import record_admin_action
 from apps.tenants.permissions import IsTenantMember
 
 from . import services
+from .models import WatchUpdate
 from .serializers import (
     IntegrateMeasureSerializer,
     ReviewUpdateSerializer,
@@ -53,8 +54,27 @@ class PublicWatchFeedView(APIView):
 
     permission_classes = [permissions.IsAuthenticated, IsTenantMember]
 
+    #: Plafond d'une page : au-delà, on ne lit plus, on fait défiler.
+    TAILLE_MAX = 50
+
     def get(self, request):
-        return Response(services.public_feed())
+        params = request.query_params
+        try:
+            page = max(1, int(params.get("page") or 1))
+            taille = min(self.TAILLE_MAX, max(1, int(params.get("page_size") or 20)))
+        except ValueError:
+            page, taille = 1, 20
+        nature = params.get("kind") or ""
+        if nature not in WatchUpdate.Kind.values:
+            nature = ""
+        return Response(
+            services.public_feed(
+                limit=taille,
+                page=page,
+                search=(params.get("q") or "").strip()[:100],
+                kind=nature,
+            )
+        )
 
 
 class WatchQueueView(APIView):

@@ -96,8 +96,25 @@ class BreachFindingListView(IdentifierAwareMixin, generics.ListAPIView):
     serializer_class = BreachFindingSerializer
 
     def get_queryset(self):
-        status_filter = self.request.query_params.get("status")
-        return services.list_findings(self.request.tenant, status=status_filter)
+        params = self.request.query_params
+        status_filter = params.get("status")
+        # Lot C, point 22 : des filtres qui ne font jamais échouer la liste.
+        # Une valeur inconnue est ignorée plutôt que de répondre 400 : un lien
+        # partagé avec un ancien filtre doit rester lisible.
+        gravite = params.get("severity")
+        if gravite not in BreachFinding.Severity.values:
+            gravite = None
+        try:
+            actif = int(params.get("asset")) if params.get("asset") else None
+        except ValueError:
+            actif = None
+        return services.list_findings(
+            self.request.tenant,
+            status=status_filter,
+            severity=gravite,
+            asset_id=actif,
+            search=(params.get("q") or "").strip()[:100],
+        )
 
     def list(self, request, *args, **kwargs):
         response = super().list(request, *args, **kwargs)

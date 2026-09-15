@@ -948,7 +948,15 @@ def _notify_pre_incident_signals(findings: list[BreachFinding]) -> None:
 # --- Findings : consultation & traitement -----------------------------------
 
 
-def list_findings(tenant, *, status: str | None = None, include_pre_incident: bool = False):
+def list_findings(
+    tenant,
+    *,
+    status: str | None = None,
+    include_pre_incident: bool = False,
+    severity: str | None = None,
+    asset_id: int | None = None,
+    search: str = "",
+):
     """Fuites **avérées** du tenant. Depuis la Phase 8B, les signaux
     pré-incident (radar/dark web/surface d'attaque) en sont exclus par
     défaut : ils vivent dans la carte « Signaux avant-coureurs », qui porte
@@ -966,6 +974,22 @@ def list_findings(tenant, *, status: str | None = None, include_pre_incident: bo
         qs = qs.exclude(source_endpoint__in=PRE_INCIDENT_ENDPOINTS)
     if status:
         qs = qs.filter(status=status)
+    # Lot C, point 22 : la liste dépasse vingt lignes chez un client réel
+    # (165 en production). Gravité, actif, et recherche libre.
+    if severity:
+        qs = qs.filter(severity=severity)
+    if asset_id:
+        qs = qs.filter(asset_id=asset_id)
+    if search:
+        # JAMAIS sur l'identifiant. ADR-027 sert l'adresse en clair ou masquée
+        # selon le rôle du lecteur ; une recherche sur ``identifier_plain``
+        # répondrait « trouvé / pas trouvé » à qui n'a droit qu'à la forme
+        # masquée — un oracle qui reconstituerait l'adresse lettre par lettre.
+        qs = qs.filter(
+            Q(asset__value__icontains=search)
+            | Q(finding_type__icontains=search)
+            | Q(source_endpoint__icontains=search)
+        )
     return qs
 
 
