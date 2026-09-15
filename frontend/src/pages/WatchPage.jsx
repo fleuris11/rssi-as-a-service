@@ -1,6 +1,7 @@
 import { ExternalLink, Newspaper } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { watchApi } from '../api/endpoints'
+import { ProfileDate, TechnicalValue } from '../components/DisplayProfile'
 import Badge from '../components/ui/Badge'
 import Card, { CardHeader } from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
@@ -29,11 +30,6 @@ const QUALIFICATIONS = {
   update: { libelle: 'Évolution', variant: 'accent' },
   information: { libelle: 'Information', variant: 'neutral' },
   unqualified: { libelle: 'À qualifier', variant: 'neutral' },
-}
-
-function dateCourte(valeur) {
-  if (!valeur) return 'date non précisée'
-  return new Date(valeur).toLocaleDateString('fr-FR')
 }
 
 export default function WatchPage() {
@@ -103,8 +99,18 @@ export default function WatchPage() {
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-ink-800">{publication.title}</p>
                         <p className="mt-0.5 text-xs text-ink-500">
-                          {publication.publisher} · {dateCourte(publication.published_at)}
+                          {publication.publisher} ·{' '}
+                          <ProfileDate
+                            value={publication.published_at}
+                            fallback="date non précisée"
+                            dateOnly
+                          />
                           {publication.referential ? ` · ${publication.referential}` : ''}
+                        </p>
+                        {/* Lot C : la référence exacte, pour qui recoupe avec
+                            la source. Masquée pour le dirigeant. */}
+                        <p>
+                          <TechnicalValue label="URL" value={publication.url} className="break-all" />
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">

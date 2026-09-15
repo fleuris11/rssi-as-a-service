@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { authApi } from '../api/endpoints'
-import { useAuth } from './AuthContext'
+import { useOptionalAuth } from './AuthContext'
 
 /**
  * Le profil d'affichage de la personne connectée (V2-5, ADR-031).
@@ -20,12 +20,18 @@ export const EXECUTIVE = 'executive'
 export const TECHNICAL = 'technical'
 
 export function useDisplayProfile() {
-  const { user, setUser } = useAuth()
+  // Lot C : les primitives d'affichage sont désormais posées sur la plupart
+  // des écrans. Un réglage de PRÉSENTATION ne doit jamais faire tomber un
+  // composant rendu hors session (page publique, rendu isolé) : sans
+  // session, on lit le profil par défaut, et le basculement ne fait rien.
+  const auth = useOptionalAuth()
+  const user = auth?.user
+  const setUser = auth?.setUser
   const profile = user?.display_profile || EXECUTIVE
 
   const setProfile = useCallback(
     async (next) => {
-      if (next === profile) return
+      if (next === profile || !setUser) return
       // Optimiste : le basculement doit être instantané, c'est un réglage
       // d'affichage. En cas d'échec réseau on revient à l'état précédent
       // plutôt que de laisser l'écran mentir sur ce qui est enregistré.

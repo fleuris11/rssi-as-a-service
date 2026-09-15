@@ -25,6 +25,9 @@ vi.mock('../api/endpoints', () => ({
 }))
 vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({ user: { is_staff: false }, currentTenant: { role: 'admin' } }),
+  // Lot C : le profil d'affichage se lit sans exiger de session. Sans
+  // session simulée, l'écran se lit en profil dirigeant, le défaut.
+  useOptionalAuth: () => null,
 }))
 vi.mock('../components/ui/Toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
 vi.mock('../context/EntitlementsContext', () => ({
@@ -184,14 +187,17 @@ describe('CompromisesPage', () => {
     ])
     render(<CompromisesPage />)
 
-    // Replié par défaut : le détail ne doit pas noyer « ce qu'il faut faire ».
+    // Replié par défaut (profil dirigeant) : le détail ne doit pas noyer « ce
+    // qu'il faut faire ». Lot C : replié et non plus RETIRÉ — il reste dans la
+    // page, masqué, comme l'exige ADR-031. L'ancienne attente
+    // (`not.toBeInTheDocument`) épinglait précisément le défaut.
     const bascule = await screen.findByRole('button', { name: /Ce que l’on sait de plus \(2\)/ })
-    expect(screen.queryByText('Raccoon')).not.toBeInTheDocument()
+    expect(screen.getByText('Raccoon')).not.toBeVisible()
 
     await userEvent.click(bascule)
 
-    expect(screen.getByText('Logiciel malveillant identifié')).toBeInTheDocument()
-    expect(screen.getByText('Raccoon')).toBeInTheDocument()
+    expect(screen.getByText('Logiciel malveillant identifié')).toBeVisible()
+    expect(screen.getByText('Raccoon')).toBeVisible()
     // La valeur seule n'informe pas : « Raccoon » ne dit rien à un dirigeant.
     expect(
       screen.getByText('C’est un logiciel qui recopie les mots de passe du navigateur.')

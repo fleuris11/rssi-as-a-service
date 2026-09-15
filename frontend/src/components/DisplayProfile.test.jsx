@@ -1,7 +1,16 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { Explanation, TechnicalDetail, Term } from './DisplayProfile'
+import {
+  AlertReading,
+  Explanation,
+  lectureDuScore,
+  ProfileDate,
+  ScoreReading,
+  TechnicalDetail,
+  TechnicalValue,
+  Term,
+} from './DisplayProfile'
 
 // V2-5, point 3 de la consigne : « le contenu ne change jamais — seule sa
 // présentation change. Un même fait doit rester le même fait. »
@@ -114,5 +123,134 @@ describe('Explanation', () => {
     // prennent pas toute la place » (consigne V2-5, point 2).
     expect(screen.getByText('Ce score mesure…')).toBeInTheDocument()
     expect(container.firstChild.className).not.toEqual(classesDirigeant)
+  })
+})
+
+// --- Lot C : les primitives qui manquaient ----------------------------------
+
+describe('ProfileDate', () => {
+  const instant = '2026-09-12T14:03:22Z'
+
+  it('donne une date lisible au dirigeant, et garde l’instant exact', () => {
+    profilCourant = 'executive'
+    const { container } = render(<ProfileDate value={instant} />)
+
+    const time = container.querySelector('time')
+    expect(time).toHaveTextContent(/septembre 2026/)
+    expect(time).not.toHaveTextContent(/:\d\d:\d\d/)
+    // Même instant : la valeur exacte est portée par l'élément.
+    expect(time).toHaveAttribute('dateTime', '2026-09-12T14:03:22.000Z')
+  })
+
+  it('donne l’horodatage à la seconde, avec son fuseau, au technicien', () => {
+    profilCourant = 'technical'
+    const { container } = render(<ProfileDate value={instant} />)
+
+    const time = container.querySelector('time')
+    expect(time).toHaveTextContent(/^2026-09-12 \d\d:03:22 UTC[+-]\d\d:\d\d$/)
+    expect(time).toHaveAttribute('dateTime', '2026-09-12T14:03:22.000Z')
+  })
+
+  it('n’invente pas d’heure pour une date qui n’en a pas', () => {
+    profilCourant = 'technical'
+    const { container } = render(<ProfileDate value="2026-07-03" dateOnly />)
+
+    expect(container.querySelector('time')).toHaveTextContent(/^2026-07-0[23]$/)
+  })
+
+  it('dit qu’une date manque plutôt que d’en afficher une fausse', () => {
+    profilCourant = 'executive'
+    render(<ProfileDate value={null} fallback="date inconnue" />)
+    expect(screen.getByText('date inconnue')).toBeInTheDocument()
+  })
+})
+
+describe('TechnicalValue', () => {
+  it('reste dans la page en profil dirigeant, masquée', () => {
+    profilCourant = 'executive'
+    render(<TechnicalValue label="source" value="stealer" />)
+
+    const valeur = screen.getByText('source stealer')
+    expect(valeur).toBeInTheDocument()
+    expect(valeur).not.toBeVisible()
+  })
+
+  it('s’affiche en profil technique', () => {
+    profilCourant = 'technical'
+    render(<TechnicalValue label="source" value="stealer" />)
+    expect(screen.getByText('source stealer')).toBeVisible()
+  })
+})
+
+describe('ScoreReading', () => {
+  it('accompagne le chiffre de son sens, pour le dirigeant', () => {
+    profilCourant = 'executive'
+    const { container } = render(<ScoreReading score={92} scale="maturity" />)
+    expect(container).toHaveTextContent('92 sur 100 — votre niveau est solide')
+  })
+
+  it('met le chiffre devant pour le technicien, sans perdre la phrase', () => {
+    profilCourant = 'technical'
+    const { container } = render(<ScoreReading score={92} scale="maturity" />)
+    expect(container).toHaveTextContent('92/100')
+    expect(container).toHaveTextContent('votre niveau est solide')
+  })
+
+  it('lit les deux échelles dans leur sens', () => {
+    // Maturité : haut = bien. Exposition : haut = mal. La même valeur ne peut
+    // pas se lire pareil sur les deux — c'était le défaut de la jauge.
+    expect(lectureDuScore(85, 'maturity')).toBe('votre niveau est solide')
+    expect(lectureDuScore(85, 'exposure')).toBe(
+      'votre exposition est critique, une action est attendue'
+    )
+    expect(lectureDuScore(null, 'maturity')).toBeNull()
+  })
+})
+
+describe('AlertReading', () => {
+  function rendu() {
+    return render(
+      <AlertReading
+        meaning="Un escroc peut écrire en votre nom."
+        action="Faites compléter SPF et DMARC."
+        detail={<p>v=spf1 absent</p>}
+      />
+    )
+  }
+
+  function ordre(container) {
+    const racine = container.querySelector('[data-lecture]')
+    return [...racine.children].map((bloc) => bloc.textContent)
+  }
+
+  it('mène avec l’impact et l’action pour le dirigeant, le constat replié', () => {
+    profilCourant = 'executive'
+    const { container } = rendu()
+
+    const blocs = ordre(container)
+    expect(blocs[0]).toMatch(/Un escroc peut écrire en votre nom/)
+    expect(blocs[1]).toMatch(/Faites compléter SPF et DMARC/)
+    expect(screen.getByText('v=spf1 absent')).not.toBeVisible()
+  })
+
+  it('mène avec le constat déplié pour le technicien', () => {
+    profilCourant = 'technical'
+    const { container } = rendu()
+
+    expect(ordre(container)[0]).toMatch(/v=spf1 absent/)
+    expect(screen.getByText('v=spf1 absent')).toBeVisible()
+  })
+
+  it('porte exactement les mêmes faits dans les deux profils', () => {
+    profilCourant = 'executive'
+    const dirigeant = rendu().container.textContent
+    document.body.innerHTML = ''
+    profilCourant = 'technical'
+    const technique = rendu().container.textContent
+
+    for (const fait of ['Un escroc peut écrire en votre nom.', 'Faites compléter SPF et DMARC.', 'v=spf1 absent']) {
+      expect(dirigeant).toContain(fait)
+      expect(technique).toContain(fait)
+    }
   })
 })

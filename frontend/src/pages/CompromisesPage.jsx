@@ -20,6 +20,8 @@ import { SkeletonCard } from '../components/ui/Skeleton'
 import Tabs from '../components/ui/Tabs'
 import { useToast } from '../components/ui/Toast'
 import { useAuth } from '../context/AuthContext'
+import { useDisplayProfile } from '../context/useDisplayProfile'
+import { Explanation, ProfileDate, TechnicalValue } from '../components/DisplayProfile'
 
 const SEVERITY_LABEL = { critical: 'Critique', high: 'Élevée', attention: 'Attention' }
 const SEVERITY_VARIANT = { critical: 'critical', high: 'critical', attention: 'warning' }
@@ -86,7 +88,12 @@ function usePolling(fetchJob) {
  * « ce qu'il faut faire », qui reste l'information principale.
  */
 function DetailsFuite({ details }) {
-  const [ouvert, setOuvert] = useState(false)
+  const { isTechnical } = useDisplayProfile()
+  // Lot C : replié pour le dirigeant, DÉPLIÉ pour le prestataire. Et replié
+  // ne veut plus dire retiré : le détail sortait de la page tant qu'on ne
+  // cliquait pas, ce qu'ADR-031 interdit — un dirigeant qui bascule en profil
+  // technique doit retrouver exactement ce que voit son prestataire.
+  const [ouvert, setOuvert] = useState(isTechnical)
   if (!details?.length) return null
 
   return (
@@ -99,26 +106,54 @@ function DetailsFuite({ details }) {
       >
         {ouvert ? 'Masquer le détail' : `Ce que l’on sait de plus (${details.length})`}
       </button>
-      {ouvert && (
-        <dl className="mt-2 space-y-2 rounded-md bg-ink-50 px-3 py-2">
-          {details.map((detail) => (
-            <div key={detail.label}>
-              <dt className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                {detail.label}
-              </dt>
-              <dd className="text-sm text-ink-800">{detail.value}</dd>
-              {/* La valeur seule informe ; l'implication permet de décider.
-                  « Raccoon » ne dit rien à un dirigeant. */}
-              <dd className="text-xs text-ink-500">{detail.implication}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
+      <dl hidden={!ouvert} className="mt-2 space-y-2 rounded-md bg-ink-50 px-3 py-2">
+        {details.map((detail) => (
+          <div key={detail.label}>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+              {detail.label}
+            </dt>
+            <dd className="text-sm text-ink-800">{detail.value}</dd>
+            {/* La valeur seule informe ; l'implication permet de décider.
+                « Raccoon » ne dit rien à un dirigeant. */}
+            <dd className="text-xs text-ink-500">{detail.implication}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   )
 }
 
 function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal }) {
+  const { isTechnical } = useDisplayProfile()
+
+  const impact = finding.impact ? (
+    <p
+      key="impact"
+      className={
+        isTechnical
+          ? 'mt-2 text-xs text-ink-600'
+          : 'mt-2 rounded-md bg-ink-50 px-3 py-2 text-sm text-ink-700'
+      }
+    >
+      <span className="font-semibold">Ce que ça implique : </span>
+      {finding.impact}
+    </p>
+  ) : null
+  const aFaire = (
+    <p
+      key="action"
+      className={
+        isTechnical
+          ? 'mt-2 text-xs text-accent-900'
+          : 'mt-2 rounded-md bg-accent-100/50 px-3 py-2 text-sm text-accent-900'
+      }
+    >
+      <span className="font-semibold">À faire : </span>
+      {finding.recommended_action}
+    </p>
+  )
+  const detail = <DetailsFuite key="detail" details={finding.details} />
+
   return (
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -154,7 +189,24 @@ function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal })
                   L'arbitrage côté écran, c'est une garde qui saute au premier
                   composant qui oublie de la refaire. */}
               {finding.identifier && ` — ${finding.identifier}`}
-              {finding.breach_date && ` — fuite du ${new Date(finding.breach_date).toLocaleDateString('fr-FR')}`}
+              {finding.breach_date && (
+                <>
+                  {' — fuite du '}
+                  <ProfileDate value={finding.breach_date} dateOnly />
+                </>
+              )}
+            </p>
+            {/* Lot C : ce qu'un prestataire recoupe avec ses journaux — le code
+                de la source, le numéro de la fuite, l'instant exact de la
+                détection. Masqué, pas retiré, pour le dirigeant. */}
+            <p className="mt-0.5 flex flex-wrap gap-x-3">
+              <TechnicalValue label="source" value={finding.source_endpoint} />
+              <TechnicalValue label="n°" value={finding.id} />
+              {finding.detected_at && (
+                <span hidden={!isTechnical} className="font-mono text-xs text-ink-600">
+                  détectée <ProfileDate value={finding.detected_at} />
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -194,18 +246,14 @@ function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal })
           )}
         </div>
       </div>
-      <p className="mt-3 rounded-md bg-ink-50 px-3 py-2 text-sm text-ink-700">{finding.meaning}</p>
-      {finding.impact && (
-        <p className="mt-2 rounded-md bg-ink-50 px-3 py-2 text-sm text-ink-700">
-          <span className="font-semibold">Ce que ça implique : </span>
-          {finding.impact}
-        </p>
-      )}
-      <DetailsFuite details={finding.details} />
-      <p className="mt-2 rounded-md bg-accent-100/50 px-3 py-2 text-sm text-accent-900">
-        <span className="font-semibold">À faire : </span>
-        {finding.recommended_action}
-      </p>
+      <Explanation className="mt-3">{finding.meaning}</Explanation>
+      {/* Lot C : l'ordre de lecture suit le profil. Dirigeant : l'impact et
+          l'action d'abord, ce que la source a fourni replié en dernier.
+          Prestataire : les champs de la source dépliés en tête. Mêmes blocs,
+          même texte. */}
+      <div data-lecture={isTechnical ? 'technique' : 'dirigeant'}>
+        {isTechnical ? [detail, impact, aFaire] : [impact, aFaire, detail]}
+      </div>
     </Card>
   )
 }

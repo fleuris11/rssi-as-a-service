@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { actionsApi, tenantsApi } from '../api/endpoints'
 import Badge from '../components/ui/Badge'
 import Card from '../components/ui/Card'
-import { TechnicalDetail } from '../components/DisplayProfile'
+import { TechnicalDetail, TechnicalValue } from '../components/DisplayProfile'
 import EmptyState from '../components/ui/EmptyState'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
@@ -51,6 +51,13 @@ function ActionCard({ item, members, updatingId, onUpdate, montrerReferentiel = 
           </Badge>
         )}
         <Badge variant="brand">Priorité {item.priority}</Badge>
+        {/* Lot C : la référence de la mesure, lisible d'un coup d'œil pour
+            qui la recoupe avec le référentiel. Masquée — pas retirée — pour
+            le dirigeant, qui la retrouve dans le détail replié. */}
+        <TechnicalValue
+          label={item.referential_name ? `${item.referential_name} ·` : undefined}
+          value={item.measure.code ? `mesure ${item.measure.code}` : null}
+        />
         {/* B20 : avec plusieurs référentiels, une action sans provenance
             visible laisse le client se demander pourquoi elle apparaît. */}
         {montrerReferentiel && <Badge variant="neutral">{item.referential_name}</Badge>}

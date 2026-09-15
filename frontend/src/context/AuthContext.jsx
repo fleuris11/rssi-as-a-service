@@ -143,3 +143,14 @@ export function useAuth() {
   }
   return context
 }
+
+/**
+ * La session si elle existe, `null` sinon — sans lever d'erreur.
+ *
+ * Réservé à ce qui n'est QUE de la présentation (le profil d'affichage).
+ * Tout ce qui touche aux droits ou aux données garde `useAuth`, qui refuse
+ * bruyamment de fonctionner hors session : c'est le comportement voulu.
+ */
+export function useOptionalAuth() {
+  return useContext(AuthContext)
+}

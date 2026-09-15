@@ -1,7 +1,8 @@
 import { LogOut, ShieldCheck, ShieldEllipsis, SlidersHorizontal } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
-import { NAV_ITEMS, STAFF_NAV_ITEMS } from '../config/navigation'
+import { navigationPourProfil, STAFF_NAV_ITEMS } from '../config/navigation'
 import { useAuth } from '../context/AuthContext'
+import { useDisplayProfile } from '../context/useDisplayProfile'
 
 const linkBase =
   'transition-smooth flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium outline-offset-2 focus-visible:outline-2 focus-visible:outline-white'
@@ -20,6 +21,8 @@ function linkClass({ isActive }, collapsed) {
  */
 export default function Sidebar({ collapsed = false, onNavigate }) {
   const { currentTenant, logout, user } = useAuth()
+  const { isTechnical } = useDisplayProfile()
+  const { principale, techniques } = navigationPourProfil(isTechnical)
 
   return (
     <div className="flex h-full flex-col bg-brand-950 text-white">
@@ -35,7 +38,7 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
-        {NAV_ITEMS.map((item) => (
+        {principale.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -47,6 +50,34 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
             {!collapsed && <span>{item.label}</span>}
           </NavLink>
         ))}
+
+        {/* Lot C : en profil dirigeant, les écrans purement techniques restent
+            à un clic, sous leur propre intitulé — accessibles, pas mis en
+            avant. En profil technique, cette section est vide : ils sont à
+            leur place dans la liste principale. */}
+        {techniques.length > 0 && (
+          <div role="group" aria-label="Détails techniques">
+            <p
+              className={`mt-5 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-brand-300 ${
+                collapsed ? 'text-center' : ''
+              }`}
+            >
+              {collapsed ? '···' : 'Détails techniques'}
+            </p>
+            {techniques.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={onNavigate}
+                className={(state) => linkClass(state, collapsed)}
+                title={collapsed ? item.label : undefined}
+              >
+                <item.icon className="size-5 shrink-0" aria-hidden="true" />
+                {!collapsed && <span>{item.label}</span>}
+              </NavLink>
+            ))}
+          </div>
+        )}
 
         {/* Section distincte pour l'administration plateforme : elle ne
             s'affiche que pour un utilisateur is_staff, et la séparation

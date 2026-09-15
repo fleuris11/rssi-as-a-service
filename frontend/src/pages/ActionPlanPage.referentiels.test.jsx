@@ -24,6 +24,9 @@ vi.mock('../components/DisplayProfile', () => ({
       {children}
     </div>
   ),
+  // Lot C : la référence de la mesure en tête de carte, masquée hors profil
+  // technique. Sans objet pour ce test, qui porte sur la provenance.
+  TechnicalValue: () => null,
 }))
 
 const { actionsApi } = await import('../api/endpoints')

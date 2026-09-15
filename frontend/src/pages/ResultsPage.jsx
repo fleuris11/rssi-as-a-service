@@ -11,6 +11,7 @@ import {
   Tooltip,
 } from 'recharts'
 import { assessmentsApi } from '../api/endpoints'
+import { ProfileDate, ScoreReading, TechnicalValue } from '../components/DisplayProfile'
 import Button from '../components/ui/Button'
 import ScoreGauge from '../components/ui/ScoreGauge'
 import Card, { CardHeader } from '../components/ui/Card'
@@ -155,10 +156,17 @@ export default function ResultsPage() {
         <ScoreGauge score={scores.global_score} scale="maturity" size="lg" showLegend />
         <div>
           <p className="text-sm font-medium text-ink-500">Score global de maturité</p>
-          <p className="mt-1 font-display text-lg text-ink-700">
+          {/* Lot C : « 62 sur 100 — votre niveau progresse, mais reste
+              insuffisant ». Un chiffre sans son sens oblige le dirigeant à
+              connaître déjà la réponse. */}
+          <p className="mt-1 font-display text-lg text-ink-900">
+            <ScoreReading score={scores.global_score} scale="maturity" />
+          </p>
+          <p className="mt-1 text-sm text-ink-600">
             Calculé sur les {scores.by_domain.length} domaines du référentiel{' '}
             {assessment.referential_name}.
           </p>
+          <TechnicalValue label="évaluation n°" value={assessment.id} />
         </div>
       </Card>
 
@@ -190,7 +198,10 @@ export default function ResultsPage() {
             {scores.by_domain.map((d) => (
               <li key={d.domain_code} className="flex items-center gap-4 px-6 py-3">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-ink-700">{d.domain_name}</p>
+                  <p className="truncate text-sm font-medium text-ink-700">
+                    <TechnicalValue value={d.domain_code} className="mr-1.5" />
+                    {d.domain_name}
+                  </p>
                   <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-ink-100">
                     <div
                       className={`h-full rounded-full ${domainBarColor(d.score)}`}
@@ -279,7 +290,7 @@ export default function ResultsPage() {
               {history.map((item) => (
                 <tr key={item.id}>
                   <td className="px-6 py-2.5 text-ink-700">
-                    {new Date(item.completed_at).toLocaleDateString('fr-FR')}
+                    <ProfileDate value={item.completed_at} />
                   </td>
                   {/* Sans cette colonne, deux scores de référentiels
                       différents se liraient comme une progression. */}

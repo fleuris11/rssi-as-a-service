@@ -21,12 +21,17 @@ export const NAV_ITEMS = [
   { to: '/tableau-de-bord', label: 'Tableau de bord', icon: LayoutDashboard },
   { to: '/diagnostic', label: 'Diagnostic', icon: ClipboardCheck },
   { to: '/plan-action', label: 'Plan d’action', icon: KanbanSquare },
-  { to: '/surveillance', label: 'Surveillance', icon: Radar },
+  // Lot C : `technical` marque un écran PUREMENT technique. En profil
+  // dirigeant, il reste accessible mais descend dans une section « Détails
+  // techniques » : c'est la consigne « accessibles mais pas mis en avant ».
+  // Surveillance montre des contrôles HTTP, TLS et DNS ; Compromissions est
+  // la liste exhaustive dont Exposition donne déjà la lecture priorisée.
+  { to: '/surveillance', label: 'Surveillance', icon: Radar, technical: true },
   // Phase 8B : « Exposition » est la vue principale du volet menace (le
   // médecin), « Compromissions » reste la liste exhaustive des fuites
   // avérées (la chemise de résultats) — d'où cet ordre.
   { to: '/exposition', label: 'Exposition', icon: Crosshair },
-  { to: '/compromissions', label: 'Compromissions', icon: ShieldAlert },
+  { to: '/compromissions', label: 'Compromissions', icon: ShieldAlert, technical: true },
   // V2-6 : des comptes que le client DÉSIGNE, distincts de ses actifs. Le
   // lien est dans la navigation principale et non rangé sous « Exposition » :
   // ce sont deux périmètres différents, et les confondre dans le menu
@@ -64,6 +69,18 @@ export const STAFF_NAV_ITEMS = [
   { to: '/admin/plateforme', label: 'Plateforme', icon: Building2 },
   { to: '/admin/breachsense', label: 'Licence CTI', icon: Radar },
 ]
+
+/**
+ * La navigation telle qu'un profil la lit. Aucun lien n'est retiré : en
+ * profil dirigeant, les écrans techniques changent seulement de place.
+ */
+export function navigationPourProfil(isTechnical) {
+  if (isTechnical) return { principale: NAV_ITEMS, techniques: [] }
+  return {
+    principale: NAV_ITEMS.filter((item) => !item.technical),
+    techniques: NAV_ITEMS.filter((item) => item.technical),
+  }
+}
 
 export function pageTitleFor(pathname) {
   const navMatch = NAV_ITEMS.find((item) => pathname.startsWith(item.to))

@@ -2,7 +2,7 @@ import { Globe, Mail, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { monitoringApi } from '../api/endpoints'
 import Badge from '../components/ui/Badge'
-import { TechnicalDetail } from '../components/DisplayProfile'
+import { AlertReading, ProfileDate, Term, TechnicalValue } from '../components/DisplayProfile'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
@@ -19,11 +19,14 @@ const ASSET_TYPE_OPTIONS = [
   { value: 'email_domain', label: 'Domaine email' },
 ]
 
+// Lot C : chaque contrôle a son nom technique ET sa traduction. Le dirigeant
+// lit « Authenticité de vos emails (SPF / DMARC) », le prestataire l'inverse —
+// les deux mots restent à l'écran (ADR-031, `Term`).
 const CHECK_TYPE_LABELS = {
-  http_uptime: 'Disponibilité',
-  ssl_certificate: 'Certificat SSL',
-  security_headers: 'En-têtes de sécurité',
-  email_dns: 'SPF / DMARC',
+  http_uptime: { code: 'HTTP', plain: 'Disponibilité' },
+  ssl_certificate: { code: 'Certificat TLS', plain: 'Cadenas du site' },
+  security_headers: { code: 'En-têtes HTTP', plain: 'Protections du navigateur' },
+  email_dns: { code: 'SPF / DMARC', plain: 'Authenticité de vos emails' },
 }
 
 const ALERT_TYPE_LABELS = {
@@ -310,7 +313,21 @@ export default function SurveillancePage() {
                 <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {Object.entries(row.latest_checks).map(([checkType, result]) => (
                     <div key={checkType} className="rounded-md bg-ink-50 px-3 py-2">
-                      <p className="text-[11px] text-ink-500">{CHECK_TYPE_LABELS[checkType]}</p>
+                      <p className="text-[11px] text-ink-600">
+                        {CHECK_TYPE_LABELS[checkType] ? (
+                          <Term
+                            code={CHECK_TYPE_LABELS[checkType].code}
+                            plain={CHECK_TYPE_LABELS[checkType].plain}
+                          />
+                        ) : (
+                          checkType
+                        )}
+                      </p>
+                      {result?.checked_at && (
+                        <p className="mt-0.5 text-[11px] text-ink-500">
+                          <ProfileDate value={result.checked_at} />
+                        </p>
+                      )}
                       <div className="mt-1">
                         <StatusBadge status={result?.status} />
                       </div>
@@ -323,10 +340,10 @@ export default function SurveillancePage() {
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
                       Alertes ouvertes
                     </p>
-                    <ul className="space-y-2">
+                    <ul className="space-y-3">
                       {row.open_alerts.map((alert) => (
                         <li key={alert.id} className="text-sm text-ink-700">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <Badge
                               variant={alert.severity === 'critical' ? 'critical' : 'warning'}
                               dot
@@ -334,29 +351,37 @@ export default function SurveillancePage() {
                               {alert.severity === 'critical' ? 'Critique' : 'Avertissement'}
                             </Badge>
                             {ALERT_TYPE_LABELS[alert.alert_type] || alert.alert_type}
+                            <TechnicalValue value={alert.alert_type} />
+                            <span className="text-xs text-ink-500">
+                              depuis le <ProfileDate value={alert.opened_at} />
+                            </span>
                           </div>
-                          {/* Ce que le contrôle a réellement constaté :
-                              en-têtes manquants, date d'expiration du
-                              certificat, enregistrements DNS. Illisible pour
-                              un dirigeant, indispensable au prestataire qui
-                              doit corriger — donc présent pour les deux,
-                              replié pour l'un (ADR-031). */}
-                          {alert.details && Object.keys(alert.details).length > 0 && (
-                            <TechnicalDetail summary="Ce que le contrôle a constaté">
-                              <dl className="space-y-1">
-                                {Object.entries(alert.details).map(([cle, valeur]) => (
-                                  <div key={cle}>
-                                    <dt className="inline font-medium text-ink-700">{cle} : </dt>
-                                    <dd className="inline break-all text-ink-600">
-                                      {typeof valeur === 'object'
-                                        ? JSON.stringify(valeur)
-                                        : String(valeur)}
-                                    </dd>
-                                  </div>
-                                ))}
-                              </dl>
-                            </TechnicalDetail>
-                          )}
+                          {/* Lot C : l'alerte mène avec ce qu'elle implique et ce
+                              qu'il faut faire, le constat brut replié — pour le
+                              dirigeant. Le prestataire lit l'inverse : le
+                              constat déplié en tête. Mêmes trois blocs, même
+                              texte, venu du serveur (le même que l'email). */}
+                          <AlertReading
+                            meaning={alert.meaning}
+                            action={alert.recommended_action}
+                            detailSummary="Ce que le contrôle a constaté"
+                            detail={
+                              alert.details && Object.keys(alert.details).length > 0 ? (
+                                <dl className="space-y-1">
+                                  {Object.entries(alert.details).map(([cle, valeur]) => (
+                                    <div key={cle}>
+                                      <dt className="inline font-medium text-ink-700">{cle} : </dt>
+                                      <dd className="inline break-all text-ink-600">
+                                        {typeof valeur === 'object'
+                                          ? JSON.stringify(valeur)
+                                          : String(valeur)}
+                                      </dd>
+                                    </div>
+                                  ))}
+                                </dl>
+                              ) : null
+                            }
+                          />
                         </li>
                       ))}
                     </ul>

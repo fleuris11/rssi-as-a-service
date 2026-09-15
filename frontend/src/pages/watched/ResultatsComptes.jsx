@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, Download, Filter, Search } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { threatIntelligenceApi } from '../../api/endpoints'
+import { ProfileDate, TechnicalValue } from '../../components/DisplayProfile'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
 import Card, { CardHeader } from '../../components/ui/Card'
@@ -68,7 +69,8 @@ function LigneDetail({ ligne, onStatut, occupe }) {
             ))}
           </dl>
           <p className="mt-2 text-xs text-ink-500">
-            Fuite datée du {dateCourte(ligne.breach_date)}
+            Fuite datée du <ProfileDate value={ligne.breach_date} dateOnly />{' '}
+            <TechnicalValue label="· n°" value={ligne.id} />
             {ligne.has_secret ? ' · un mot de passe a fuité' : ''}
             {ligne.from_first_scan ? ' · historique découvert au premier scan' : ' · apparu depuis'}
           </p>

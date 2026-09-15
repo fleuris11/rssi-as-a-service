@@ -11,6 +11,13 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { aiApi, threatIntelligenceApi } from '../api/endpoints'
+import {
+  AlertReading,
+  Explanation,
+  ProfileDate,
+  ScoreReading,
+  TechnicalValue,
+} from '../components/DisplayProfile'
 import ScoreGauge, { teinteRisque } from '../components/ui/ScoreGauge'
 import FeatureGate, { FeatureLockedNotice } from '../components/FeatureGate'
 import PreIncidentRadar from '../components/PreIncidentRadar'
@@ -182,35 +189,39 @@ function FindingRow({ finding, canReveal, onReveal, retentionDays }) {
         )}
         {finding.breach_date && (
           <span className="text-xs text-ink-500">
-            fuite du {new Date(finding.breach_date).toLocaleDateString('fr-FR')}
+            fuite du <ProfileDate value={finding.breach_date} dateOnly />
           </span>
         )}
+        <TechnicalValue label="source" value={finding.source_endpoint} />
+        <TechnicalValue label="n°" value={finding.id} />
       </div>
-      <p className="mt-2 text-sm leading-relaxed text-ink-700">{finding.meaning}</p>
-      {finding.impact && (
-        <p className="mt-2 text-sm leading-relaxed text-ink-600">
-          <span className="font-semibold text-ink-700">Ce que ça implique : </span>
-          {finding.impact}
-        </p>
-      )}
+      <Explanation>{finding.meaning}</Explanation>
 
-      {/* V2-2 (ADR-027) : ce que la source renvoie et que le produit taisait.
-          Déployé ici plutôt que replié comme dans la liste : le fil
-          d'exposition est la vue où l'on cherche à COMPRENDRE un actif, pas à
-          traiter des lignes une à une. */}
-      {finding.details?.length > 0 && (
-        <dl className="mt-2 grid gap-2 rounded-md bg-ink-50 px-3 py-2 sm:grid-cols-2">
-          {finding.details.map((detail) => (
-            <div key={detail.label}>
-              <dt className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                {detail.label}
-              </dt>
-              <dd className="text-sm text-ink-800">{detail.value}</dd>
-              <dd className="text-xs text-ink-500">{detail.implication}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
+      {/* Lot C : l'impact et le détail de la source suivent le profil. Le
+          dirigeant lit l'impact en tête, les champs bruts repliés ; le
+          prestataire lit les champs dépliés d'abord. V2-2 (ADR-027) : ces
+          champs sont ce que la source renvoie et que le produit taisait — ils
+          restent dans la page dans les deux profils. L'action garde sa
+          propre ligne plus bas : elle porte le bouton de révélation. */}
+      <AlertReading
+        meaning={finding.impact}
+        detailSummary={`Ce que la source a fourni (${finding.details?.length ?? 0})`}
+        detail={
+          finding.details?.length > 0 ? (
+            <dl className="grid gap-2 sm:grid-cols-2">
+              {finding.details.map((detail) => (
+                <div key={detail.label}>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+                    {detail.label}
+                  </dt>
+                  <dd className="text-sm text-ink-800">{detail.value}</dd>
+                  <dd className="text-xs text-ink-500">{detail.implication}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null
+        }
+      />
 
       {finding.reuse_signals?.map((signal) => (
         <p
@@ -327,6 +338,12 @@ function AssetCard({ group, canReveal, onReveal, expanded, onToggle, retentionDa
             <p className="t-meta mt-0.5">
               {group.asset_type_label} — {group.findings_count} élément
               {group.findings_count > 1 ? 's' : ''} à traiter
+            </p>
+            {/* Lot C : le chiffre accompagné de son sens, dans les mots du
+                profil. La jauge dit déjà le niveau ; cette ligne dit ce
+                qu'il veut dire pour l'entreprise. */}
+            <p className="mt-1 text-sm text-ink-700">
+              <ScoreReading score={group.score} scale="exposure" />
             </p>
           </div>
         </div>

@@ -18,6 +18,9 @@ vi.mock('../api/endpoints', () => ({
 }))
 vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({ user: { is_staff: false }, currentTenant: { role: 'admin' } }),
+  // Lot C : le profil d'affichage se lit sans exiger de session. Sans
+  // session simulée, l'écran se lit en profil dirigeant, le défaut.
+  useOptionalAuth: () => null,
 }))
 vi.mock('../components/ui/Toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
 // La page affiche désormais certaines actions derrière FeatureGate. Les droits
