@@ -417,6 +417,9 @@ export const aiApi = {
   listDocuments: () => apiClient.get('/api/v1/ai/documents/'),
   // Réponse en 201 avec le document prêt pour un document composé, en 202
   // avec un job pour la charte, qui passe par l'IA.
+  // Lot C : le document AVANT sa génération — rien n'est enregistré, aucune
+  // version n'est consommée. Pour la charte, le plan qu'elle suivra.
+  previewDocument: (type) => apiClient.get(`/api/v1/ai/documents/preview/${type}/`),
   generateDocument: (type) => apiClient.post('/api/v1/ai/documents/', { type }),
   getDocument: (id) => apiClient.get(`/api/v1/ai/documents/${id}/`),
   updateDocument: (id, contentMarkdown) =>

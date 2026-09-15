@@ -1,12 +1,24 @@
-import { AlertTriangle, ChevronDown, ChevronUp, FileDown, FileText, Sparkles } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronUp, Eye, FileDown, FileText, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { aiApi } from '../api/endpoints'
-import Badge from '../components/ui/Badge'
+import ApercuMarkdown, { compterACompleter } from '../components/documents/ApercuMarkdown'
+import { ProfileDate } from '../components/DisplayProfile'
 import FeatureGate from '../components/FeatureGate'
+import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import Card, { CardHeader } from '../components/ui/Card'
+import Modal from '../components/ui/Modal'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
+
+/**
+ * La bibliothèque documentaire (V2-5, ADR-032 ; refondue au lot C, C3).
+ *
+ * Ce que le lot C corrige : on voyait sept boutons sans savoir ce qu'ils
+ * produisaient. Les documents sont désormais rangés par USAGE (point 12),
+ * disent à quoi ils servent et à qui ils s'adressent (13), se prévisualisent
+ * avant d'être générés (14), et gardent leur historique daté (15).
+ */
 
 const STATUS_LABELS = {
   generating: 'Génération en cours…',
@@ -46,6 +58,25 @@ function usePolling() {
   return poll
 }
 
+/** Les usages dans l'ordre où le serveur les sert : c'est lui qui les définit. */
+export function groupesParUsage(catalogue) {
+  const groupes = []
+  for (const entree of catalogue) {
+    let groupe = groupes.find((g) => g.usage === entree.usage)
+    if (!groupe) {
+      groupe = {
+        usage: entree.usage,
+        label: entree.usage_label,
+        description: entree.usage_description,
+        entrees: [],
+      }
+      groupes.push(groupe)
+    }
+    groupe.entrees.push(entree)
+  }
+  return groupes
+}
+
 function AISettingsBanner({ settings, onToggle, toggling }) {
   if (!settings) return null
   const { ai_enabled: aiEnabled, quota } = settings
@@ -56,9 +87,7 @@ function AISettingsBanner({ settings, onToggle, toggling }) {
           IA {aiEnabled ? 'activée' : 'désactivée'} pour cette entreprise
         </p>
         {/* Depuis V2-5, couper l'IA ne coupe plus la bibliothèque : six
-            documents sur sept sont composés à partir de vos données, sans
-            aucun appel d'IA. Le dire ici évite au client de croire qu'il vient
-            de tout perdre. */}
+            documents sur sept sont composés à partir de vos données. */}
         <p className="mt-1 text-xs text-ink-500">
           {aiEnabled
             ? quota &&
@@ -73,50 +102,46 @@ function AISettingsBanner({ settings, onToggle, toggling }) {
   )
 }
 
-/** L'aperçu de ce qui partirait vers l'IA — ne concerne que la charte. */
-function PreviewPanel() {
+/** Ce qui partirait vers l'IA pour rédiger la charte — la transparence d'US-4.3. */
+function DonneesTransmises() {
   const { showToast } = useToast()
-  const [preview, setPreview] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [open, setOpen] = useState(false)
+  const [donnees, setDonnees] = useState(null)
+  const [ouvert, setOuvert] = useState(false)
+  const [chargement, setChargement] = useState(false)
 
-  async function handleToggle() {
-    if (!open && !preview) {
-      setLoading(true)
+  async function basculer() {
+    if (!ouvert && !donnees) {
+      setChargement(true)
       try {
-        const response = await aiApi.previewCharter()
-        setPreview(response.data)
+        const reponse = await aiApi.previewCharter()
+        setDonnees(reponse.data)
       } catch {
-        showToast({ type: 'error', message: 'Impossible de charger l’aperçu.' })
+        showToast({ type: 'error', message: 'Impossible de charger les données transmises.' })
       } finally {
-        setLoading(false)
+        setChargement(false)
       }
     }
-    setOpen((value) => !value)
+    setOuvert((v) => !v)
   }
 
   return (
-    <Card padding="p-4">
+    <div className="mt-3">
       <button
         type="button"
-        onClick={handleToggle}
-        aria-expanded={open}
-        className="transition-smooth flex w-full items-center justify-between gap-2 text-left text-sm font-medium text-ink-700 hover:text-brand-600"
+        onClick={basculer}
+        aria-expanded={ouvert}
+        className="transition-smooth flex items-center gap-1 text-xs font-medium text-ink-600 hover:text-brand-700"
       >
-        Ce qui serait transmis à l’IA pour rédiger la charte
-        {open ? (
-          <ChevronUp className="size-4" aria-hidden="true" />
-        ) : (
-          <ChevronDown className="size-4" aria-hidden="true" />
-        )}
+        {ouvert ? <ChevronUp className="size-3.5" aria-hidden="true" /> : <ChevronDown className="size-3.5" aria-hidden="true" />}
+        Ce qui serait transmis à l’IA pour la rédiger
       </button>
-      {open && (
-        <div className="mt-3">
-          {loading ? (
-            <p className="text-sm text-ink-500">Chargement…</p>
+      {ouvert && (
+        <div className="mt-2">
+          {chargement ? (
+            <p className="text-xs text-ink-500">Chargement…</p>
           ) : (
-            <pre className="max-h-72 overflow-auto rounded-md bg-ink-50 p-3 text-xs text-ink-700">
-              {JSON.stringify(preview, null, 2)}
+            <pre className="max-h-60 overflow-auto rounded-md bg-ink-50 p-3 text-xs text-ink-700">
+              {JSON.stringify(donnees, null, 2)}
             </pre>
           )}
           <p className="mt-2 text-xs text-ink-500">
@@ -125,12 +150,86 @@ function PreviewPanel() {
           </p>
         </div>
       )}
-    </Card>
+    </div>
   )
 }
 
-/** Une entrée du catalogue : ce que le document sert à faire, et son état. */
-function CatalogEntry({ entry, versions, onGenerate, onSelect, selectedId, generating, aiEnabled }) {
+function FenetreApercu({ entree, apercu, chargement, aiEnabled, onFermer, onGenerer }) {
+  if (!entree) return null
+  const aCompleter = compterACompleter(apercu?.content_markdown)
+  const redigeParIA = entree.source === 'ai'
+
+  const generer = (
+    <Button
+      variant="primary"
+      icon={redigeParIA ? Sparkles : FileText}
+      disabled={redigeParIA && !aiEnabled}
+      onClick={() => onGenerer(entree)}
+    >
+      Générer ce document
+    </Button>
+  )
+
+  return (
+    <Modal open onClose={onFermer} title={`Aperçu — ${entree.label}`} className="max-w-3xl">
+      <p className="text-sm text-ink-600">{entree.purpose}</p>
+      <p className="mt-1 text-xs text-ink-500">
+        <span className="font-medium text-ink-700">Pour : </span>
+        {entree.audience}
+      </p>
+
+      {chargement || !apercu ? (
+        <p className="mt-4 text-sm text-ink-500">Préparation de l’aperçu…</p>
+      ) : (
+        <>
+          {apercu.missing?.length > 0 && (
+            <p className="mt-3 flex items-start gap-1.5 text-xs text-warning-strong">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              <span>Sera générique : {apercu.missing.join(' ; ')}.</span>
+            </p>
+          )}
+
+          {apercu.content_markdown ? (
+            <>
+              {/* Ce qui reste à la charge du client, dit AVANT la génération. */}
+              <p className="mt-3 text-sm text-ink-700">
+                {aCompleter === 0
+                  ? 'Tout ce que la plateforme sait est déjà rempli, et rien ne reste à compléter.'
+                  : `${aCompleter} passage(s) à compléter par vous — surlignés ci-dessous. Tout le reste est rempli avec ce que la plateforme sait déjà.`}
+              </p>
+              <div className="mt-3 max-h-[55vh] overflow-y-auto rounded-md border border-ink-200 bg-canvas p-4">
+                <ApercuMarkdown markdown={apercu.content_markdown} />
+              </div>
+            </>
+          ) : (
+            <div className="mt-3 rounded-md border border-ink-200 bg-canvas p-4">
+              <p className="text-sm text-ink-700">
+                Ce document est rédigé par l’IA au moment de la génération : son texte n’existe pas
+                encore. Voici le plan qu’il suivra.
+              </p>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-ink-800">
+                {apercu.outline.map((section) => (
+                  <li key={section}>{section}</li>
+                ))}
+              </ol>
+              {aiEnabled && <DonneesTransmises />}
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="mt-5 flex flex-wrap justify-end gap-2">
+        <Button variant="secondary" onClick={onFermer}>
+          Fermer l’aperçu
+        </Button>
+        {redigeParIA ? <FeatureGate feature="charter_generation">{generer}</FeatureGate> : generer}
+      </div>
+    </Modal>
+  )
+}
+
+/** Une entrée du catalogue : à quoi le document sert, pour qui, et son historique. */
+function CatalogEntry({ entry, versions, onGenerate, onPreview, onSelect, selectedId, generating, aiEnabled }) {
   const indisponible = entry.source === 'ai' && !aiEnabled
   const verbe = entry.latest_version ? 'Régénérer' : 'Générer'
   const bouton = (
@@ -141,11 +240,8 @@ function CatalogEntry({ entry, versions, onGenerate, onSelect, selectedId, gener
       loading={generating === entry.type}
       disabled={indisponible}
       onClick={() => onGenerate(entry)}
-      // Le catalogue affiche un bouton par type de document : sans ce nom
-      // accessible, la page expose sept boutons nommés « Générer », que rien
-      // ne distingue pour qui navigue au lecteur d'écran ou au clavier. Le
-      // libellé visible reste court ; c'est le nom accessible qui porte le
-      // document concerné.
+      // Un bouton par document : sans ce nom accessible, la page exposait
+      // sept boutons « Générer » que rien ne distinguait au lecteur d'écran.
       aria-label={`${verbe} — ${entry.label}`}
     >
       {verbe}
@@ -156,13 +252,26 @@ function CatalogEntry({ entry, versions, onGenerate, onSelect, selectedId, gener
     <Card padding="p-4" className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-ink-800">{entry.label}</p>
-          <p className="mt-0.5 max-w-2xl text-xs text-ink-500">{entry.purpose}</p>
+          <h3 className="text-sm font-medium text-ink-800">{entry.label}</h3>
+          <p className="mt-0.5 max-w-2xl text-xs text-ink-600">{entry.purpose}</p>
+          <p className="mt-1 max-w-2xl text-xs text-ink-500">
+            <span className="font-medium text-ink-700">Pour : </span>
+            {entry.audience}
+          </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Badge variant={entry.source === 'ai' ? 'accent' : 'neutral'}>
             {entry.source === 'ai' ? 'Rédigé par l’IA' : 'Composé'}
           </Badge>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Eye}
+            onClick={() => onPreview(entry)}
+            aria-label={`Aperçu — ${entry.label}`}
+          >
+            Aperçu
+          </Button>
           {entry.source === 'ai' ? (
             <FeatureGate feature="charter_generation">{bouton}</FeatureGate>
           ) : (
@@ -185,22 +294,37 @@ function CatalogEntry({ entry, versions, onGenerate, onSelect, selectedId, gener
         </p>
       )}
 
+      {/* Point 15 : l'historique, daté et versionné. Le nom accessible porte
+          le document : « v1 — Brouillon » se répéterait sinon d'une carte à
+          l'autre, indistinguable au clavier. */}
       {versions.length > 0 && (
-        <div className="flex flex-wrap gap-2 border-t border-ink-100 pt-3">
-          {versions.map((version) => (
-            <button
-              key={version.id}
-              type="button"
-              onClick={() => onSelect(version.id)}
-              className={`transition-smooth rounded-md border px-2 py-1 text-xs ${
-                selectedId === version.id
-                  ? 'border-brand-600 bg-brand-50 text-ink-800'
-                  : 'border-ink-200 text-ink-600 hover:border-brand-300'
-              }`}
-            >
-              v{version.version} — {STATUS_LABELS[version.status]}
-            </button>
-          ))}
+        <div className="border-t border-ink-100 pt-3">
+          <p className="t-eyebrow mb-2">Historique</p>
+          <ul className="flex flex-wrap gap-2">
+            {versions.map((version) => (
+              <li key={version.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(version.id)}
+                  aria-label={`${entry.label}, version ${version.version} — ${STATUS_LABELS[version.status]}`}
+                  aria-pressed={selectedId === version.id}
+                  className={`transition-smooth rounded-md border px-2 py-1 text-left text-xs ${
+                    selectedId === version.id
+                      ? 'border-brand-600 bg-brand-50 text-ink-800'
+                      : 'border-ink-200 text-ink-600 hover:border-brand-300'
+                  }`}
+                >
+                  <span className="font-medium">v{version.version}</span> —{' '}
+                  {STATUS_LABELS[version.status]}
+                  {version.created_at && (
+                    <span className="block text-[11px] text-ink-500">
+                      <ProfileDate value={version.created_at} />
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </Card>
@@ -283,14 +407,8 @@ function DocumentEditor({ document: doc, onUpdated }) {
         </div>
         <div className="flex flex-wrap gap-2">
           {/* L'export Markdown n'est PAS gardé : le contenu appartient au
-              client et doit rester récupérable. Ce qui relève de l'offre, ce
-              sont les formats de rendu. */}
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => handleExport('md')}
-            disabled={isGenerating || !content}
-          >
+              client et doit rester récupérable. */}
+          <Button variant="secondary" size="sm" onClick={() => handleExport('md')} disabled={isGenerating || !content}>
             .md
           </Button>
           <FeatureGate feature="pdf_export">
@@ -353,6 +471,9 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(null)
   const [togglingAI, setTogglingAI] = useState(false)
+  const [apercuDe, setApercuDe] = useState(null)
+  const [apercu, setApercu] = useState(null)
+  const [chargementApercu, setChargementApercu] = useState(false)
   const poll = usePolling()
   const toastRef = useRef(showToast)
   toastRef.current = showToast
@@ -396,7 +517,23 @@ export default function DocumentsPage() {
     }
   }
 
+  async function handlePreview(entry) {
+    setApercuDe(entry)
+    setApercu(null)
+    setChargementApercu(true)
+    try {
+      const reponse = await aiApi.previewDocument(entry.type)
+      setApercu(reponse.data)
+    } catch {
+      setApercuDe(null)
+      showToast({ type: 'error', message: 'L’aperçu n’a pas pu être préparé.' })
+    } finally {
+      setChargementApercu(false)
+    }
+  }
+
   async function handleGenerate(entry) {
+    setApercuDe(null)
     setGenerating(entry.type)
     try {
       const response = await aiApi.generateDocument(entry.type)
@@ -405,8 +542,7 @@ export default function DocumentsPage() {
       setSelectedId(document.id)
 
       if (!job) {
-        // Document composé : il est déjà prêt dans la réponse, il n'y a
-        // aucun travail asynchrone à attendre.
+        // Document composé : il est déjà prêt dans la réponse.
         setGenerating(null)
         const catalogRes = await aiApi.documentCatalog()
         setCatalog(catalogRes.data)
@@ -444,29 +580,45 @@ export default function DocumentsPage() {
       <div>
         <h1 className="font-display text-2xl font-semibold text-ink-900">Documents</h1>
         <p className="mt-1 text-sm text-ink-500">
-          Les documents qu’un RSSI produit, composés à partir de ce que la plateforme sait déjà de
-          votre entreprise. À relire, compléter là où c’est indiqué, puis valider.
+          Rangés selon ce que vous voulez en faire. Chacun est composé à partir de ce que la
+          plateforme sait déjà de votre entreprise : prévisualisez-le, générez-le, relisez, validez.
         </p>
       </div>
 
       <AISettingsBanner settings={settings} onToggle={handleToggleAI} toggling={togglingAI} />
 
-      <div className="space-y-3">
-        {catalog.map((entry) => (
-          <CatalogEntry
-            key={entry.type}
-            entry={entry}
-            versions={documents.filter((d) => d.type === entry.type)}
-            onGenerate={handleGenerate}
-            onSelect={setSelectedId}
-            selectedId={selectedId}
-            generating={generating}
-            aiEnabled={Boolean(settings?.ai_enabled)}
-          />
-        ))}
-      </div>
+      {groupesParUsage(catalog).map((groupe) => (
+        <section key={groupe.usage} aria-labelledby={`usage-${groupe.usage}`} className="space-y-3">
+          <div>
+            <h2 id={`usage-${groupe.usage}`} className="font-display text-lg font-semibold text-ink-900">
+              {groupe.label}
+            </h2>
+            <p className="text-sm text-ink-500">{groupe.description}</p>
+          </div>
+          {groupe.entrees.map((entry) => (
+            <CatalogEntry
+              key={entry.type}
+              entry={entry}
+              versions={documents.filter((d) => d.type === entry.type)}
+              onGenerate={handleGenerate}
+              onPreview={handlePreview}
+              onSelect={setSelectedId}
+              selectedId={selectedId}
+              generating={generating}
+              aiEnabled={Boolean(settings?.ai_enabled)}
+            />
+          ))}
+        </section>
+      ))}
 
-      {settings?.ai_enabled && <PreviewPanel />}
+      <FenetreApercu
+        entree={apercuDe}
+        apercu={apercu}
+        chargement={chargementApercu}
+        aiEnabled={Boolean(settings?.ai_enabled)}
+        onFermer={() => setApercuDe(null)}
+        onGenerer={handleGenerate}
+      />
 
       {selectedDocument ? (
         <DocumentEditor
@@ -480,7 +632,7 @@ export default function DocumentsPage() {
           <Card padding="p-4">
             <CardHeader
               title="Choisissez une version"
-              description="Cliquez sur une version ci-dessus pour la relire, la modifier et l’exporter."
+              description="Ouvrez une version dans l’historique d’un document pour la relire, la modifier et l’exporter."
             />
           </Card>
         )
