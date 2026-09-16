@@ -9,6 +9,7 @@ import Badge from '../../../components/ui/Badge'
 import Button from '../../../components/ui/Button'
 import Card, { CardHeader } from '../../../components/ui/Card'
 import Modal from '../../../components/ui/Modal'
+import { navigationPourProfil } from '../../../config/navigation'
 import { SkeletonCard } from '../../../components/ui/Skeleton'
 import { useToast } from '../../../components/ui/Toast'
 import { telechargerBlob } from './referentiels/outils'
@@ -552,6 +553,219 @@ function SubscriptionSection({ tenant, plans, onChanged }) {
   )
 }
 
+/**
+ * Composer le périmètre d'un client (V2-8, ADR-038).
+ *
+ * L'état HÉRITÉ de l'offre est affiché à côté de l'état effectif : sans lui,
+ * une surcharge devient une dette invisible, et personne ne sait plus, six
+ * mois après, ce qui dévie de l'offre ni pourquoi.
+ */
+function FeaturesSection({ tenant }) {
+  const { showToast } = useToast()
+  const [composition, setComposition] = useState(null)
+  const [choisies, setChoisies] = useState(new Set())
+  const [busy, setBusy] = useState(false)
+  const [refus, setRefus] = useState([])
+
+  const charger = useCallback(async () => {
+    try {
+      const reponse = await platformApi.clientFeatures(tenant.id)
+      setComposition(reponse.data)
+      setChoisies(new Set(reponse.data.features.filter((f) => f.enabled).map((f) => f.key)))
+      setRefus([])
+    } catch (error) {
+      if (error?.response?.status === 404) {
+        setComposition({ features: [], has_override: false, absent: true })
+        return
+      }
+      showToast({ type: 'error', message: serverMessage(error, 'Composition illisible.') })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant.id])
+
+  useEffect(() => {
+    charger()
+  }, [charger])
+
+  if (!composition) return null
+  if (composition.absent) {
+    return (
+      <Card>
+        <CardHeader title="Fonctionnalités de ce client" />
+        <p className="text-sm text-ink-500">
+          Cette entreprise n’a pas d’abonnement : attribuez-lui une offre avant de composer ses
+          fonctionnalités.
+        </p>
+      </Card>
+    )
+  }
+
+  function basculer(cle) {
+    setChoisies((precedent) => {
+      const suivant = new Set(precedent)
+      if (suivant.has(cle)) suivant.delete(cle)
+      else suivant.add(cle)
+      return suivant
+    })
+  }
+
+  async function enregistrer() {
+    setBusy(true)
+    setRefus([])
+    try {
+      const reponse = await platformApi.setClientFeatures(tenant.id, [...choisies])
+      setComposition(reponse.data)
+      showToast({ type: 'success', message: 'Composition enregistrée pour ce client.' })
+    } catch (error) {
+      const problemes = error?.response?.data?.problemes
+      if (Array.isArray(problemes) && problemes.length > 0) {
+        setRefus(problemes)
+      } else {
+        showToast({ type: 'error', message: serverMessage(error, 'Composition refusée.') })
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function revenirALOffre() {
+    setBusy(true)
+    setRefus([])
+    try {
+      await platformApi.resetClientFeatures(tenant.id)
+      await charger()
+      showToast({ type: 'success', message: 'Ce client suit de nouveau son offre.' })
+    } catch (error) {
+      showToast({ type: 'error', message: serverMessage(error, 'Le retour a échoué.') })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // L'aperçu porte sur la sélection EN COURS, pas sur ce qui est enregistré :
+  // c'est ce qu'on veut voir avant de valider.
+  const retirees = new Set(
+    composition.features.filter((f) => f.inherited && !choisies.has(f.key)).map((f) => f.key)
+  )
+  const { principale, techniques } = navigationPourProfil(true, retirees)
+  const ecartsEnregistres = composition.features.filter((f) => f.deviation)
+
+  return (
+    <Card>
+      <CardHeader
+        title="Fonctionnalités de ce client"
+        description={`Elles partent de l’offre ${composition.plan_name}. Les composer ici ne touche ni au catalogue, ni aux autres clients.`}
+        action={
+          composition.has_override ? (
+            <Badge variant="warning">Périmètre composé</Badge>
+          ) : (
+            <Badge variant="neutral">Suit l’offre</Badge>
+          )
+        }
+      />
+
+      {ecartsEnregistres.length > 0 && (
+        <p className="mb-3 text-sm text-ink-600">
+          Écart avec l’offre :{' '}
+          {ecartsEnregistres
+            .map((f) => `${f.label} (${f.deviation === 'ajoutee' ? 'ajoutée' : 'retirée'})`)
+            .join(', ')}
+          .
+        </p>
+      )}
+
+      <ul className="divide-y divide-ink-100">
+        {composition.features.map((fonctionnalite) => (
+          <li key={fonctionnalite.key} className="flex flex-wrap items-start gap-3 py-2.5">
+            <input
+              id={`fonctionnalite-${fonctionnalite.key}`}
+              type="checkbox"
+              checked={choisies.has(fonctionnalite.key)}
+              onChange={() => basculer(fonctionnalite.key)}
+              disabled={busy}
+              className="mt-1 size-4 shrink-0"
+            />
+            <div className="min-w-0 flex-1">
+              <label
+                htmlFor={`fonctionnalite-${fonctionnalite.key}`}
+                className="text-sm font-medium text-ink-800"
+              >
+                {fonctionnalite.label}
+              </label>
+              {/* L'état hérité, en gris : ce que l'offre donne, que la
+                  composition suive ou non. */}
+              <p className="text-xs text-ink-500">
+                {fonctionnalite.inherited
+                  ? 'Comprise dans l’offre'
+                  : 'Absente de l’offre'}
+                {fonctionnalite.derived_screens.length > 0 &&
+                  ` · entraîne ${fonctionnalite.derived_screens.join(' et ')}`}
+                {fonctionnalite.quota_required && ` · exige un quota (${fonctionnalite.quota_required})`}
+              </p>
+            </div>
+            {fonctionnalite.deviation && (
+              <Badge variant={fonctionnalite.deviation === 'ajoutee' ? 'brand' : 'warning'}>
+                {fonctionnalite.deviation === 'ajoutee' ? 'Ajoutée' : 'Retirée'}
+              </Badge>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {refus.length > 0 && (
+        <div role="alert" className="mt-3 rounded-md border border-critical-strong/30 bg-critical-subtle px-3 py-2">
+          <p className="text-sm font-medium text-critical-strong">Composition refusée</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-critical-strong">
+            {refus.map((probleme) => (
+              <li key={probleme}>{probleme}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Aperçu : le menu tel que ce client le voit, sans se connecter à son
+          compte — un administrateur plateforme n'entre pas dans un espace
+          client (décision ADR-014). */}
+      <section className="mt-4 rounded-md border border-ink-200 bg-ink-50/60 p-4">
+        <h3 className="text-sm font-medium text-ink-800">Son menu, avec cette composition</h3>
+        <ul className="mt-2 flex flex-wrap gap-1.5">
+          {[...principale, ...techniques].map((item) => (
+            <li
+              key={item.to}
+              className="rounded-full border border-ink-200 bg-surface px-2.5 py-1 text-xs text-ink-700"
+            >
+              {item.label}
+            </li>
+          ))}
+        </ul>
+        {retirees.size > 0 && (
+          <p className="mt-2 text-xs text-ink-500">
+            Retiré de son menu :{' '}
+            {composition.features
+              .filter((f) => retirees.has(f.key))
+              .flatMap((f) => [f.label, ...f.derived_screens])
+              .join(', ')}
+            . Les données déjà produites sont conservées.
+          </p>
+        )}
+      </section>
+
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <Button
+          variant="secondary"
+          disabled={busy || !composition.has_override}
+          onClick={revenirALOffre}
+        >
+          Revenir à l’offre
+        </Button>
+        <Button loading={busy} onClick={enregistrer}>
+          Enregistrer la composition
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
 function ActionsSection({ tenant, onChanged }) {
   const { showToast } = useToast()
   const [busy, setBusy] = useState(null)
@@ -819,6 +1033,7 @@ export function ClientDetail({ tenantId, plans, onBack, onChanged }) {
       </Card>
 
       <SubscriptionSection tenant={tenant} plans={plans} onChanged={load} />
+      <FeaturesSection tenant={tenant} />
       <MembersSection
         tenantId={tenantId}
         quota={tenant.subscription?.quotas?.max_users}

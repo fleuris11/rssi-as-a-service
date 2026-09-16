@@ -102,6 +102,11 @@ export const platformApi = {
     apiClient.post(`/api/v1/platform/referentials/${slug}/measures/`, payload),
   composeSubset: (slug, payload) =>
     apiClient.post(`/api/v1/platform/referentials/${slug}/subsets/`, payload),
+  // --- Composition des fonctionnalités par client (V2-8) -------------------
+  clientFeatures: (id) => apiClient.get(`/api/v1/platform/clients/${id}/features/`),
+  setClientFeatures: (id, features) =>
+    apiClient.put(`/api/v1/platform/clients/${id}/features/`, { features }),
+  resetClientFeatures: (id) => apiClient.delete(`/api/v1/platform/clients/${id}/features/`),
   clientOverrides: (id, referential) =>
     apiClient.get(`/api/v1/platform/clients/${id}/overrides/`, {
       params: referential ? { referential } : {},
