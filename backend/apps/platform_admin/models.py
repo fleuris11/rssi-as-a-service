@@ -27,6 +27,8 @@ class AdminAuditLog(models.Model):
         TRIAL_STARTED = "trial_started", "Essai ouvert"
         TRIAL_EXTENDED = "trial_extended", "Essai prolongé"
         QUOTA_OVERRIDDEN = "quota_overridden", "Quota négocié appliqué"
+        FEATURES_COMPOSED = "features_composed", "Fonctionnalités composées"
+        FEATURES_RESET = "features_reset", "Retour aux fonctionnalités de l'offre"
         PAYMENT_RECORDED = "payment_recorded", "Paiement enregistré"
         # Catalogue
         PLAN_CREATED = "plan_created", "Offre créée"

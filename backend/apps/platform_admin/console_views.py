@@ -46,6 +46,7 @@ from .console_serializers import (
     AdminInviteSerializer,
     AdminLevelSerializer,
     ClientCreateSerializer,
+    ClientFeatureCompositionSerializer,
     MemberInviteSerializer,
     MemberSerializer,
     MemberUpdateSerializer,
@@ -534,6 +535,111 @@ class SubscriptionDetailView(ConsoleView):
                 changes=changes,
             )
         return Response(services.tenant_detail(tenant))
+
+
+class ClientFeatureCompositionView(ConsoleView):
+    """Composer les fonctionnalités d'un client, indépendamment de son offre
+    (V2-8, ADR-038).
+
+    Le champ existait depuis la phase 10 et n'avait aucune interface : dire
+    « ce client voit seulement Veille et Documents » demandait d'écrire en
+    base. Trois opérations :
+
+    - ``GET`` : chaque fonctionnalité, son état HÉRITÉ de l'offre et son état
+      EFFECTIF, avec ce qui dévie. Sans les deux, une surcharge devient une
+      dette invisible ;
+    - ``PUT`` : compose la liste pour ce client. Les combinaisons incohérentes
+      sont refusées en 422, avec la phrase qui dit pourquoi ;
+    - ``DELETE`` : revient à l'offre, et ce client suit de nouveau ses
+      évolutions.
+    """
+
+    def _charge(self, tenant, subscription) -> dict:
+        return {
+            "plan_code": subscription.plan.code,
+            "plan_name": subscription.plan.name,
+            "has_override": subscription.override_features is not None,
+            "features": billing_services.feature_composition(subscription),
+        }
+
+    def _abonnement(self, tenant):
+        subscription = entitlements.get_subscription(tenant)
+        if subscription is None:
+            return None, Response(
+                {
+                    "detail": (
+                        "Cette entreprise n'a pas d'abonnement : attribuez-lui une offre "
+                        "avant de composer ses fonctionnalités."
+                    )
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return subscription, None
+
+    def get(self, request, tenant_id):
+        tenant = get_object_or_404(Tenant, id=tenant_id)
+        subscription, refus = self._abonnement(tenant)
+        if refus is not None:
+            return refus
+        return Response(self._charge(tenant, subscription))
+
+    def put(self, request, tenant_id):
+        tenant = get_object_or_404(Tenant, id=tenant_id)
+        subscription, refus = self._abonnement(tenant)
+        if refus is not None:
+            return refus
+
+        serializer = ClientFeatureCompositionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        avant = list(subscription.effective_features)
+
+        try:
+            billing_services.set_feature_overrides(
+                subscription=subscription,
+                keys=serializer.validated_data["features"],
+                actor=request.user,
+            )
+        except billing_services.CompositionError as exc:
+            # Les phrases séparément : l'écran les affiche l'une sous l'autre,
+            # et une seule chaîne concaténée se lirait comme un pavé.
+            return Response(
+                {"detail": str(exc), "problemes": exc.problemes},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        subscription.refresh_from_db()
+        apres = list(subscription.effective_features)
+        if avant != apres:
+            self.audit(
+                request,
+                AdminAuditLog.Action.FEATURES_COMPOSED,
+                tenant=tenant,
+                target=tenant.name,
+                detail=f"Composition propre à {tenant.name}, indépendante de l'offre.",
+                changes={"features": [avant, apres]},
+            )
+        return Response(self._charge(tenant, subscription))
+
+    def delete(self, request, tenant_id):
+        tenant = get_object_or_404(Tenant, id=tenant_id)
+        subscription, refus = self._abonnement(tenant)
+        if refus is not None:
+            return refus
+
+        avant = list(subscription.effective_features)
+        billing_services.clear_feature_overrides(subscription=subscription, actor=request.user)
+        subscription.refresh_from_db()
+        apres = list(subscription.effective_features)
+        if subscription.override_features is None and avant != apres:
+            self.audit(
+                request,
+                AdminAuditLog.Action.FEATURES_RESET,
+                tenant=tenant,
+                target=tenant.name,
+                detail=f"{tenant.name} suit de nouveau les fonctionnalités de son offre.",
+                changes={"features": [avant, apres]},
+            )
+        return Response(self._charge(tenant, subscription))
 
 
 # --- Actifs surveillés et actions sur les données ---------------------------

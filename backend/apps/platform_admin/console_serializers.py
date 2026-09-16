@@ -318,6 +318,17 @@ class MonitoredAssetCreateSerializer(serializers.Serializer):
     asset_id = serializers.IntegerField()
 
 
+class ClientFeatureCompositionSerializer(serializers.Serializer):
+    """La composition d'un client (V2-8).
+
+    Une liste VIDE est une composition légitime — « ce client ne voit que le
+    socle » — et doit se distinguer d'un champ absent. Le champ est donc
+    obligatoire : composer sans dire quoi n'a pas de sens.
+    """
+
+    features = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+
+
 class TenantActionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=["scan", "refresh_synthesis", "purge_secrets"])
 

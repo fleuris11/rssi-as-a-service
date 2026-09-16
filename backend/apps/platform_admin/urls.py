@@ -5,6 +5,7 @@ from .console_views import (
     ClientArchiveView,
     ClientCreateView,
     ClientDetailView,
+    ClientFeatureCompositionView,
     ClientMemberDetailView,
     ClientMemberListView,
     ClientMonitoredAssetView,
@@ -95,6 +96,11 @@ urlpatterns = [
         "clients/<uuid:tenant_id>/subscription/",
         SubscriptionDetailView.as_view(),
         name="platform-client-subscription",
+    ),
+    path(
+        "clients/<uuid:tenant_id>/features/",
+        ClientFeatureCompositionView.as_view(),
+        name="platform-client-features",
     ),
     path(
         "clients/<uuid:tenant_id>/monitored-assets/",
