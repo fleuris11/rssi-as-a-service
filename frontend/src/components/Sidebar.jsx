@@ -1,7 +1,8 @@
 import { LogOut, ShieldCheck, ShieldEllipsis, SlidersHorizontal } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
-import { navigationPourProfil, STAFF_NAV_ITEMS } from '../config/navigation'
+import { fonctionnalitesRetirees, navigationPourProfil, STAFF_NAV_ITEMS } from '../config/navigation'
 import { useAuth } from '../context/AuthContext'
+import { useOptionalEntitlements } from '../context/EntitlementsContext'
 import { useDisplayProfile } from '../context/useDisplayProfile'
 
 const linkBase =
@@ -22,7 +23,13 @@ function linkClass({ isActive }, collapsed) {
 export default function Sidebar({ collapsed = false, onNavigate }) {
   const { currentTenant, logout, user } = useAuth()
   const { isTechnical } = useDisplayProfile()
-  const { principale, techniques } = navigationPourProfil(isTechnical)
+  // V2-8 (ADR-038) : ce qui a été RETIRÉ à ce client sort du menu. Ce qui est
+  // seulement hors offre y reste, désactivé, comme avant.
+  const droits = useOptionalEntitlements()
+  const { principale, techniques } = navigationPourProfil(
+    isTechnical,
+    fonctionnalitesRetirees(droits?.features)
+  )
 
   return (
     <div className="flex h-full flex-col bg-brand-950 text-white">

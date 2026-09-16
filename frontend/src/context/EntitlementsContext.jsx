@@ -72,3 +72,14 @@ export function useEntitlements() {
   }
   return context
 }
+
+/**
+ * Les droits quand ils sont là, ``null`` sinon.
+ *
+ * Pour les éléments de présentation que l'on rend aussi hors session (barre
+ * latérale d'une capture, écran public) : ils ne doivent pas faire tomber la
+ * page parce que le fournisseur n'est pas monté.
+ */
+export function useOptionalEntitlements() {
+  return useContext(EntitlementsContext)
+}

@@ -1,163 +1,83 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { EntitlementsProvider } from '../context/EntitlementsContext'
+import { describe, expect, it, vi } from 'vitest'
 import FeatureGate, { FeatureLockedNotice } from './FeatureGate'
 
-// Règle produit à ne pas laisser régresser : une fonctionnalité hors offre est
-// DÉSACTIVÉE, jamais masquée, et indique l'offre qui la débloque. Masquer
-// laisserait croire que le produit ne sait pas le faire — c'est faux, et le
-// client n'aurait aucune raison de monter d'offre.
+// V2-8 (ADR-038) : la garde distingue la CAUSE de l'absence.
+//
+//   - hors offre        -> désactivé, avec l'offre qui la débloque (levier commercial) ;
+//   - retirée au client -> rien du tout.
+//
+// La garde serveur, elle, refuse dans les deux cas : ce qui suit est de
+// l'affichage, jamais une sécurité.
 
-vi.mock('../api/endpoints', () => ({
-  billingApi: { entitlements: vi.fn() },
+let droits = {}
+vi.mock('../context/EntitlementsContext', () => ({
+  useEntitlements: () => droits,
 }))
 
-vi.mock('../context/AuthContext', () => ({
-  useAuth: () => ({ currentTenantId: 7 }),
-}))
-
-const { billingApi } = await import('../api/endpoints')
-
-const FEATURES = [
-  { key: 'secret_reveal', label: 'Consultation du mot de passe', included: true },
-  {
-    key: 'exposure_synthesis',
-    label: 'Synthèse d’exposition',
-    teaser: 'Une lecture consolidée de vos expositions.',
-    included: false,
-    required_plan: 'Pilotage',
-  },
-]
-
-// `MemoryRouter` depuis V2-6 : l'encart porte un lien « Demander cette
-// fonctionnalité » (consigne V2-6, point 6). Voir la fonctionnalité sans
-// pouvoir rien en faire est frustrant — le lien mène là où on la demande et
-// où on suit la demande.
-function renderGate(ui) {
+function rendre(feature) {
   return render(
     <MemoryRouter>
-      <EntitlementsProvider>{ui}</EntitlementsProvider>
+      <FeatureGate feature={feature}>
+        <button type="button">Analyser</button>
+      </FeatureGate>
+      <FeatureLockedNotice feature={feature} />
     </MemoryRouter>
   )
 }
 
+function poser(info) {
+  droits = {
+    hasFeature: (key) => Boolean(info[key]?.included),
+    featureInfo: (key) => info[key] || null,
+  }
+}
+
 describe('FeatureGate', () => {
-  beforeEach(() => {
-    billingApi.entitlements.mockReset()
-    billingApi.entitlements.mockResolvedValue({
-      data: {
-        subscription: { plan_name: 'Veille', status: 'active', is_operational: true },
-        quotas: {},
-        features: FEATURES,
+  it('laisse passer ce qui est compris dans l’offre', () => {
+    poser({ watched_accounts: { key: 'watched_accounts', included: true, source: 'plan' } })
+    rendre('watched_accounts')
+
+    expect(screen.getByRole('button', { name: 'Analyser' })).toBeInTheDocument()
+  })
+
+  it('désactive — sans masquer — ce qui est seulement hors offre', () => {
+    poser({
+      watched_accounts: {
+        key: 'watched_accounts',
+        included: false,
+        source: 'plan',
+        label: 'Surveillance de comptes désignés',
+        teaser: 'Faites surveiller des comptes précis.',
+        required_plan: 'Pilotage',
       },
     })
+    rendre('watched_accounts')
+
+    expect(screen.getByRole('button', { name: 'Analyser' })).toBeInTheDocument()
+    // La phrase paraît deux fois : sur l'élément désactivé (nom accessible) et
+    // dans l'encart de section. Les deux sont voulues.
+    expect(screen.getAllByText(/Compris à partir de l’offre Pilotage/).length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: 'Demander cette fonctionnalité' })).toBeInTheDocument()
   })
 
-  it('rend la fonctionnalité normalement quand elle est comprise dans l’offre', async () => {
-    renderGate(
-      <FeatureGate feature="secret_reveal">
-        <button type="button">Révéler</button>
-      </FeatureGate>
-    )
-
-    const button = await screen.findByRole('button', { name: 'Révéler' })
-    expect(button.closest('[aria-disabled="true"]')).toBeNull()
-  })
-
-  it('affiche la fonctionnalité hors offre DÉSACTIVÉE et non masquée', async () => {
-    renderGate(
-      <FeatureGate feature="exposure_synthesis">
-        <button type="button">Rafraîchir la synthèse</button>
-      </FeatureGate>
-    )
-
-    // Toujours présente dans le document…
-    await screen.findByText('Rafraîchir la synthèse')
-    // …mais dans un conteneur explicitement désactivé pour les technologies
-    // d'assistance, pas simplement grisé visuellement. On ré-interroge le DOM
-    // à chaque tentative : le nœud est remplacé quand les droits arrivent et
-    // que l'enfant passe sous le conteneur du verrou.
-    await waitFor(() =>
-      expect(
-        screen.getByText('Rafraîchir la synthèse').closest('[aria-disabled="true"]')
-      ).not.toBeNull()
-    )
-  })
-
-  it('nomme l’offre qui débloque la fonctionnalité', async () => {
-    renderGate(
-      <FeatureGate feature="exposure_synthesis">
-        <button type="button">Rafraîchir la synthèse</button>
-      </FeatureGate>
-    )
-
-    expect(
-      await screen.findByText(/Compris à partir de l’offre Pilotage\./)
-    ).toBeInTheDocument()
-  })
-
-  it('n’annonce jamais une fonctionnalité hors offre comme un échec du produit', async () => {
-    renderGate(
-      <FeatureGate feature="exposure_synthesis">
-        <button type="button">Rafraîchir la synthèse</button>
-      </FeatureGate>
-    )
-    await screen.findByText('Rafraîchir la synthèse')
-
-    expect(screen.queryByText(/indisponible|erreur|impossible/i)).toBeNull()
-  })
-
-  it('reste optimiste si le chargement des droits échoue', async () => {
-    // Un incident réseau passager ne doit pas griser toute l'interface : le
-    // serveur reste l'autorité et refusera l'appel avec un message explicite.
-    billingApi.entitlements.mockRejectedValue(new Error('réseau'))
-
-    renderGate(
-      <FeatureGate feature="exposure_synthesis">
-        <button type="button">Rafraîchir la synthèse</button>
-      </FeatureGate>
-    )
-
-    const button = await screen.findByRole('button', { name: 'Rafraîchir la synthèse' })
-    await waitFor(() => expect(button.closest('[aria-disabled="true"]')).toBeNull())
-  })
-
-  it('affiche un badge portant le nom de l’offre en mode badge', async () => {
-    renderGate(<FeatureGate feature="exposure_synthesis" mode="badge">{null}</FeatureGate>)
-
-    expect(await screen.findByText('Pilotage')).toBeInTheDocument()
-  })
-})
-
-describe('FeatureLockedNotice', () => {
-  beforeEach(() => {
-    billingApi.entitlements.mockReset()
-    billingApi.entitlements.mockResolvedValue({
-      data: { subscription: null, quotas: {}, features: FEATURES },
+  it('masque ce qui a été retiré à ce client, et n’invite pas à le demander', () => {
+    poser({
+      watched_accounts: {
+        key: 'watched_accounts',
+        included: false,
+        source: 'override',
+        label: 'Surveillance de comptes désignés',
+        required_plan: 'Pilotage',
+      },
     })
-  })
+    rendre('watched_accounts')
 
-  it('explique la fonctionnalité manquante et l’offre requise', async () => {
-    renderGate(<FeatureLockedNotice feature="exposure_synthesis" />)
-
-    expect(await screen.findByText('Synthèse d’exposition')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Analyser' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Compris à partir de l’offre/)).not.toBeInTheDocument()
     expect(
-      screen.getByText('Une lecture consolidée de vos expositions.')
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(/Compris à partir de l’offre Pilotage\./)
-    ).toBeInTheDocument()
-    // Le chemin de sortie : sans lui, l'encart ne fait que constater.
-    expect(
-      screen.getByRole('link', { name: 'Demander cette fonctionnalité' })
-    ).toHaveAttribute('href', '/mes-demandes')
-  })
-
-  it('ne s’affiche pas quand la fonctionnalité est comprise', async () => {
-    const { container } = renderGate(<FeatureLockedNotice feature="secret_reveal" />)
-
-    await waitFor(() => expect(billingApi.entitlements).toHaveBeenCalled())
-    expect(container).toBeEmptyDOMElement()
+      screen.queryByRole('link', { name: 'Demander cette fonctionnalité' })
+    ).not.toBeInTheDocument()
   })
 })

@@ -17,10 +17,15 @@ import {
 // Single source of truth for the sidebar links AND the topbar's page
 // title/breadcrumb (AppLayout looks up the current route here instead of
 // duplicating titles per page).
+// V2-8 (ADR-038) : `fonctionnalite` dit de quelle clé du registre un écran
+// dépend, `derivePar` qu'il n'existe QUE par une autre. Composer le périmètre
+// d'un client retire les deux — laisser « Plan d'action » à un client sans
+// diagnostic afficherait un écran vide qui l'invite à faire un diagnostic
+// auquel il n'a pas droit.
 export const NAV_ITEMS = [
   { to: '/tableau-de-bord', label: 'Tableau de bord', icon: LayoutDashboard },
-  { to: '/diagnostic', label: 'Diagnostic', icon: ClipboardCheck },
-  { to: '/plan-action', label: 'Plan d’action', icon: KanbanSquare },
+  { to: '/diagnostic', label: 'Diagnostic', icon: ClipboardCheck, fonctionnalite: 'anssi_assessment' },
+  { to: '/plan-action', label: 'Plan d’action', icon: KanbanSquare, derivePar: 'anssi_assessment' },
   // Lot C : `technical` marque un écran PUREMENT technique. En profil
   // dirigeant, il reste accessible mais descend dans une section « Détails
   // techniques » : c'est la consigne « accessibles mais pas mis en avant ».
@@ -36,7 +41,12 @@ export const NAV_ITEMS = [
   // lien est dans la navigation principale et non rangé sous « Exposition » :
   // ce sont deux périmètres différents, et les confondre dans le menu
   // reviendrait à les confondre tout court.
-  { to: '/comptes-surveilles', label: 'Comptes surveillés', icon: UserRoundSearch },
+  {
+    to: '/comptes-surveilles',
+    label: 'Comptes surveillés',
+    icon: UserRoundSearch,
+    fonctionnalite: 'watched_accounts',
+  },
   // V2-3 : la page qu'on ouvre pour PRÉPARER un comité, distincte du
   // tableau de bord qu'on ouvre pour savoir où on en est aujourd'hui.
   { to: '/rapports', label: 'Rapports', icon: FileBarChart },
@@ -44,7 +54,7 @@ export const NAV_ITEMS = [
   // B5.18 : la veille reglementaire vue du client. Lecture seule, et
   // seulement ce qui a ete juge pertinent.
   { to: '/veille', label: 'Veille', icon: Newspaper },
-  { to: '/assistant', label: 'Assistant', icon: MessageSquareText },
+  { to: '/assistant', label: 'Assistant', icon: MessageSquareText, fonctionnalite: 'assistant' },
   // Lot B : la page existait, etait routee, et n'etait dans AUCUN menu.
   // Le seul lien y menant etait enfoui dans le panneau « hors offre » —
   // un client qui avait depose une demande n'avait aucun moyen de la
@@ -72,14 +82,36 @@ export const STAFF_NAV_ITEMS = [
 ]
 
 /**
- * La navigation telle qu'un profil la lit. Aucun lien n'est retiré : en
- * profil dirigeant, les écrans techniques changent seulement de place.
+ * Les clés RETIRÉES à ce client par une composition (V2-8, ADR-038).
+ *
+ * Deux absences qui ne se traitent pas pareil : hors offre (`source: 'plan'`)
+ * reste visible et désactivé — c'est un levier commercial ; retirée pour ce
+ * client (`source: 'override'`) disparaît — on ne montre pas à quelqu'un ce
+ * qu'on vient de lui retirer.
  */
-export function navigationPourProfil(isTechnical) {
-  if (isTechnical) return { principale: NAV_ITEMS, techniques: [] }
+export function fonctionnalitesRetirees(features = []) {
+  return new Set(
+    features.filter((f) => !f.included && f.source === 'override').map((f) => f.key)
+  )
+}
+
+function estVisible(item, retirees) {
+  if (item.fonctionnalite && retirees.has(item.fonctionnalite)) return false
+  return !(item.derivePar && retirees.has(item.derivePar))
+}
+
+/**
+ * La navigation telle qu'un profil la lit, pour un périmètre donné.
+ *
+ * Le profil ne retire aucun lien : en profil dirigeant, les écrans techniques
+ * changent seulement de place. La composition, elle, en retire.
+ */
+export function navigationPourProfil(isTechnical, retirees = new Set()) {
+  const visibles = NAV_ITEMS.filter((item) => estVisible(item, retirees))
+  if (isTechnical) return { principale: visibles, techniques: [] }
   return {
-    principale: NAV_ITEMS.filter((item) => !item.technical),
-    techniques: NAV_ITEMS.filter((item) => item.technical),
+    principale: visibles.filter((item) => !item.technical),
+    techniques: visibles.filter((item) => item.technical),
   }
 }
 

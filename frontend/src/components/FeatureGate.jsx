@@ -20,6 +20,13 @@ export default function FeatureGate({ feature, children, mode = 'disable' }) {
   if (hasFeature(feature)) return children
 
   const info = featureInfo(feature)
+  // V2-8 (ADR-038) : retirée POUR CE CLIENT, elle disparaît. La règle
+  // « désactivé, jamais masqué » vaut pour ce qui est hors offre — montrer ce
+  // que le produit sait faire est un levier commercial. Montrer ce qu'on vient
+  // de retirer à quelqu'un n'en est pas un : c'est une invitation à demander
+  // ce qu'on a décidé de ne pas lui donner.
+  if (info?.source === 'override') return null
+
   const requiredPlan = info?.required_plan
   const message = requiredPlan
     ? `Compris à partir de l’offre ${requiredPlan}.`
@@ -57,6 +64,8 @@ export function FeatureLockedNotice({ feature }) {
   if (hasFeature(feature)) return null
 
   const info = featureInfo(feature)
+  // Même règle que ci-dessus : rien à proposer pour ce qui a été retiré.
+  if (info?.source === 'override') return null
   return (
     <div className="flex items-start gap-3 rounded-lg border border-ink-200 bg-ink-50/70 px-4 py-3">
       <Lock className="mt-0.5 size-4 shrink-0 text-ink-500" aria-hidden="true" />
