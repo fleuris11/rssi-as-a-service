@@ -98,6 +98,43 @@ REGISTRY: dict[str, Feature] = {
 }
 
 
+# --- Ce qu'une fonctionnalité exige pour avoir un sens (V2-8, ADR-038) -------
+#
+# Composer le menu d'un client, c'est pouvoir produire des combinaisons qui
+# n'ont aucun sens. Trois natures de contrainte, et une seule est vide — ce
+# vide est un constat vérifié, pas un oubli.
+
+#: Fonctionnalité -> fonctionnalités dont elle a besoin.
+#:
+#: **Vide aujourd'hui**, et c'est exact : les neuf clés portent des capacités
+#: greffées sur des écrans qui, eux, ne sont jamais conditionnés (Exposition,
+#: Compromissions, Documents, Veille). Révéler un mot de passe, corréler une
+#: réutilisation ou résumer une exposition n'exige aucune autre clé. Déclarer
+#: ici une dépendance inventée donnerait l'illusion d'un contrôle.
+DEPEND_DE: dict[str, tuple[str, ...]] = {}
+
+#: Fonctionnalité -> (quota de l'abonnement, ce que le quota compte).
+#:
+#: Activer la fonctionnalité sans le quota correspondant produit un écran dont
+#: CHAQUE action est refusée — le client voit une promesse que le serveur lui
+#: refuse ensuite. C'est la combinaison incohérente la plus facile à produire
+#: depuis un écran de composition.
+QUOTA_REQUIS: dict[str, tuple[str, str]] = {
+    WATCHED_ACCOUNTS: ("watched_accounts_quota", "compte à surveiller"),
+    REALTIME_MONITORING: ("monitored_assets_quota", "emplacement de surveillance continue"),
+}
+
+#: Fonctionnalité -> écrans qui n'existent QUE par elle.
+#:
+#: Retirer le diagnostic retire aussi ses résultats et le plan d'action : le
+#: plan est *produit* par la clôture d'un diagnostic, et les résultats en sont
+#: la lecture. Les laisser au menu afficherait deux écrans vides dont le
+#: message invite à faire un diagnostic auquel le client n'a pas droit.
+ECRANS_DERIVES: dict[str, tuple[str, ...]] = {
+    ANSSI_ASSESSMENT: ("Résultats", "Plan d'action"),
+}
+
+
 def is_known(key: str) -> bool:
     return key in REGISTRY
 

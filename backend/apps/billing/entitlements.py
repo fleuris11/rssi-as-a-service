@@ -277,11 +277,25 @@ def summary(tenant) -> dict:
 
     subscription = get_subscription(tenant)
     included = set(subscription.effective_features) if subscription else set()
+    # V2-8 (ADR-038) : POURQUOI une fonctionnalité est absente change ce que
+    # l'interface en fait. Absente de l'offre, elle reste visible et désactivée
+    # — c'est un levier commercial. Retirée par une composition décidée pour ce
+    # client, elle est masquée : on ne montre pas à quelqu'un ce qu'on vient de
+    # lui retirer.
+    du_plan = set(feature_registry.sanitize(subscription.plan.features)) if subscription else set()
+    compose = subscription is not None and subscription.override_features is not None
 
     features = []
     for key, feature in feature_registry.REGISTRY.items():
         if key in included:
-            features.append({"key": key, "label": feature.label, "included": True})
+            features.append(
+                {
+                    "key": key,
+                    "label": feature.label,
+                    "included": True,
+                    "source": "override" if compose and key not in du_plan else "plan",
+                }
+            )
             continue
         plan = cheapest_plan_with(key)
         features.append(
@@ -291,6 +305,9 @@ def summary(tenant) -> dict:
                 "included": False,
                 "teaser": feature.teaser,
                 "required_plan": plan.name if plan else "",
+                # « retirée pour ce client » plutôt que « hors offre » : la
+                # première se masque, la seconde se propose.
+                "source": "override" if compose and key in du_plan else "plan",
             }
         )
 

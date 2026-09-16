@@ -15,6 +15,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from . import capacity
+from . import features as feature_registry
 from .models import Payment, Plan, Subscription, SubscriptionEvent
 
 logger = logging.getLogger(__name__)
@@ -356,6 +357,131 @@ def set_quota_overrides(*, subscription, actor=None, **overrides) -> Subscriptio
     )
     capacity.check_alert_thresholds()
     return subscription
+
+
+# --- Composition des fonctionnalités par client (V2-8, ADR-038) -------------
+
+
+def incoherences_de_composition(*, subscription, keys) -> list[str]:
+    """Ce qui rendrait la composition incohérente, dit en clair.
+
+    Renvoie une liste de phrases destinées à l'administrateur : elles disent ce
+    qui ne va pas ET pourquoi, parce qu'un refus sans motif conduit à
+    recommencer la même combinaison.
+    """
+    retenues = set(feature_registry.sanitize(keys))
+    problemes = []
+
+    for cle in sorted(retenues):
+        for requise in feature_registry.DEPEND_DE.get(cle, ()):
+            if requise not in retenues:
+                problemes.append(
+                    f"« {feature_registry.label(cle)} » a besoin de "
+                    f"« {feature_registry.label(requise)} », qui est retirée."
+                )
+
+    for cle, (attribut, compte) in feature_registry.QUOTA_REQUIS.items():
+        if cle not in retenues:
+            continue
+        if getattr(subscription, attribut, 0) == 0:
+            problemes.append(
+                f"« {feature_registry.label(cle)} » est activée, mais ce client n'a aucun "
+                f"{compte} : chaque action lui serait refusée. Relevez le quota, ou "
+                "retirez la fonctionnalité."
+            )
+
+    return problemes
+
+
+class CompositionError(BillingError):
+    """Composition refusée : porte les phrases à afficher telles quelles."""
+
+    def __init__(self, problemes: list[str]):
+        super().__init__(" ".join(problemes))
+        self.problemes = problemes
+
+
+@transaction.atomic
+def set_feature_overrides(*, subscription, keys, actor=None) -> Subscription:
+    """Compose les fonctionnalités de CE client, indépendamment de son offre.
+
+    ``keys`` remplace entièrement la liste — c'est ce que porte le champ. Les
+    clés inconnues sont ignorées (même règle que partout : une saisie erronée
+    ne fait pas tomber l'application), et une composition identique à l'offre
+    reste une surcharge : l'administrateur l'a décidée, et le jour où l'offre
+    change, ce client ne doit pas suivre sans qu'on l'ait voulu.
+    """
+    retenues = feature_registry.sanitize(keys)
+    problemes = incoherences_de_composition(subscription=subscription, keys=retenues)
+    if problemes:
+        raise CompositionError(problemes)
+
+    if subscription.override_features == retenues:
+        return subscription
+
+    subscription.override_features = retenues
+    subscription.save(update_fields=["override_features", "updated_at"])
+    _record_event(
+        subscription,
+        from_status=subscription.status,
+        to_status=subscription.status,
+        reason="Fonctionnalités composées pour ce client.",
+        actor=actor,
+    )
+    return subscription
+
+
+@transaction.atomic
+def clear_feature_overrides(*, subscription, actor=None) -> Subscription:
+    """Revient à l'offre : la surcharge disparaît, et ce client suit de nouveau
+    son offre, y compris ses évolutions futures."""
+    if subscription.override_features is None:
+        return subscription
+
+    subscription.override_features = None
+    subscription.save(update_fields=["override_features", "updated_at"])
+    _record_event(
+        subscription,
+        from_status=subscription.status,
+        to_status=subscription.status,
+        reason="Retour aux fonctionnalités de l'offre.",
+        actor=actor,
+    )
+    return subscription
+
+
+def feature_composition(subscription) -> list[dict]:
+    """L'état de chaque fonctionnalité pour ce client : héritée ou surchargée.
+
+    Montrer les deux est le cœur de l'écran (consigne V2-8, point 2) : sans
+    l'état hérité à côté de l'état effectif, une surcharge devient invisible et
+    personne ne sait plus ce qui dévie de l'offre.
+    """
+    heritees = set(feature_registry.sanitize(subscription.plan.features))
+    effectives = set(subscription.effective_features)
+    surcharge = subscription.override_features is not None
+
+    lignes = []
+    for cle, fonctionnalite in feature_registry.REGISTRY.items():
+        heritee = cle in heritees
+        effective = cle in effectives
+        if not surcharge or heritee == effective:
+            ecart = ""
+        else:
+            ecart = "ajoutee" if effective else "retiree"
+        lignes.append(
+            {
+                "key": cle,
+                "label": fonctionnalite.label,
+                "teaser": fonctionnalite.teaser,
+                "inherited": heritee,
+                "enabled": effective,
+                "deviation": ecart,
+                "derived_screens": list(feature_registry.ECRANS_DERIVES.get(cle, ())),
+                "quota_required": feature_registry.QUOTA_REQUIS.get(cle, ("", ""))[1],
+            }
+        )
+    return lignes
 
 
 def set_internal_notes(*, subscription, notes: str) -> Subscription:
