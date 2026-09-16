@@ -6505,3 +6505,130 @@ Vérifié en production :
   (~19,5 Mo), décision à part.
 - `docs/demo_runbook.md` ne correspond plus aux écrans : à réécrire à partir
   de l'inventaire remis ce jour.
+
+## 16 septembre 2026 — V2-8 : composer le périmètre d'un client
+
+### Ce qui existait, et ce qui manquait
+
+`Subscription.override_features` existait depuis la phase 10, la résolution
+fonctionnait (`effective_features`), et **aucune interface ne la réglait** :
+dire « ce client voit seulement Veille et Documents » demandait d'écrire en
+base — donc un accès au serveur, aucune trace, et aucun moyen de savoir
+ensuite ce qui déviait de l'offre.
+
+### Trois décisions (ADR-038)
+
+**1. Masquer ce qui a été retiré, désactiver ce qui est hors offre.** La règle
+« désactivé, jamais masqué » a été posée pour un usage commercial : le client
+doit savoir que le produit sait le faire. Elle ne vaut pas pour un périmètre
+réduit volontairement — montrer à quelqu'un ce qu'on vient de lui retirer
+l'invite à demander ce qu'on a décidé de ne pas lui donner. L'API dit donc
+désormais la CAUSE de l'absence (`source: "plan"` ou `"override"`), et
+l'interface en tire deux comportements. La garde serveur, elle, refuse dans
+les deux cas : le masquage n'est jamais une sécurité.
+
+**2. Les dépendances ne sont pas là où la question les plaçait.** La question
+posée était « retirer le diagnostic doit-il retirer le plan d'action ? ». En
+établissant la carte, le constat est qu'**aucune des neuf clés du registre ne
+dépend d'une autre** : elles greffent des capacités sur des écrans qui, eux, ne
+sont jamais conditionnés (Exposition, Compromissions, Documents, Veille). La
+table `DEPEND_DE` est donc vide — et un test vérifie le mécanisme malgré tout,
+pour qu'il tienne le jour où une dépendance apparaîtra. Les dépendances réelles
+sont ailleurs :
+
+- **fonctionnalité → quota** : activer « Comptes surveillés » chez un client
+  dont le quota vaut zéro produit un écran dont chaque action est refusée. La
+  composition est refusée, avec la phrase qui dit quoi faire ;
+- **fonctionnalité → écrans dérivés** : le plan d'action est *produit* par la
+  clôture d'un diagnostic, et les résultats en sont la lecture. Retirer le
+  diagnostic les retire du menu ; les données déjà produites sont conservées.
+
+**3. L'état hérité est toujours affiché à côté de l'état effectif**, avec la
+mention de l'écart (« ajoutée », « retirée »). Une surcharge invisible est une
+dette : six mois plus tard, personne ne sait plus pourquoi ce client diffère.
+
+Composer à l'identique de l'offre **reste** une surcharge : c'est une décision,
+et ce client ne doit pas suivre la prochaine évolution du catalogue sans qu'on
+l'ait voulu. Un test l'épingle — l'offre change, le client ne bouge pas.
+
+### Ce qui a été livré
+
+- **Registre** : trois tables déclaratives (`DEPEND_DE`, `QUOTA_REQUIS`,
+  `ECRANS_DERIVES`), et un test qui refuse une clé fantôme.
+- **Service** : `set_feature_overrides`, `clear_feature_overrides`,
+  `feature_composition`, et les refus motivés.
+- **Console** : `GET/PUT/DELETE /clients/<id>/features/`, tracés au journal
+  d'audit (`features_composed`, `features_reset`) avec l'avant et l'après.
+- **Écran** : la composition dans la fiche client, l'écart avec l'offre en
+  toutes lettres, un bouton « revenir à l'offre », le refus affiché tel quel,
+  et **l'aperçu du menu du client** — calculé à partir de la même configuration
+  de navigation que son espace, sans se connecter à son compte (un
+  administrateur plateforme n'entre pas dans un espace client, ADR-014).
+
+### Neutralisations
+
+**Dix-huit neutralisations, dix-huit rougissent** : la composition non
+enregistrée, le retour à l'offre qui n'efface rien, le prérequis de quota et la
+dépendance non vérifiés, un refus qui écrit quand même, la composition et le
+retour non tracés, la cause de l'absence tue (des deux côtés), l'écart avec
+l'offre non nommé ; côté écran, la cause ignorée, les écrans dérivés laissés au
+menu, la garde qui ne masque plus, l'encart qui propose ce qui a été retiré, la
+barre latérale qui ignore le périmètre, l'aperçu figé et le motif du refus
+avalé.
+
+**Deux défauts du harnais, relevés en chemin.**
+
+1. Quatre neutralisations sont d'abord sorties « INVALIDE (ancre) ». Les ancres
+   multi-lignes étaient écrites avec des fins de ligne Unix, alors que les
+   fichiers du dépôt sont en CRLF : elles ne correspondaient à rien. Une ancre
+   qui ne s'applique pas ne prouve rien, et se lit de loin comme un test
+   manquant. Le harnais adapte désormais l'ancre aux fins de ligne du fichier.
+2. Une cinquième rougissait **pour la mauvaise raison** : couper l'appel au
+   journal d'audit faisait planter la vue (1 échec et 9 erreurs). Un test qui
+   rougit sur un plantage ne dit pas que la trace manque. Refaite en
+   neutralisant la seule condition, elle rougit sur le constat attendu (1 échec,
+   9 passés).
+
+### Vérifications
+
+- `ruff` et `eslint` propres ; aucune migration manquante.
+- **286 tests** sur les apps `billing` et `platform_admin`, dont 27 nouveaux
+  pour la composition (service, registre, droits) et l'API de la console.
+- **348 tests d'écran** (55 fichiers), dont les nouveaux : navigation composée,
+  barre latérale, garde de fonctionnalité, écran de composition et son aperçu.
+- Étanchéité vérifiée : composer un client ne change rien chez un autre, et un
+  membre du client — même administrateur de son entreprise — ne peut pas
+  composer son propre périmètre.
+
+### Mise en production
+
+Déployé le 16/09/2026 sur `d829d9c`, après une CI verte. Point de repli : tag
+`avant-v2-8` sur `2b898dd`, et `~/sauvegarde-avant-v2-8-20260916-1403.sql.gz`,
+vérifiée complète (65 tables et le marqueur de fin).
+
+Vérifié en production, avant puis après :
+
+- la route de composition passe de **404 à 16:03:53** (elle n'existait pas) à
+  **401 sans jeton à 16:37:51** : elle existe et elle est protégée ;
+- la migration `platform_admin.0004` est appliquée (relevé d'avant : le
+  journal d'audit s'arrêtait à 0003 à 16:36:15), et les deux actions
+  `features_composed` et `features_reset` sont disponibles ;
+- six conteneurs actifs, accueil en 200.
+
+**Au-delà du code HTTP**, une vérification fonctionnelle en lecture seule : la
+composition se calcule bien sur un abonnement réel (9 fonctionnalités, leur
+état hérité et leur état effectif, les écrans dérivés du diagnostic), et les
+droits servis au client portent la cause de l'absence — toutes en « plan »
+aujourd'hui, aucun client n'ayant encore de périmètre composé.
+
+**Un 401 prouve qu'une route existe, pas qu'elle fonctionne** : c'est pour cela
+que les deux relevés sont faits.
+
+### Reste à faire
+
+- Aucun client n'a de composition à ce jour : la première le sera depuis la
+  console, et c'est elle qui vérifiera l'enchaînement complet en conditions
+  réelles.
+- L'aperçu du menu se calcule à partir de la configuration de navigation du
+  frontend. Un écran ajouté au menu sans sa clé de fonctionnalité n'apparaîtra
+  ni retiré ni dérivé : à surveiller au prochain écran ajouté.
