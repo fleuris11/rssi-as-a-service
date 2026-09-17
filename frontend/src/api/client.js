@@ -45,7 +45,18 @@ export const apiClient = axios.create({ baseURL: API_BASE_URL })
 // avant même la vérification du mot de passe, et l'écran affichait
 // « mot de passe incorrect ». Un contexte périmé ne doit jamais empêcher de
 // se ré-authentifier.
-const UNAUTHENTICATED_PATHS = ['/api/v1/auth/token/', '/api/v1/auth/register/']
+// L'espace apprenant (F1) rejoint cette liste pour une raison voisine : le
+// salarié qui suit un cours n'a pas de compte, et c'est le jeton de son lien
+// qui l'autorise. Mais le navigateur peut très bien porter la session d'un
+// collègue — un poste partagé, ou le dirigeant qui teste le lien qu'il vient
+// d'envoyer. Y joindre ce jeton et cet identifiant d'entreprise ferait
+// répondre au middleware de scoping « Aucun accès à cette entreprise » (403)
+// avant même d'atteindre la vue, pour un lien parfaitement valable.
+const UNAUTHENTICATED_PATHS = [
+  '/api/v1/auth/token/',
+  '/api/v1/auth/register/',
+  '/api/v1/formation/session/',
+]
 
 function isUnauthenticatedRoute(url = '') {
   return UNAUTHENTICATED_PATHS.some((path) => url.startsWith(path))

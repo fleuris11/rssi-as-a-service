@@ -176,6 +176,41 @@ export const invitationApi = {
     apiClient.post(`/api/v1/auth/invitation/${token}/`, { password }),
 }
 
+// Formation (F1). Deux blocs en un, et la séparation compte :
+//
+// - `session` / `marquerEcran` / `soumettreQuiz` / `attestation` sont appelés
+//   par la PAGE APPRENANT, publique. Le jeton voyage en en-tête et jamais dans
+//   l'adresse : une URL finit dans les journaux du serveur et l'historique du
+//   navigateur. Ces chemins sont déclarés non authentifiés dans client.js —
+//   sans quoi la session d'un collègue restée dans le navigateur ferait
+//   répondre 403 avant d'atteindre la vue ;
+// - le reste est appelé depuis l'espace client, authentifié comme le reste.
+const jeton = (token) => ({ headers: { 'X-Formation-Token': token } })
+
+export const formationApi = {
+  session: (token) => apiClient.get('/api/v1/formation/session/', jeton(token)),
+  marquerEcran: (token, screenId) =>
+    apiClient.post('/api/v1/formation/session/ecran/', { screen_id: screenId }, jeton(token)),
+  soumettreQuiz: (token, answers) =>
+    apiClient.post('/api/v1/formation/session/quiz/', { answers }, jeton(token)),
+  attestation: (token) =>
+    apiClient.get('/api/v1/formation/session/attestation/', {
+      ...jeton(token),
+      responseType: 'blob',
+    }),
+  demanderAcces: (token) => apiClient.post('/api/v1/formation/session/acces/', {}, jeton(token)),
+
+  catalogue: () => apiClient.get('/api/v1/formation/pilotage/catalogue/'),
+  salaries: () => apiClient.get('/api/v1/formation/pilotage/salaries/'),
+  creerSalarie: (payload) => apiClient.post('/api/v1/formation/pilotage/salaries/', payload),
+  inscriptions: () => apiClient.get('/api/v1/formation/pilotage/inscriptions/'),
+  inscrire: (payload) => apiClient.post('/api/v1/formation/pilotage/inscriptions/', payload),
+  revoquer: (id) => apiClient.delete(`/api/v1/formation/pilotage/inscriptions/${id}/`),
+  reemettreLien: (id) => apiClient.post(`/api/v1/formation/pilotage/inscriptions/${id}/lien/`),
+  accorderEssai: (id, count = 1) =>
+    apiClient.post(`/api/v1/formation/pilotage/inscriptions/${id}/essais/`, { count }),
+}
+
 export const authApi = {
   register: (payload) => apiClient.post('/api/v1/auth/register/', payload),
   login: (email, password) => apiClient.post('/api/v1/auth/token/', { email, password }),

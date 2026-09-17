@@ -12,6 +12,7 @@ const LegalPage = lazy(() => import('./marketing/pages/LegalPage'))
 const AppRoutes = lazy(() => import('./AppRoutes'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const InvitationPage = lazy(() => import('./pages/InvitationPage'))
+const FormationPage = lazy(() => import('./pages/FormationPage'))
 const RegisterPage = lazy(() => import('./pages/RegisterPage'))
 
 function RouteFallback() {
@@ -39,6 +40,11 @@ function App() {
         {/* Lien d'invitation : public par construction, la personne invitée
             n'a pas encore de mot de passe. */}
         <Route path="/invitation/:token" element={<InvitationPage />} />
+        {/* Parcours de formation d'un salarié (F1) : public par construction.
+            Le salarié n'a pas de compte — c'est le jeton du lien qui
+            l'autorise. Déclarée AVANT la route attrape-tout de l'application,
+            qui exigerait une session et le renverrait vers la connexion. */}
+        <Route path="/formation/:token" element={<FormationPage />} />
 
         {/* Application */}
         <Route path="/*" element={<AppRoutes />} />
