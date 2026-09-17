@@ -35,6 +35,12 @@ urlpatterns = [
     # La meme veille, cote CLIENT : lecture seule, et seulement ce qui a
     # ete juge pertinent (B5.18).
     path("api/v1/watch/", include("apps.regulatory_watch.client_urls")),
+    # Formation (F1) : l'espace apprenant sous « session/ » n'est PAS
+    # authentifié — c'est le jeton du lien nominatif qui autorise, et le
+    # cloisonnement est posé depuis l'inscription qu'il désigne
+    # (apps.training.services.resoudre_session). Le pilotage, lui, est dans
+    # l'espace client ordinaire.
+    path("api/v1/formation/", include("apps.training.urls")),
     path("api/v1/billing/", include("apps.billing.urls")),
     path("api/v1/reporting/", include("apps.reporting.urls")),
     # Demandes d'un client a l'exploitant. Le meme modele sert des deux cotes :
