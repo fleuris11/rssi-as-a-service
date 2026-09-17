@@ -7,6 +7,7 @@ import {
   KanbanSquare,
   LayoutDashboard,
   FileBarChart,
+  GraduationCap,
   MessageSquareText,
   Radar,
   ScrollText,
@@ -51,6 +52,10 @@ export const NAV_ITEMS = [
   // tableau de bord qu'on ouvre pour savoir où on en est aujourd'hui.
   { to: '/rapports', label: 'Rapports', icon: FileBarChart },
   { to: '/documents', label: 'Documents', icon: ScrollText },
+  // F1 : le pilotage des formations. Porte la clé `training` — un client dont
+  // l'offre ne la comprend pas voit l'entrée désactivée (levier commercial) ;
+  // un client à qui elle a été retirée ne la voit pas du tout (ADR-038).
+  { to: '/formation', label: 'Formation', icon: GraduationCap, fonctionnalite: 'training' },
   // B5.18 : la veille reglementaire vue du client. Lecture seule, et
   // seulement ce qui a ete juge pertinent.
   { to: '/veille', label: 'Veille', icon: Newspaper },

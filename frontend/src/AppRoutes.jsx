@@ -20,6 +20,7 @@ import NotificationPreferencesPage from './pages/NotificationPreferencesPage'
 import NotificationsPage from './pages/NotificationsPage'
 import ResultsPage from './pages/ResultsPage'
 import SurveillancePage from './pages/SurveillancePage'
+import TrainingPage from './pages/TrainingPage'
 import TwoFactorSettingsPage from './pages/TwoFactorSettingsPage'
 
 // Routes de l'application authentifiée, extraites de App.jsx pour former un
@@ -51,6 +52,9 @@ export default function AppRoutes() {
           <Route path="/mes-demandes" element={<RequestsPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
+          {/* Le PILOTAGE des formations. Le parcours du salarié, lui, vit hors
+              de l'espace client : /formation/:token, sans compte. */}
+          <Route path="/formation" element={<TrainingPage />} />
           <Route path="/assistant" element={<AssistantPage />} />
           <Route path="/preferences" element={<NotificationPreferencesPage />} />
           <Route path="/securite" element={<TwoFactorSettingsPage />} />
