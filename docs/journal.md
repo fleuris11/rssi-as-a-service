@@ -6632,3 +6632,163 @@ que les deux relevés sont faits.
 - L'aperçu du menu se calcule à partir de la configuration de navigation du
   frontend. Un écran ajouté au menu sans sa clé de fonctionnalité n'apparaîtra
   ni retiré ni dérivé : à surveiller au prochain écran ajouté.
+
+## 17 septembre 2026 — F1 : le parcours de formation d'un salarié
+
+### Ce qui a été construit
+
+Un salarié reçoit un lien, suit un cours découpé en écrans, passe un quiz,
+obtient une attestation. Pas de studio, pas de rapports : le chemin avant les
+outils. Onze entités plus `CourseVersion`, deux surfaces HTTP, deux écrans.
+
+### Le point de cadrage : l'apprenant n'est pas un utilisateur
+
+Trois options étaient sur la table. Le coût d'un compte par salarié n'est pas
+là où on l'attend :
+
+- **le rôle le plus bas du produit lit tout.** Donner un compte à un salarié
+  pour dix minutes de sensibilisation lui aurait donné la vue des
+  compromissions de son employeur. Il aurait fallu un quatrième rôle **et**
+  relire la garde de chaque vue existante — un audit de toute l'API, déclenché
+  par un module de formation ;
+- **le quota d'utilisateurs est vendu** : `Plan.max_users` vaut 3 par défaut.
+  Quarante salariés auraient consommé quarante sièges d'une offre qui en vend
+  trois.
+
+D'où le lien nominatif, et la limite qu'il porte : **un lien ne prouve pas une
+identité**. Elle est écrite dans l'ADR *et* imprimée sur l'attestation — c'est
+là qu'elle sera lue par celui qui reçoit le document et se demande ce qu'il
+vaut. Le document dit « attestation de suivi », jamais « certification » ni
+« habilitation » : ces mots ont un sens juridique qu'il n'a pas.
+
+### Un amendement au cadrage
+
+Il était prévu qu'un salarié dont le lien a expiré puisse en redemander un
+depuis la page d'expiration. **Cela ne pouvait pas fonctionner** : la validité
+découle de l'échéance de la campagne, donc réémettre un jeton sur la même
+inscription produit un lien tout aussi périmé. Rendre l'accès suppose de
+déplacer l'échéance ou de réinscrire — deux décisions de gestion.
+
+La page dépose donc une demande vers les administrateurs du client, une par
+jour au plus, sans aucun lien dans le message.
+
+### Une seule source de vérité pour la progression
+
+Question posée au cadrage, réglée en retirant des colonnes : `Enrollment` ne
+porte ni curseur, ni compteur d'essais, ni date de fin. Le point de reprise se
+dérive, les essais se comptent, la réussite se lit à l'existence de
+l'attestation. C'est toujours la copie qui finit par mentir.
+
+### Cinq défauts trouvés, dont trois que seuls le navigateur ou un test de garde pouvaient voir
+
+1. **L'en-tête `X-Formation-Token` était bloqué par le contrôle préalable
+   CORS.** Les 20 tests d'API passaient — le client de test de Django
+   n'applique pas CORS — et le navigateur aurait refusé chaque appel sans
+   laisser de trace serveur. Exactement le défaut décrit dans le commentaire de
+   `CORS_ALLOW_HEADERS`, survenu une deuxième fois. Il est désormais épinglé
+   par un test qui **lit les en-têtes réellement posés par le frontend** au
+   lieu d'en lister les noms.
+2. **Ce test avait lui-même un défaut** : son expression régulière ne
+   connaissait que la forme littérale `{ 'X-...': v }` et manquait l'écriture
+   par crochets `headers['X-Tenant-Id'] = v` — soit l'en-tête même dont l'oubli
+   avait motivé son écriture. C'est son test de contrôle (« l'analyse
+   trouve-t-elle quelque chose ? ») qui l'a signalé.
+3. **Les deux points d'entrée de l'apprenant ne décrivaient pas l'état de la
+   même façon** : celui qui enregistre un écran omettait le quiz. L'interface
+   remplace sa session par la réponse reçue : au septième écran, le
+   questionnaire avait disparu. Chaque point d'entrée, isolément, répondait
+   correctement — aucun test ne les enchaînait.
+4. **Pas de titre de niveau un** sur les vues quiz et résultat : il était placé
+   dans la branche « cours ». Relevé par axe-core en navigateur.
+5. **Pas de région principale** sur les écrans de chargement et de lien expiré.
+
+Les deux derniers sont des défauts d'accessibilité que les tests de composant
+ne voyaient pas, et qui excluent précisément les salariés qu'un module de
+formation doit atteindre.
+
+### La CI a refusé le premier envoi, et elle avait raison
+
+Échec sur l'étape de lint. La cause n'était pas le code mais **ma
+vérification** : la CI lance `ruff check .` **et `ruff format --check .`**
+depuis `backend/`, là où je n'avais lancé que `ruff check` sur un
+sous-ensemble de dossiers. Le formatage n'avait donc jamais été passé, et cinq
+fichiers du module étaient concernés.
+
+Rien de fonctionnel — des appels tenant désormais sur une ligne, 13 insertions
+contre 39 suppressions, et les 50 tests du module identiques avant et après.
+La leçon est la même que pour CORS : **vérifier avec la commande exacte de la
+CI**, pas avec une commande qui lui ressemble.
+
+### Vérifications
+
+- **50 tests** sur `apps/training` (parcours, quiz, seuil, essais,
+  réarmement, attestation, lien, étanchéité entre entreprises **et entre
+  apprenants d'une même entreprise**), 41 sur les gardes d'offre, 2 sur les
+  en-têtes CORS.
+- **388 tests d'écran** (61 fichiers), dont 20 nouveaux.
+- **Parcours en navigateur réel, en largeur téléphone (390 px)** : les sept
+  écrans, le quiz, le résultat, la page de lien mort. **axe-core propre** sur
+  les quatre vues, aucune erreur de console, aucun débordement horizontal.
+- `ruff` et `eslint` propres.
+
+**Deux tests d'écran sont instables sous la charge de la suite complète**
+(`WatchPage.recherche`, `ClientsPanel.composition`) : ils passent isolément et
+côte à côte, et n'échouent qu'en exécution intégrale à 366 s, sur expiration de
+`waitFor`. Ce n'est pas une régression de ce lot ; c'est une fragilité de
+minuterie à traiter pour elle-même.
+
+**Trois échecs serveur sont d'environnement, et c'est prouvé** : le conteneur
+ne monte que `backend/`, donc les tests qui lisent `docker-compose.yml`,
+`frontend/src/marketing/content.js` ou le PDF du référentiel disent eux-mêmes
+« le test ne mesure rien ». La CI, qui extrait le dépôt entier, les exécute
+réellement.
+
+### Mise en production
+
+Déployé le 17/09/2026 sur `adfcd75`, après une CI verte (run 35171793480 ;
+le premier envoi, `c209566`, avait été refusé sur le lint). Point de repli :
+tag `avant-f1` sur `2ef48d4`, et `~/sauvegarde-avant-f1-20260917-0136.sql.gz`,
+vérifiée complète — 476 Ko, 65 tables, marqueur de fin présent (cherché dans
+tout le fichier : il est suivi d'une ligne `\unrestrict`).
+
+Relevés avant (01:36 UTC) et après (01:52 UTC) :
+
+- commit déployé `adfcd75`, **six conteneurs actifs**, accueil en 200 ;
+- migrations `training.0001`, `training.0002` et `billing.0008` appliquées ;
+- `/api/v1/formation/pilotage/catalogue/` passe de **404 à 401 sans jeton** :
+  la route existe et elle est protégée.
+
+**Le relevé de la route apprenant ne prouvait rien, et il a fallu le voir.**
+`/api/v1/formation/session/` répond **404 avant comme après** — c'est le
+comportement voulu (un lien inconnu et un lien expiré doivent être
+indiscernables), mais la comparaison avant/après devient muette. Le
+discriminant est le **corps** : la route existante renvoie
+`{"detail": …, "reason": "link"}` en JSON, là où une route réellement absente
+renvoie le 404 HTML générique de Django. Vérifié dans les deux sens.
+
+**L'en-tête CORS vérifié en production**, et pas seulement en local : le
+contrôle préalable renvoie bien `x-formation-token` dans
+`Access-Control-Allow-Headers`. C'est le défaut du jour ; le constater ici
+était le seul moyen de savoir qu'il ne s'était pas reproduit au déploiement.
+
+**Contrôle fonctionnel en lecture** : le cours de démonstration est chargé en
+production — 7 écrans, 6 questions, 10 minutes annoncées, seuil à 70 %, trois
+essais ; tous les blocs repassent la validation et toutes les questions portent
+leur explication.
+
+Le cours est attribué à **zéro client** : le catalogue existe, personne ne le
+propose encore. C'est délibéré — attribuer un cours est un acte commercial, pas
+une conséquence du déploiement.
+
+### Reste à faire
+
+- La grille tarifaire publique ne mentionnait pas non plus **la surveillance de
+  comptes désignés**, ajoutée au catalogue en V2-6 : la vitrine et le catalogue
+  divergent sur cette ligne depuis, et le test de cohérence ne compare que
+  noms, prix et quotas — pas les fonctionnalités. À trancher : l'annoncer, ou
+  assumer qu'elle ne se vend qu'en conversation.
+- F2 : le studio, les rapports, la voix de synthèse, la contextualisation. Le
+  format des blocs est documenté et validé à l'écriture pour que le studio s'y
+  conforme au lieu de l'inventer.
+- Aucun quota n'encadre la formation : suivre un cours ne consomme aucune
+  ressource rare. À revoir si un client déclare des centaines de salariés.
