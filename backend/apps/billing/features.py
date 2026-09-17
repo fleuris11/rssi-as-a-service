@@ -40,6 +40,7 @@ CHARTER_GENERATION = "charter_generation"
 # Raisonnement complet : docs/adr/025-retrait-de-la-cle-historique-etendu.md
 REALTIME_MONITORING = "realtime_monitoring"
 WATCHED_ACCOUNTS = "watched_accounts"
+TRAINING = "training"
 
 REGISTRY: dict[str, Feature] = {
     f.key: f
@@ -93,6 +94,12 @@ REGISTRY: dict[str, Feature] = {
             REALTIME_MONITORING,
             "Surveillance en temps réel",
             "Soyez alerté dès qu'une fuite est détectée, sans attendre l'analyse suivante.",
+        ),
+        Feature(
+            TRAINING,
+            "Formation des salariés",
+            "Formez vos salariés en dix minutes par cours, sans leur créer de compte, "
+            "et délivrez une attestation de suivi.",
         ),
     ]
 }

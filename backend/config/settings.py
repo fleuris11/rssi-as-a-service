@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "apps.reporting",
     "apps.access_requests",
     "apps.regulatory_watch",
+    "apps.training",
 ]
 
 MIDDLEWARE = [
@@ -124,7 +125,12 @@ CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localho
 # that don't send the header keep working. Found via real-browser E2E
 # testing (Playwright), not by any Django-test-client-based test, because
 # the Django test client never enforces CORS.
-CORS_ALLOW_HEADERS = [*default_headers, "x-tenant-id"]
+# X-Formation-Token (F1) : même mécanisme, même piège. L'espace apprenant
+# passait ses tests d'API et n'aurait rien affiché dans un navigateur. Cette
+# fois le défaut est épinglé par un test — config/tests/test_cors_entetes.py
+# lit les en-têtes réellement posés par le frontend et vérifie qu'ils sont
+# tous ici, plutôt que de faire confiance à qui ajoute un en-tête.
+CORS_ALLOW_HEADERS = [*default_headers, "x-tenant-id", "x-formation-token"]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -159,6 +165,13 @@ REST_FRAMEWORK = {
         # Formulaire public de demande de démonstration : seuil bas, aucun
         # usage légitime ne consiste à le remplir plus de 3 fois par heure.
         "demo_request": "3/hour",
+        # Espace apprenant (F1) : seuil HAUT, à l'inverse des précédents. Une
+        # entreprise entière peut suivre le cours depuis une seule sortie
+        # internet — un bureau derrière une même adresse publique. Un seuil
+        # serré bloquerait les salariés légitimes bien avant de gêner qui que
+        # ce soit d'autre, et le jeton de 256 bits qu'il protégerait n'est de
+        # toute façon pas devinable.
+        "formation_session": "600/hour",
     },
 }
 
