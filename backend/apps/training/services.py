@@ -117,9 +117,7 @@ def resoudre_session(jeton_en_clair: str) -> Enrollment:
         raise SessionIntrouvable("Ce lien n'est pas valable.")
 
     inscription = (
-        Enrollment.all_objects.select_related(
-            "learner", "version", "version__course", "tenant"
-        )
+        Enrollment.all_objects.select_related("learner", "version", "version__course", "tenant")
         .filter(token_hash=_hacher(jeton_en_clair))
         .first()
     )
@@ -281,9 +279,7 @@ def accorder_des_essais(*, enrollment, nombre=1, actor=None) -> Enrollment:
     enrollment.extra_attempts += nombre
     enrollment.attempts_granted_by = actor
     enrollment.attempts_granted_at = timezone.now()
-    enrollment.save(
-        update_fields=["extra_attempts", "attempts_granted_by", "attempts_granted_at"]
-    )
+    enrollment.save(update_fields=["extra_attempts", "attempts_granted_by", "attempts_granted_at"])
     return enrollment
 
 
@@ -295,9 +291,7 @@ def _ecrans(enrollment):
 
 
 def _questions(enrollment):
-    return list(
-        enrollment.version.questions.select_related("screen").prefetch_related("choices")
-    )
+    return list(enrollment.version.questions.select_related("screen").prefetch_related("choices"))
 
 
 def etat_de_session(enrollment) -> dict:

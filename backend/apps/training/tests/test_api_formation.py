@@ -190,9 +190,7 @@ class TestEtancheiteEntreApprenants:
             **_jeton(jeton),
         )
 
-        chez_le_collegue = api_client.get(
-            reverse("formation-session"), **_jeton(jeton_collegue)
-        )
+        chez_le_collegue = api_client.get(reverse("formation-session"), **_jeton(jeton_collegue))
         assert chez_le_collegue.data["screens_completed"] == 0
 
 
@@ -259,9 +257,7 @@ class TestRoles:
     @pytest.fixture
     def lecteur(self, tenant, user_factory):
         utilisateur = user_factory(email="lecteur@example.com")
-        Membership.all_objects.create(
-            tenant=tenant, user=utilisateur, role=Membership.Role.READER
-        )
+        Membership.all_objects.create(tenant=tenant, user=utilisateur, role=Membership.Role.READER)
         return utilisateur
 
     @pytest.fixture
@@ -336,9 +332,7 @@ class TestGardeDeFonctionnalite:
             == status.HTTP_200_OK
         )
 
-    def test_hors_offre_l_ecriture_est_refusee_en_402(
-        self, api_client, tenant, tenant_owner
-    ):
+    def test_hors_offre_l_ecriture_est_refusee_en_402(self, api_client, tenant, tenant_owner):
         _accorder(tenant, [])
         entetes = _auth(api_client, tenant_owner, tenant)
         reponse = api_client.post(

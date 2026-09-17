@@ -90,9 +90,7 @@ class Course(models.Model):
     def published_version(self):
         """La version publiée la plus récente, ou None. C'est elle qu'on
         inscrit — jamais un brouillon."""
-        return (
-            self.versions.filter(published_at__isnull=False).order_by("-number").first()
-        )
+        return self.versions.filter(published_at__isnull=False).order_by("-number").first()
 
 
 class CourseVersion(models.Model):
@@ -368,9 +366,7 @@ class Enrollment(TenantScopedModel):
         # Fin de journée et non minuit : « valable jusqu'au 12 » doit inclure
         # le 12. Un lien qui meurt à 00 h 00 du jour annoncé retire un jour
         # entier sans le dire.
-        return timezone.make_aware(
-            datetime.combine(fin, time.max), timezone.get_current_timezone()
-        )
+        return timezone.make_aware(datetime.combine(fin, time.max), timezone.get_current_timezone())
 
     @property
     def is_revoked(self) -> bool:
@@ -403,9 +399,7 @@ class ScreenProgress(TenantScopedModel):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(
-                fields=["enrollment", "screen"], name="unique_screen_progress"
-            ),
+            models.UniqueConstraint(fields=["enrollment", "screen"], name="unique_screen_progress"),
         ]
         ordering = ["enrollment_id", "screen_id"]
 

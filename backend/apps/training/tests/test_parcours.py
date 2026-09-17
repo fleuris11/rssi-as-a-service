@@ -164,18 +164,14 @@ class TestExplicationsEtRevision:
 
 
 class TestLimiteDEssais:
-    def test_les_essais_sont_comptes_et_la_limite_tient(
-        self, tenant, inscription, bonnes_reponses
-    ):
+    def test_les_essais_sont_comptes_et_la_limite_tient(self, tenant, inscription, bonnes_reponses):
         with services.contexte_du_client(tenant):
             _terminer_les_ecrans(inscription)
             services.soumettre_le_quiz(enrollment=inscription, reponses=bonnes_reponses({3, 4}))
             services.soumettre_le_quiz(enrollment=inscription, reponses=bonnes_reponses({3, 4}))
 
             with pytest.raises(services.QuizRefuse) as refus:
-                services.soumettre_le_quiz(
-                    enrollment=inscription, reponses=bonnes_reponses({3, 4})
-                )
+                services.soumettre_le_quiz(enrollment=inscription, reponses=bonnes_reponses({3, 4}))
 
         assert "essais" in str(refus.value)
         assert Attempt.all_objects.filter(enrollment=inscription).count() == 2
@@ -197,9 +193,7 @@ class TestLimiteDEssais:
             assert resultat["attempts_allowed"] == 3
 
             with pytest.raises(services.QuizRefuse):
-                services.soumettre_le_quiz(
-                    enrollment=inscription, reponses=bonnes_reponses()
-                )
+                services.soumettre_le_quiz(enrollment=inscription, reponses=bonnes_reponses())
 
         inscription.refresh_from_db()
         assert inscription.attempts_granted_by_id == tenant_owner.id

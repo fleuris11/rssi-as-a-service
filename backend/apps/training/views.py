@@ -115,9 +115,7 @@ class CertificateView(VueApprenant):
             try:
                 pdf = certificates.render_pdf(attestation)
             except certificates.PdfUnavailableError as exc:
-                return Response(
-                    {"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE
-                )
+                return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             reponse = HttpResponse(pdf, content_type="application/pdf")
             reponse["Content-Disposition"] = (
                 f'attachment; filename="{certificates.filename(attestation)}"'
