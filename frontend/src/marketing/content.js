@@ -333,6 +333,7 @@ export const PRICING = {
         { key: 'anssi_assessment', label: 'Diagnostic de maturité' },
         { key: 'charter_generation', label: 'Génération de charte informatique' },
         { key: 'realtime_monitoring', label: 'Surveillance en temps réel' },
+        { key: 'training', label: 'Formation des salariés' },
       ],
     },
     {
@@ -354,6 +355,7 @@ export const PRICING = {
         { key: 'anssi_assessment', label: 'Diagnostic de maturité' },
         { key: 'charter_generation', label: 'Génération de charte informatique' },
         { key: 'realtime_monitoring', label: 'Surveillance en temps réel' },
+        { key: 'training', label: 'Formation des salariés' },
       ],
     },
   ],

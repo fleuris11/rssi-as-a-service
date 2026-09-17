@@ -188,6 +188,36 @@ def _sonde_analyse_comptes_designes(client, entetes, ctx):
     )
 
 
+def _sonde_formation_salarie(client, entetes, ctx):
+    """Déclarer un salarié à former."""
+    return client.post(
+        reverse("formation-salaries"),
+        {"full_name": "Salarié Témoin", "email": "temoin@exemple-gardes.test"},
+        format="json",
+        **entetes,
+    )
+
+
+def _sonde_formation_inscription(client, entetes, ctx):
+    """Inscrire à un cours — point d'usage distinct du précédent : c'est lui
+    qui émet un lien d'accès, et retirer sa garde laisserait inscrire
+    indéfiniment un client dont l'offre ne comprend plus la formation.
+
+    Identifiants fantômes : la garde est posée avant toute recherche. 402 hors
+    offre, 404 dedans.
+    """
+    return client.post(
+        reverse("formation-inscriptions"),
+        {
+            "learner_id": "00000000-0000-0000-0000-000000000000",
+            "course_slug": "cours-inexistant",
+            "due_date": "2030-01-01",
+        },
+        format="json",
+        **entetes,
+    )
+
+
 def _sonde_correlation(client, entetes, ctx):
     """Mode « omission » : le flux doit être servi, la corrélation non calculée.
 
@@ -233,6 +263,10 @@ SONDES: dict[str, list[Sonde]] = {
     features.REALTIME_MONITORING: [Sonde("surveiller un actif", _sonde_surveillance)],
     features.REUSE_CORRELATION: [
         Sonde("corréler les réutilisations", _sonde_correlation, mode="omission")
+    ],
+    features.TRAINING: [
+        Sonde("déclarer un salarié à former", _sonde_formation_salarie),
+        Sonde("inscrire un salarié à un cours", _sonde_formation_inscription),
     ],
 }
 
