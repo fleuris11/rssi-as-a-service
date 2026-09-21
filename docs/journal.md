@@ -6919,3 +6919,120 @@ Relevés avant (13:12 UTC) et après (13:17 UTC) :
   contextualisé montrerait la fonctionnalité en situation.
 - La grille tarifaire publique ne mentionne toujours pas la surveillance de
   comptes désignés (constat de F1, toujours ouvert).
+
+## 21 septembre 2026 — F3 : inscrire, relancer, mesurer, prouver
+
+### Ce qui a été construit
+
+L'import d'une liste de salariés, l'invitation par courriel, des relances
+automatiques coupables à tout moment, des rapports agrégés, et le lien entre
+une campagne de formation et la mesure de sensibilisation du diagnostic.
+
+### La décision qui commande tout le lot : ne pas noter les salariés
+
+Le produit peut techniquement classer, comparer, afficher les mauvais élèves.
+La question n'était pas ce qu'il peut faire, mais ce qu'il doit refuser.
+
+**Le score individuel n'est publié nulle part** : ni dans le suivi, ni dans
+les exports, ni dans le rapport de comité. Un module de sensibilisation qui
+produit un palmarès cesse d'être un outil de prévention pour devenir un outil
+de notation — il alimenterait des entretiens, des décisions de carrière,
+éventuellement des sanctions, pour un quiz de six questions passé entre deux
+réunions.
+
+La garantie est structurelle : la fonction qui rend le suivi nominatif ne
+produit que ce qui sert à relancer, et **un test épingle la liste exacte de
+ses clés**. Ajouter un score le fait rougir — vérifié en le faisant.
+
+Le nominatif est réservé aux administrateurs, **tracé à chaque consultation**,
+et n'est jamais chargé à l'ouverture de l'écran : il faut cliquer. Un journal
+qui se remplirait au simple affichage d'une page ne signifierait plus rien.
+
+### Les relances, ou comment ne pas harceler
+
+Trois moments au plus, chacun coupable séparément, et tout coupable d'un
+bouton. Trois garde-fous **dans le code**, pas dans l'intention : une relance
+par nature et par inscription (contrainte d'unicité en base), une seule par
+jour et par salarié, et **rien du tout pour qui a terminé**.
+
+Chaque relance porte un lien neuf. Ce n'est pas un choix de confort : le jeton
+n'est stocké que haché (ADR-039), on ne peut pas rappeler le lien envoyé,
+seulement en émettre un autre. Le message le dit au salarié.
+
+### Trois défauts trouvés, et comment
+
+1. **Le plus grave : mes quatre tâches planifiées n'auraient jamais tourné.**
+   Faute de route déclarée, elles tombaient dans la file « default », qu'aucun
+   worker ne consomme — les relances se seraient empilées dans Redis en
+   silence. Deuxième occurrence du même défaut après V2-7. **Invisible en
+   local** (le test lit `docker-compose.yml`, absent du conteneur) : c'est la
+   CI qui l'a attrapé, et elle a eu raison de refuser.
+2. **La fonction de relance tournait hors contexte de cloisonnement** — elle
+   balaie tous les clients. Les managers cloisonnés y échouent fermé et
+   rendaient toujours « aucune relance envoyée », si bien que chaque relance
+   serait repartie tous les jours. C'est la **contrainte d'unicité en base**
+   qui l'a révélé, pas un test : raison de plus pour que la garantie y vive.
+3. **Un seuil de preuve était du code mort.** J'en avais posé deux — 80 % de
+   participation et 80 % de réussite. En neutralisant le premier pour vérifier
+   qu'un test le tenait, il est apparu qu'aucun test ne pouvait le tenir : le
+   taux de réussite se calcule sur l'effectif total, il est donc toujours
+   inférieur ou égal au taux de participation. Le second seuil a été retiré —
+   une condition qui ne départage rien donne l'apparence d'un contrôle.
+
+### La preuve, jamais la validation
+
+Une campagne à 80 % de réussite sur au moins trois salariés **propose** de
+renseigner la mesure de sensibilisation. Elle ne la coche pas. Le produit
+refuse depuis le début de renseigner une case de conformité à la place de
+quelqu'un : ce serait une affirmation que le client n'a pas faite, et qu'il
+découvrirait devant un auditeur.
+
+Les chiffres sont figés à la proposition — relire le taux six mois plus tard
+donnerait un autre nombre, et la preuve ne prouverait plus ce qu'elle disait.
+Le report se fait dans le diagnostic **en cours** uniquement, et une
+proposition écartée n'est jamais reproposée.
+
+### Vérifications
+
+- **164 tests** sur `apps/training` (63 nouveaux), 77 sur le rapport de comité,
+  326 au total sur les apps touchées.
+- **Dix neutralisations, dix rouges** : relancer qui a terminé, oublier les
+  relances déjà envoyées, ignorer la politique coupée, publier un score dans
+  le suivi, ne plus tracer la consultation, abaisser le seuil des questions
+  ratées, confirmer une proposition toute seule, écrire dans un diagnostic
+  terminé, abaisser le seuil de preuve, nommer un salarié dans le rapport de
+  comité.
+- `ruff check .`, `ruff format --check .` et `eslint` propres.
+
+### Mise en production
+
+Déployé le 21/09/2026 sur `95adc80`, après une CI verte (run 35611587957 ;
+déploiement run 35612283528). Le premier envoi, `893c8d0`, avait été refusé —
+à raison, voir le défaut n° 1. Point de repli : tag `avant-f3` sur `bdcbb1d`,
+et `~/sauvegarde-avant-f3-20260921-1422.sql.gz`, vérifiée complète : 508 Ko,
+77 tables, marqueur de fin présent.
+
+Relevés avant (14:22 UTC) et après (14:28 UTC) :
+
+- commit déployé `95adc80`, **six conteneurs actifs**, accueil en 200 ;
+- migrations `training.0004` et `notifications.0005` appliquées ;
+- les quatre routes de pilotage — rapport, suivi, preuves, relances — passent
+  de **404 à 401 sans jeton** : elles existent et sont protégées.
+
+**La vérification qui comptait vraiment**, parce qu'elle porte sur le défaut
+que la CI avait attrapé : en production, les quatre tâches planifiées routent
+bien vers la file **`emails`**, et le worker consomme
+`-Q monitoring,emails,ai`. Les quatre entrées de planification sont présentes.
+Un 401 prouve qu'une route existe ; il ne prouve rien d'une tâche de fond —
+c'est pour cela que ce relevé-là a été fait séparément.
+
+### Reste à faire
+
+- **Le contrat de sous-traitance doit couvrir ce traitement** (ADR-041 §6) :
+  finalité de sensibilisation à l'exclusion de toute évaluation
+  professionnelle, information des salariés, durée de conservation. Cela ne
+  relève pas du code.
+- Les attestations ne sont pas purgées : leur sort dépend d'événements que le
+  produit ne connaît pas (demande du salarié, fin de contrat).
+- Le rapport ne se filtre pas encore par campagne dans l'interface : l'API
+  l'accepte (`?course=`), l'écran affiche l'ensemble.
