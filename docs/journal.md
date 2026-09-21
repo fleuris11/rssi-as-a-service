@@ -6792,3 +6792,130 @@ une conséquence du déploiement.
   conforme au lieu de l'inventer.
 - Aucun quota n'encadre la formation : suivre un cours ne consomme aucune
   ressource rare. À revoir si un client déclare des centaines de salariés.
+
+## 21 septembre 2026 — F2 : le studio, la voix, et la contextualisation
+
+### Ce qui a été construit
+
+Un studio pour écrire des cours, une lecture à voix haute par le navigateur,
+et des écrans qui se remplissent avec les chiffres réels du client.
+
+### La voix : une décision prise sur des chiffres, puis renversée
+
+Le cadrage demandait de générer l'audio une fois à la publication et de
+stocker le fichier, pour maîtriser le coût d'une API payante. Les chiffres
+relevés donnent raison à cette règle : pour le cours de démonstration
+(3 507 caractères d'écrans), une génération unique coûte **0,06 $ chez Amazon
+Polly Neural**, 0,11 $ en génératif, 0,35 $ chez ElevenLabs — alors qu'une
+génération à chaque écoute, pour 100 salariés écoutant deux fois, aurait coûté
+**11 $ par cours chez Polly et 70 $ chez ElevenLabs**.
+
+Puis la contrainte réelle est apparue : **aucun budget**. D'où la synthèse du
+navigateur, et la règle de stockage qui tombe avec elle — elle protégeait d'un
+coût qui n'existe plus.
+
+**Ce renversement a dissous un conflit** que j'avais signalé au cadrage :
+l'audio généré une fois par version contre des écrans contextualisés dont les
+chiffres changent par client et dans le temps. Il aurait fallu soit générer
+par client et par jour — en envoyant les données du client à un tiers —, soit
+priver de voix les écrans contextualisés. La voix parlant localement, un écran
+se lit intégralement, chiffres compris, sans que rien ne quitte l'appareil.
+
+### Les variables : la règle que la consigne ne couvrait pas
+
+« Jamais de donnée nominative » ne suffit pas. Dans une entreprise de six
+personnes, « 1 compte compromis » désigne quelqu'un aussi sûrement qu'un nom.
+**En dessous de trois, un décompte n'est pas affiché** : le bloc bascule sur sa
+formulation de repli.
+
+La garantie de fond n'est pas une consigne de rédaction : **une variable rend
+un entier**. Aucun nom, aucune adresse, aucun mot de passe ne peut atteindre un
+cours — pas même par l'erreur d'un auteur. Un test parcourt le registre et
+vérifie le type rendu ; ajouter une variable de texte le ferait rougir.
+
+Le repli porte sur le **bloc entier**, jamais sur la variable seule : sinon on
+produirait « votre entreprise a — comptes compromis ». Il est obligatoire dès
+qu'un bloc contient une variable, et le serveur refuse l'écriture sans lui.
+
+### Le versionnage, et son point délicat
+
+Une version publiée ne se modifie pas. La raison n'est pas l'esthétique :
+**une ligne de progression désigne un écran**, et corriger cet écran en place
+la rendrait fausse sans que rien ne le signale.
+
+Le point délicat est la recopie : chaque question de la nouvelle version est
+repointée vers l'écran **correspondant** de cette version. Une question restée
+sur l'écran d'origine enverrait la révision après échec dans une autre version
+du cours. Un test l'épingle.
+
+### Trois choses trouvées en construisant
+
+1. **`/formation/studio` était impossible.** L'adresse `/formation/:token` est
+   déjà publique et déployée : « studio » y serait passé pour un jeton
+   d'apprenant. Le studio vit donc sur `/studio`, plutôt que de changer une
+   adresse déjà envoyée à des salariés.
+2. **Le refus d'offre devait sortir de la permission.** Refuser dans la
+   permission DRF rendait 403 — « vous n'avez pas le droit » — là où le bon
+   refus est 402, qui nomme l'offre à prendre. Le rôle se juge dans la
+   permission, l'offre dans la vue.
+3. **`speechSynthesis` est en lecture seule dans Chromium.** Ma fausse
+   synthèse, affectée directement à `window`, n'était jamais installée et le
+   test échouait en silence. Il faut `Object.defineProperty`.
+
+### Vérifications
+
+- **101 tests** sur `apps/training` (dont 51 nouveaux : studio, versionnage,
+  duplication, publication, variables, repli, seuil de discrétion, étanchéité
+  entre clients), 41 sur les gardes d'offre.
+- **Tests d'écran** : lecteur audio (voix choisie, absence de voix, arrêt au
+  changement d'écran, préférence mémorisée, pause/reprise), découpage du
+  texte, rendu du gras, écran du studio.
+- **Navigateur réel, largeur téléphone** : sans voix installée, le cours reste
+  entier et aucune erreur n'apparaît ; avec une voix simulée, la lecture part
+  sur le bon texte et **s'arrête au changement d'écran**.
+- `ruff check .`, `ruff format --check .` et `eslint` propres.
+
+**Ce qui n'a PAS pu être vérifié ici** : la qualité réelle d'une voix. Le
+Chromium de Playwright n'embarque aucune voix système — c'est d'ailleurs le cas
+« aucune voix française » qui est vérifié. **L'essai sur un vrai Chrome et sur
+un téléphone reste à faire**, et il ne peut pas l'être depuis cette machine.
+
+### Mise en production
+
+Déployé le 21/09/2026 sur `bdcbb1d`, après une CI verte
+(run 35603723937 ; déploiement run 35604374110). Point de repli : tag
+`avant-f2` sur `adfcd75`, et `~/sauvegarde-avant-f2-20260921-1312.sql.gz`,
+vérifiée complète — 508 Ko, 77 tables, marqueur de fin présent.
+
+Relevés avant (13:12 UTC) et après (13:17 UTC) :
+
+- commit déployé `bdcbb1d`, **six conteneurs actifs**, accueil en 200 ;
+- migrations `training.0003` et `billing.0009` appliquées ;
+- `/api/v1/formation/studio/cours/` passe de **404 à 401 sans jeton** : la
+  route existe et elle est protégée.
+
+**Contrôle fonctionnel en lecture**, en production :
+
+- **5 variables** servies au studio (`fuites_ouvertes`, `fuites_critiques`,
+  `score_exposition`, `score_maturite`, `actifs_surveilles`) ;
+- **seuil de discrétion à 3** ;
+- `training_studio` présente au registre, et la dépendance
+  `{'training_studio': ('training',)}` active — la première du produit ;
+- le gras se découpe bien en segments (`Un ` / **mot** / ` important`), donc
+  sans HTML ;
+- un cours en base, celui de la bibliothèque.
+
+### Reste à faire
+
+- **Les images ne sont pas livrées.** Le produit n'a aucun stockage de
+  fichiers : ni `MEDIA_ROOT`, ni volume, ni sauvegarde des fichiers. Les livrer
+  suppose de trancher l'emplacement, le contrôle d'accès (un cours de client
+  peut être interne), le réencodage à la réception pour retirer les
+  métadonnées — dont la position GPS d'une photo — et leur entrée dans la
+  sauvegarde. Le format de blocs les accepte déjà ; l'infrastructure, non.
+- Essai de la voix sur Chrome et sur un téléphone, par quelqu'un qui a un
+  appareil sous la main.
+- Le cours de démonstration n'utilise aucune variable : l'ajout d'un écran
+  contextualisé montrerait la fonctionnalité en situation.
+- La grille tarifaire publique ne mentionne toujours pas la surveillance de
+  comptes désignés (constat de F1, toujours ouvert).
