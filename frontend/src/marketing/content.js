@@ -334,6 +334,7 @@ export const PRICING = {
         { key: 'charter_generation', label: 'Génération de charte informatique' },
         { key: 'realtime_monitoring', label: 'Surveillance en temps réel' },
         { key: 'training', label: 'Formation des salariés' },
+        { key: 'training_studio', label: 'Studio de formation' },
       ],
     },
     {
@@ -356,6 +357,7 @@ export const PRICING = {
         { key: 'charter_generation', label: 'Génération de charte informatique' },
         { key: 'realtime_monitoring', label: 'Surveillance en temps réel' },
         { key: 'training', label: 'Formation des salariés' },
+        { key: 'training_studio', label: 'Studio de formation' },
       ],
     },
   ],

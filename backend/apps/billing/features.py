@@ -41,6 +41,7 @@ CHARTER_GENERATION = "charter_generation"
 REALTIME_MONITORING = "realtime_monitoring"
 WATCHED_ACCOUNTS = "watched_accounts"
 TRAINING = "training"
+TRAINING_STUDIO = "training_studio"
 
 REGISTRY: dict[str, Feature] = {
     f.key: f
@@ -101,6 +102,12 @@ REGISTRY: dict[str, Feature] = {
             "Formez vos salariés en dix minutes par cours, sans leur créer de compte, "
             "et délivrez une attestation de suivi.",
         ),
+        Feature(
+            TRAINING_STUDIO,
+            "Studio de formation",
+            "Écrivez vos propres cours, ou partez d'un cours de la bibliothèque pour "
+            "l'adapter à votre maison.",
+        ),
     ]
 }
 
@@ -118,7 +125,12 @@ REGISTRY: dict[str, Feature] = {
 #: Compromissions, Documents, Veille). Révéler un mot de passe, corréler une
 #: réutilisation ou résumer une exposition n'exige aucune autre clé. Déclarer
 #: ici une dépendance inventée donnerait l'illusion d'un contrôle.
-DEPEND_DE: dict[str, tuple[str, ...]] = {}
+DEPEND_DE: dict[str, tuple[str, ...]] = {
+    # F2 : la première dépendance réelle entre deux clés. Écrire des cours
+    # sans pouvoir les faire suivre n'a aucun sens — le studio produit
+    # quelque chose dont la formation est le seul débouché.
+    TRAINING_STUDIO: (TRAINING,),
+}
 
 #: Fonctionnalité -> (quota de l'abonnement, ce que le quota compte).
 #:

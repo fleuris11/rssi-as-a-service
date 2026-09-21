@@ -218,6 +218,17 @@ def _sonde_formation_inscription(client, entetes, ctx):
     )
 
 
+def _sonde_studio_cours(client, entetes, ctx):
+    """Écrire un cours : le chemin qui PRODUIT. La lecture de la
+    bibliothèque, elle, reste servie hors offre."""
+    return client.post(
+        reverse("formation-studio-cours"),
+        {"title": "Cours témoin"},
+        format="json",
+        **entetes,
+    )
+
+
 def _sonde_correlation(client, entetes, ctx):
     """Mode « omission » : le flux doit être servi, la corrélation non calculée.
 
@@ -268,6 +279,7 @@ SONDES: dict[str, list[Sonde]] = {
         Sonde("déclarer un salarié à former", _sonde_formation_salarie),
         Sonde("inscrire un salarié à un cours", _sonde_formation_inscription),
     ],
+    features.TRAINING_STUDIO: [Sonde("écrire un cours", _sonde_studio_cours)],
 }
 
 # Chaque point d'usage est exercé séparément : c'est le grain auquel une garde
