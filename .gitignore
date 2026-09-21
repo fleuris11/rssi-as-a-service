@@ -52,6 +52,14 @@ docker-compose.override.yml
 .DS_Store
 Thumbs.db
 
+# --- Outillage Claude Code ---
+# Les skills tierces s'installent chez chacun, pas dans l'historique : elles
+# pèsent plusieurs mégaoctets de données vendues (ui-ux-pro-max, impeccable)
+# et n'ont pas leur place dans un dépôt qui sert aussi de support de
+# certification. La configuration partagée, elle, reste suivie :
+# .claude/settings.json et .mcp.json.
+.claude/skills/
+
 # --- Logs ---
 *.log
 logs/
