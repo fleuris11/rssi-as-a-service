@@ -7,6 +7,12 @@ import Card from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
 import SearchInput from '../components/ui/SearchInput'
 import { filtrerParTexte } from '../utils/recherche'
+import {
+  ImportSalaries,
+  PropositionsPreuve,
+  RapportCampagne,
+  ReglagesRelances,
+} from '../components/formation/PilotageCampagne'
 
 /**
  * Piloter les formations, depuis l'espace client (F1).
@@ -54,6 +60,13 @@ export default function TrainingPage() {
       ]),
     [inscriptions, recherche]
   )
+
+  // Un refus du serveur est remonté TEL QUEL : les phrases du module disent
+  // quoi faire (« ouvrez un diagnostic », « il manque une colonne »), les
+  // résumer les viderait.
+  function signaler(err) {
+    setErreur(err?.response?.data?.detail ?? 'L’action n’a pas abouti.')
+  }
 
   async function agir(action) {
     setErreur('')
@@ -106,6 +119,13 @@ export default function TrainingPage() {
           </div>
         </Card>
       )}
+
+      {/* F3 — dans cet ordre, et il compte : ce qui demande une décision
+          d'abord, ce qui informe ensuite, ce qui se règle une fois à la fin. */}
+      <PropositionsPreuve onErreur={signaler} />
+      <RapportCampagne onErreur={signaler} />
+      <ReglagesRelances onErreur={signaler} />
+      <ImportSalaries onImporte={recharger} onErreur={signaler} />
 
       <NouvelleInscription
         catalogue={catalogue}

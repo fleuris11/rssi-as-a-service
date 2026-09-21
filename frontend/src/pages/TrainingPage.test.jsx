@@ -13,6 +13,16 @@ vi.mock('../api/endpoints', () => ({
     revoquer: vi.fn(),
     reemettreLien: vi.fn(),
     accorderEssai: vi.fn(),
+    // F3 : l'écran charge aussi le rapport, les relances et les propositions.
+    relances: vi.fn(),
+    reglerRelances: vi.fn(),
+    importer: vi.fn(),
+    rapport: vi.fn(),
+    suivi: vi.fn(),
+    exportRapport: vi.fn(),
+    preuves: vi.fn(),
+    confirmerPreuve: vi.fn(),
+    ecarterPreuve: vi.fn(),
   },
 }))
 
@@ -58,6 +68,28 @@ describe('TrainingPage', () => {
     formationApi.catalogue.mockResolvedValue({ data: COURS })
     formationApi.salaries.mockResolvedValue({ data: SALARIES })
     formationApi.inscriptions.mockResolvedValue({ data: [inscription()] })
+    // Les blocs de F3 se chargent seuls : on les neutralise ici pour que ces
+    // tests restent ceux de l'inscription.
+    formationApi.relances.mockResolvedValue({
+      data: { enabled: true, mid_course: true, before_due_days: 3, after_due_days: 2 },
+    })
+    formationApi.rapport.mockResolvedValue({
+      data: {
+        summary: {
+          learners_total: 1,
+          not_started: 1,
+          in_progress: 0,
+          completed: 0,
+          participation_rate: 0,
+          success_rate: 0,
+          average_score: null,
+          attempts_total: 0,
+        },
+        hardest_questions: [],
+        campaigns: [],
+      },
+    })
+    formationApi.preuves.mockResolvedValue({ data: [] })
   })
 
   it('affiche le lien à l’émission, et jamais dans la liste', async () => {

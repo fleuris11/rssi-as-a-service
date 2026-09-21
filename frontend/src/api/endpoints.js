@@ -210,6 +210,31 @@ export const formationApi = {
   accorderEssai: (id, count = 1) =>
     apiClient.post(`/api/v1/formation/pilotage/inscriptions/${id}/essais/`, { count }),
 
+  // Piloter une campagne (F3).
+  relances: () => apiClient.get('/api/v1/formation/pilotage/relances/'),
+  reglerRelances: (payload) => apiClient.put('/api/v1/formation/pilotage/relances/', payload),
+  importer: (content) =>
+    apiClient.post('/api/v1/formation/pilotage/salaries/import/', { content }),
+  rapport: (coursSlug) =>
+    apiClient.get('/api/v1/formation/pilotage/rapport/', {
+      params: coursSlug ? { course: coursSlug } : {},
+    }),
+  // Le suivi NOMINATIF : réservé aux administrateurs, et sa consultation est
+  // enregistrée côté serveur (ADR-041). On ne l'appelle donc pas au
+  // chargement de l'écran, mais seulement quand on le demande.
+  suivi: (coursSlug) =>
+    apiClient.get('/api/v1/formation/pilotage/suivi/', {
+      params: coursSlug ? { course: coursSlug } : {},
+    }),
+  exportRapport: (extension, coursSlug) =>
+    apiClient.get(`/api/v1/formation/pilotage/rapport/export/${extension}/`, {
+      params: coursSlug ? { course: coursSlug } : {},
+      responseType: 'blob',
+    }),
+  preuves: () => apiClient.get('/api/v1/formation/pilotage/preuves/'),
+  confirmerPreuve: (id) => apiClient.post(`/api/v1/formation/pilotage/preuves/${id}/`),
+  ecarterPreuve: (id) => apiClient.delete(`/api/v1/formation/pilotage/preuves/${id}/`),
+
   // Le studio (F2). Mêmes appels pour l'exploitant et pour un client : c'est
   // la même mécanique, seul le propriétaire du cours change.
   studioCours: () => apiClient.get('/api/v1/formation/studio/cours/'),
