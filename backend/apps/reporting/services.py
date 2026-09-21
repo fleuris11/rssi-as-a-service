@@ -117,7 +117,24 @@ def build_dashboard(tenant, period: periods.Period) -> dict:
                 surveillance_precedente["uptime_percentage"],
             ),
         },
+        # F3 : le volet formation, AGRÉGÉ seulement. Un document présenté en
+        # comité ne porte aucun résultat individuel — il circule, il est
+        # archivé, et il n'a aucune raison de nommer qui que ce soit
+        # (ADR-041).
+        "training": _formation(tenant),
     }
+
+
+def _formation(tenant) -> dict:
+    """Les chiffres de formation, lus par les services du module.
+
+    Import local et passage par ``rapports`` plutôt que par les modèles : la
+    règle d'architecture du projet, et la garantie que ce rapport hérite des
+    protections du module — dont l'absence de tout résultat individuel.
+    """
+    from apps.training import rapports as formation
+
+    return formation.agregats(tenant)
 
 
 def build_report(tenant, period: periods.Period) -> dict:

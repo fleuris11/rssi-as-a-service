@@ -223,8 +223,31 @@ def build_html(donnees: dict) -> str:
             f"traitement : {_nombre(exposition['average_treatment_days'])} jours.</p>"
         )
 
+    # --- Formation (F3) ------------------------------------------------------
+    #
+    # Aucun résultat individuel : ce document circule et s'archive. Le suivi
+    # par salarié existe dans l'application, sert à relancer, et sa
+    # consultation y est tracée (ADR-041).
+    formation = donnees.get("training") or {}
+    if formation.get("learners_total"):
+        parties.extend(
+            [
+                "<h2>5. La sensibilisation des équipes</h2>",
+                "<table><tr><th>Indicateur</th><th>Valeur</th></tr>",
+                f"<tr><td>Salariés inscrits à une formation</td>"
+                f"<td>{formation['learners_total']}</td></tr>",
+                f"<tr><td>Ont terminé</td><td>{formation['completed']}</td></tr>",
+                f"<tr><td>Taux de participation</td>"
+                f"<td>{formation['participation_rate']} %</td></tr>",
+                f"<tr><td>Taux de réussite</td><td>{formation['success_rate']} %</td></tr>",
+                "</table>",
+                '<p class="note">Ces chiffres sont collectifs. Le détail par salarié '
+                "n'est pas repris dans ce document.</p>",
+            ]
+        )
+
     # --- Reste à faire -------------------------------------------------------
-    parties.append("<h2>5. Ce qui reste à faire</h2>")
+    parties.append("<h2>6. Ce qui reste à faire</h2>")
     if donnees["remaining"]:
         for point in donnees["remaining"]:
             parties.append(
