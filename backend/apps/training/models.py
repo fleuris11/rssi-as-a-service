@@ -34,7 +34,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from apps.tenants.models import TenantScopedModel
+from apps.tenants.models import Tenant, TenantScopedModel
 
 from . import blocks as blocs_de_contenu
 
@@ -78,6 +78,28 @@ class Course(models.Model):
     title = models.CharField(max_length=200)
     summary = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+
+    # F2 — à qui appartient ce cours.
+    #
+    # Nul = cours de LA BIBLIOTHÈQUE, écrit par l'exploitant et proposé à ses
+    # clients. Renseigné = cours écrit par un client, invisible aux autres.
+    #
+    # Ce modèle reste volontairement hors de ``TenantScopedModel`` : un cours
+    # de bibliothèque n'appartient à personne, et le rendre cloisonné aurait
+    # obligé à en dupliquer un exemplaire par client — soit exactement ce que
+    # la séparation catalogue/attribution évite depuis ADR-029.
+    owner_tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    # D'où vient ce cours, quand il a été dérivé d'un autre. Sert à retrouver
+    # l'original — et à ne pas croire qu'un client a écrit de zéro ce qu'il a
+    # en réalité adapté.
+    derived_from = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -85,6 +107,17 @@ class Course(models.Model):
 
     def __str__(self):
         return self.title
+
+    @property
+    def est_de_la_bibliotheque(self) -> bool:
+        return self.owner_tenant_id is None
+
+    @property
+    def draft_version(self):
+        """La version en cours d'écriture, s'il y en a une. Au plus une par
+        cours : deux brouillons simultanés poseraient la question insoluble de
+        savoir lequel publier."""
+        return self.versions.filter(published_at__isnull=True).order_by("-number").first()
 
     @property
     def published_version(self):
