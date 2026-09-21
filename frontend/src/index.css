@@ -189,6 +189,20 @@ body {
  * (`t-lead`, `t-meta`), pas sa dimension. Une taille se choisit au cas par
  * cas et dérive ; un rôle se relit.
  * ------------------------------------------------------------------- */
+/* Un SEPTIEME role, et un seul : l'accroche de la vitrine.
+   `t-display` (30 px) est le titre d'une PAGE ; une accroche commerciale doit
+   dominer la première image du produit, ce que 30 px ne font pas à 1440 px de
+   large. On ne l'emploie qu'une fois par page, et jamais dans l'application —
+   un outil de travail n'a pas d'accroche. */
+.t-hero {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 1.35rem + 2.2vw, 2.875rem);
+  line-height: 1.08;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--color-ink-900);
+}
+
 .t-display {
   font-family: var(--font-display);
   font-size: 1.875rem;
@@ -309,6 +323,88 @@ body {
   }
 }
 
+
+/* ---------------------------------------------------------------------
+ * LE TRAIT PLUTOT QUE L'OMBRE (refonte visuelle)
+ *
+ * Le diagnostic a montré six cartes de forme identique par écran : même
+ * rayon, même filet, même ombre. Rien ne disait ce qui comptait. Deux
+ * corrections, et elles sont structurelles :
+ *
+ * 1. la SÉPARATION passe par un filet d'1 px, pas par une boîte. Une liste
+ *    de quatre éléments est une liste, pas quatre cartes ;
+ * 2. l'OMBRE ne subsiste que pour ce qui flotte réellement (modale, menu).
+ *    Une ombre au repos sur chaque carte fabrique un relief qui ne
+ *    correspond à aucune profondeur réelle.
+ * ------------------------------------------------------------------- */
+.panneau {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-ink-200);
+  border-radius: var(--radius-md);
+}
+
+/* Le panneau qui porte l'état d'un écran : une seule chose domine, et son
+   filet de gauche prend la couleur du niveau de risque. */
+.panneau-etat {
+  border-left-width: 4px;
+}
+
+/* Une ligne de liste : filet entre les éléments, jamais autour. */
+.ligne-liste + .ligne-liste {
+  border-top: 1px solid var(--color-ink-100);
+}
+
+/* Chiffres en chasse tabulaire. Sans cela, une colonne de nombres
+   « danse » d'une ligne à l'autre et devient illisible en balayage — c'est
+   le défaut le plus visible d'un tableau de données. */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ---------------------------------------------------------------------
+ * TABLEAU DE DONNEES — l'objet le plus utilisé du produit.
+ *
+ * La densité est une VARIABLE, pas deux jeux de classes : un RSSI qui
+ * balaie 200 lignes et un dirigeant qui en lit six n'ont pas le même
+ * besoin, et le réglage doit se voir changer sans recharger la page.
+ * ------------------------------------------------------------------- */
+.tableau {
+  --cellule-y: 0.5rem;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.tableau[data-densite='confortable'] {
+  --cellule-y: 0.875rem;
+}
+
+.tableau th {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-ink-500);
+  border-bottom: 1px solid var(--color-ink-200);
+  white-space: nowrap;
+}
+
+.tableau td {
+  padding: var(--cellule-y) 0.75rem;
+  border-bottom: 1px solid var(--color-ink-100);
+  vertical-align: top;
+}
+
+.tableau tbody tr:hover td {
+  background-color: var(--color-brand-50);
+}
+
+.tableau tbody tr[data-selectionnee='true'] td {
+  background-color: var(--color-brand-50);
+}
 
 /* ---------------------------------------------------------------------
  * FOCUS — un seul anneau, partout, visible sur fond clair comme sur la

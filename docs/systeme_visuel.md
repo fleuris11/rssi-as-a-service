@@ -210,3 +210,54 @@ animation est invisible pour qui la désactive, et pour un moteur d'audit.
 Ces jetons sont conçus pour les trois surfaces — espace client, vitrine
 publique, console d'administration. Seul l'espace client les applique à ce
 stade ; les deux autres suivront sans nouvelle décision.
+
+---
+
+## Le trait plutôt que l'ombre (refonte, 09/2026)
+
+Le diagnostic de la refonte n'a pas porté sur la palette — elle tenait — mais
+sur la **mise en page** : six cartes de forme identique par écran, même rayon,
+même filet, même ombre. Rien ne disait ce qui comptait.
+
+**Deux corrections structurelles :**
+
+1. **La séparation passe par un filet d'1 px, pas par une boîte.** Une liste de
+   quatre éléments est une liste (`.ligne-liste`), pas quatre cartes. Le
+   panneau (`.panneau`) pose une surface ; il ne la fait pas flotter.
+2. **L'ombre est réservée à ce qui flotte réellement** — modale, menu,
+   infobulle. `Card` ne porte plus `shadow-soft` au repos ; l'élévation reste
+   disponible par sa propriété `elevation`. Une ombre au repos sur chaque carte
+   fabrique un relief qui ne correspond à aucune profondeur.
+
+### Un septième rôle typographique, et un seul
+
+`.t-hero` (32 → 46 px, fluide) pour **l'accroche de la vitrine uniquement**.
+`t-display` est le titre d'une *page* ; une accroche commerciale doit dominer
+la première image du produit, ce que 30 px ne font pas en 1440 px de large.
+Il n'apparaît jamais dans l'application : un outil de travail n'a pas
+d'accroche.
+
+### Les chiffres en chasse tabulaire
+
+`.num` pose `font-variant-numeric: tabular-nums`. Sans elle, une colonne de
+nombres « danse » d'une ligne à l'autre : c'est le défaut le plus visible d'un
+tableau de données, et il ne se voit qu'une fois corrigé.
+
+### Le tableau de données — la densité est un réglage
+
+`DataTable` porte le tri, la recherche, les filtres, la sélection, la
+pagination et la densité. Trois décisions méritent d'être écrites :
+
+- **la densité est une variable CSS** (`--cellule-y`), pas deux jeux de
+  classes : quelqu'un qui balaie deux cents lignes et quelqu'un qui en lit six
+  n'ont pas le même besoin, et le réglage doit se voir changer sans recharger ;
+- **la barre d'outils est toujours présente**, même sans recherche ni filtre.
+  Elle ne l'était pas au premier jet — donc le réglage de densité disparaissait
+  précisément sur les tableaux simples, ceux qu'on veut resserrer. Trouvé par
+  un test, pas à l'œil ;
+- **rien n'est trié par défaut.** L'ordre du serveur porte déjà un sens — le
+  plus grave d'abord, le plus récent d'abord. Un tri alphabétique imposé le
+  détruirait. Le troisième clic sur une colonne rend cet ordre d'origine.
+
+L'en-tête porte `aria-sort` et le tri se déclenche par un vrai bouton : un
+tableau triable à la souris seule est inutilisable au clavier.
