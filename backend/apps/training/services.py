@@ -34,6 +34,8 @@ from django.utils import timezone
 
 from apps.tenants.context import reset_current_tenant, set_current_tenant
 
+from . import blocks as blocs_de_contenu
+from . import variables
 from .models import (
     QUESTIONS_MINIMUM_POUR_UN_SEUIL,
     Attempt,
@@ -294,6 +296,52 @@ def _questions(enrollment):
     return list(enrollment.version.questions.select_related("screen").prefetch_related("choices"))
 
 
+def contextualiser(blocs, tenant) -> list[dict]:
+    """Remplace les variables d'un écran par les chiffres réels du client.
+
+    Le calcul se fait **à l'affichage**, jamais à l'inscription : un cours
+    suivi trois semaines après son attribution doit montrer la situation du
+    jour, pas celle d'un mercredi oublié. Rien n'est stocké — ni dans la
+    progression, ni dans la tentative, ni dans l'attestation.
+
+    Le repli s'applique au BLOC entier, et non variable par variable. Sinon on
+    produirait des phrases bancales : « votre entreprise a eu — comptes
+    compromis ces 6 mois ». Un bloc se lit d'un tenant ou pas du tout.
+    """
+    resultat = []
+    for bloc in blocs or []:
+        champs = blocs_de_contenu._textes_du_bloc(bloc)
+        cles = {
+            cle for _champ, texte in champs for cle in blocs_de_contenu.variables_du_texte(texte)
+        }
+        if not cles:
+            resultat.append(bloc)
+            continue
+
+        try:
+            valeurs = {cle: variables.valeur(cle, tenant) for cle in cles}
+        except variables.ValeurIndisponible:
+            # Une seule variable manquante fait basculer tout le bloc : c'est
+            # le prix d'une phrase qui se tient.
+            resultat.append({"type": blocs_de_contenu.PARAGRAPHE, "texte": bloc.get("repli", "")})
+            continue
+
+        remplace = dict(bloc)
+        for champ, texte in champs:
+            rendu = texte
+            for cle, valeur in valeurs.items():
+                rendu = rendu.replace(f"{{{cle}}}", str(valeur))
+            if champ.startswith("items["):
+                rang = int(champ[6:-1]) - 1
+                items = list(remplace.get("items") or [])
+                items[rang] = rendu
+                remplace["items"] = items
+            else:
+                remplace[champ] = rendu
+        resultat.append(remplace)
+    return resultat
+
+
 def etat_de_session(enrollment) -> dict:
     """Tout ce que le lecteur de cours a besoin de savoir, en un appel.
 
@@ -332,7 +380,8 @@ def etat_de_session(enrollment) -> dict:
                 "id": str(ecran.id),
                 "order": ecran.order,
                 "title": ecran.title,
-                "content": ecran.content,
+                # Contextualisé ici, au moment où l'apprenant le lit.
+                "content": contextualiser(ecran.content, enrollment.tenant),
                 "completed": ecran.id in vus,
             }
             for ecran in ecrans
