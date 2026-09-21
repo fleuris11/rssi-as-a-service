@@ -8,6 +8,15 @@ code, ce qui est ouvert de ce qui ne l'est pas.
 
 from django.urls import path
 
+from .campagne_views import (
+    ExportRapportView,
+    ImportView,
+    PreuveDetailView,
+    PreuvesView,
+    RapportView,
+    RelancesView,
+    SuiviNominatifView,
+)
 from .studio_views import (
     CoursDetailView,
     CoursListView,
@@ -57,6 +66,22 @@ urlpatterns = [
         "pilotage/inscriptions/<uuid:enrollment_id>/essais/",
         EnrollmentAttemptsView.as_view(),
         name="formation-essais",
+    ),
+    # Piloter une campagne (F3) : relances, import, rapports, preuves.
+    path("pilotage/relances/", RelancesView.as_view(), name="formation-relances"),
+    path("pilotage/salaries/import/", ImportView.as_view(), name="formation-import"),
+    path("pilotage/rapport/", RapportView.as_view(), name="formation-rapport"),
+    path(
+        "pilotage/rapport/export/<str:extension>/",
+        ExportRapportView.as_view(),
+        name="formation-rapport-export",
+    ),
+    path("pilotage/suivi/", SuiviNominatifView.as_view(), name="formation-suivi"),
+    path("pilotage/preuves/", PreuvesView.as_view(), name="formation-preuves"),
+    path(
+        "pilotage/preuves/<uuid:suggestion_id>/",
+        PreuveDetailView.as_view(),
+        name="formation-preuve",
     ),
     # Le studio (F2). Même préfixe pour l'exploitant et pour un client : c'est
     # la même mécanique, et seul le propriétaire du cours change.
