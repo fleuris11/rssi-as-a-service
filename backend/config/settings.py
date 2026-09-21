@@ -226,6 +226,15 @@ CELERY_TASK_ROUTES = {
     # arrivé à cette app (V2-7) ; `config/tests/test_files_celery.py`
     # l'interdit désormais pour toute app à venir.
     "apps.regulatory_watch.tasks.*": {"queue": "monitoring"},
+    # F3 : la formation envoie des courriels — invitations et relances — et
+    # calcule des agrégats légers. Même nature que les notifications, donc
+    # même file. Sans cette ligne, les quatre tâches planifiées du module
+    # seraient tombées dans « default », qu'aucun worker ne consomme : les
+    # relances ne seraient jamais parties, en silence. Le défaut a été
+    # attrapé par `config/tests/test_files_celery.py`, en intégration
+    # continue — il est invisible en local, où le conteneur ne monte pas les
+    # fichiers docker-compose.
+    "apps.training.tasks.*": {"queue": "emails"},
 }
 # Un worker tué en cours de tâche doit la relivrer plutôt que la perdre —
 # les tasks sont conçues pour être idempotentes (voir apps.monitoring.tasks
