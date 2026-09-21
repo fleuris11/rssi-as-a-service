@@ -19,6 +19,8 @@ F2 s'y conformera au lieu de le réinventer ; ce module fait foi pour les
 valeurs.
 """
 
+import re
+
 PARAGRAPHE = "paragraphe"
 TITRE = "titre"
 LISTE = "liste"
@@ -51,6 +53,18 @@ LONGUEUR_MAX_TEXTE = 4000
 LONGUEUR_MAX_COURTE = 300
 MAX_ITEMS_LISTE = 20
 
+#: Une variable contextuelle : ``{score_maturite}``.
+VARIABLE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+#: La SEULE marque en ligne autorisée (F2).
+#:
+#: Le format de F1 n'en avait aucune, et c'était délibéré : autoriser des
+#: marques rouvre la porte à l'analyseur qu'on cherchait à éviter. Le studio
+#: en demande une, et une seule — le gras. On la traite par un découpage en
+#: segments, jamais par du HTML : rien de ce qu'écrit un auteur n'atteint le
+#: navigateur sous forme de balise.
+MARQUE_GRAS = "**"
+
 
 class BlocInvalide(ValueError):
     """Le contenu proposé ne respecte pas le schéma. Porte la liste complète
@@ -72,6 +86,67 @@ def _texte(valeur, *, champ, ou, maximum=LONGUEUR_MAX_TEXTE):
     if len(valeur) > maximum:
         return [f"{ou} : « {champ} » dépasse {maximum} caractères."]
     return []
+
+
+def variables_du_texte(texte: str) -> list[str]:
+    """Les variables citées par un texte, dans l'ordre d'apparition."""
+    return VARIABLE.findall(texte or "")
+
+
+def segments(texte: str) -> list[dict]:
+    """Découpe un texte en segments ``{"texte": …, "gras": bool}``.
+
+    C'est ce qui remplace le rendu d'une marque par du HTML : le navigateur
+    reçoit une liste de morceaux et décide lui-même de mettre les uns en gras.
+    Une marque non fermée ne peut pas arriver ici — la validation l'a refusée
+    à l'écriture — mais la fonction reste tolérante : elle rend le texte brut
+    plutôt que de lever, parce qu'elle sert aussi à la lecture.
+    """
+    morceaux = (texte or "").split(MARQUE_GRAS)
+    if len(morceaux) % 2 == 0:  # marque non fermée : on n'interprète rien
+        return [{"texte": texte, "gras": False}]
+    return [
+        {"texte": morceau, "gras": index % 2 == 1}
+        for index, morceau in enumerate(morceaux)
+        if morceau
+    ]
+
+
+def texte_sans_marques(texte: str) -> str:
+    """Le texte débarrassé de ses marques — ce qu'on donne à lire à voix
+    haute, et ce qu'on compte quand on mesure une longueur."""
+    return "".join(segment["texte"] for segment in segments(texte))
+
+
+def _valider_texte_riche(texte, *, champ, ou, cles_connues):
+    problemes = []
+    if not isinstance(texte, str):
+        return problemes
+
+    if texte.count(MARQUE_GRAS) % 2 != 0:
+        problemes.append(
+            f"{ou} : « {champ} » contient une marque de gras non fermée ({MARQUE_GRAS})."
+        )
+
+    for cle in variables_du_texte(texte):
+        if cle not in cles_connues:
+            connues = ", ".join(sorted(cles_connues)) or "aucune"
+            problemes.append(
+                f"{ou} : la variable {{{cle}}} n'existe pas. Variables disponibles : {connues}."
+            )
+    return problemes
+
+
+def _textes_du_bloc(bloc):
+    """Tous les textes d'un bloc, avec le nom de leur champ."""
+    trouves = []
+    for champ in ("texte", "source", "alternative"):
+        if isinstance(bloc.get(champ), str):
+            trouves.append((champ, bloc[champ]))
+    for rang, item in enumerate(bloc.get("items") or [], start=1):
+        if isinstance(item, str):
+            trouves.append((f"items[{rang}]", item))
+    return trouves
 
 
 def _valider_bloc(bloc, position):
@@ -135,6 +210,31 @@ def _valider_bloc(bloc, position):
         problemes += _texte(
             bloc.get("alternative"), champ="alternative", ou=ou, maximum=LONGUEUR_MAX_COURTE
         )
+
+    # --- Marques et variables, sur tous les textes du bloc -----------------
+    from . import variables as registre_variables
+
+    cles = set(registre_variables.cles_connues())
+    textes = _textes_du_bloc(bloc)
+    for champ, texte in textes:
+        problemes += _valider_texte_riche(texte, champ=champ, ou=ou, cles_connues=cles)
+
+    # --- La formulation de repli, obligatoire dès qu'il y a une variable ---
+    #
+    # Sans elle, un client sans données verrait un trou, ou pire un « 0 »
+    # annoncé sur le ton de l'alerte. Le repli n'est donc pas une option de
+    # confort : c'est la seule version du bloc que verront les clients neufs,
+    # ceux dont la donnée manque, et ceux dont le chiffre est trop petit pour
+    # être dit sans désigner quelqu'un.
+    utilisees = [cle for _champ, texte in textes for cle in variables_du_texte(texte)]
+    if utilisees:
+        repli = bloc.get("repli")
+        problemes += _texte(repli, champ="repli", ou=ou)
+        if isinstance(repli, str) and variables_du_texte(repli):
+            problemes.append(
+                f"{ou} : « repli » ne peut pas contenir de variable — c'est précisément le "
+                "texte affiché quand les variables ne sont pas disponibles."
+            )
 
     return problemes
 

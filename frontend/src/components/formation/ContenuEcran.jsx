@@ -1,4 +1,12 @@
 import { Info, Lightbulb, TriangleAlert } from 'lucide-react'
+import { segmentsGras } from './texteRiche'
+
+/** Le texte d'un bloc, avec ses passages en gras — et sans aucun HTML. */
+function Texte({ children }) {
+  return segmentsGras(children).map((segment, index) =>
+    segment.gras ? <strong key={index}>{segment.texte}</strong> : <span key={index}>{segment.texte}</span>
+  )
+}
 
 /**
  * Le rendu d'un écran de cours, bloc par bloc.
@@ -42,7 +50,7 @@ function Encadre({ ton, texte }) {
         {/* Le ton est porté par la couleur ET par un mot : une couleur seule
             ne dit rien à qui ne la distingue pas. */}
         <span className="sr-only">{libelle} : </span>
-        {texte}
+        <Texte>{texte}</Texte>
       </p>
     </div>
   )
@@ -51,7 +59,11 @@ function Encadre({ ton, texte }) {
 function Bloc({ bloc }) {
   switch (bloc.type) {
     case 'paragraphe':
-      return <p className="text-[1.05rem] leading-relaxed text-ink-800">{bloc.texte}</p>
+      return (
+        <p className="text-[1.05rem] leading-relaxed text-ink-800">
+          <Texte>{bloc.texte}</Texte>
+        </p>
+      )
 
     case 'titre': {
       const Niveau = bloc.niveau === 4 ? 'h4' : 'h3'
@@ -69,7 +81,9 @@ function Bloc({ bloc }) {
           }`}
         >
           {bloc.items.map((item, index) => (
-            <li key={index}>{item}</li>
+            <li key={index}>
+              <Texte>{item}</Texte>
+            </li>
           ))}
         </Liste>
       )
@@ -91,7 +105,7 @@ function Bloc({ bloc }) {
       return (
         <figure className="border-l-4 border-ink-300 pl-4">
           <blockquote className="text-[1.05rem] italic leading-relaxed text-ink-700">
-            {bloc.texte}
+            <Texte>{bloc.texte}</Texte>
           </blockquote>
           {bloc.source && (
             <figcaption className="mt-1 text-sm text-ink-500">— {bloc.source}</figcaption>
