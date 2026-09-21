@@ -486,6 +486,158 @@ class AttemptAnswer(TenantScopedModel):
         return f"{self.attempt_id} — Q{self.question_id}"
 
 
+class ReminderPolicy(TenantScopedModel):
+    """Le rythme des relances, réglé par l'entreprise (F3).
+
+    **Désactivable, et c'est la première exigence.** Une relance qu'on ne peut
+    pas couper devient du harcèlement — et le harcèlement d'un salarié par un
+    outil que son employeur a acheté reste du harcèlement.
+
+    Trois moments seulement, parce qu'un quatrième serait du remplissage : à
+    mi-parcours, peu avant l'échéance, peu après. Chacun se coupe séparément :
+    une entreprise peut vouloir prévenir avant l'échéance sans jamais relancer
+    après.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    enabled = models.BooleanField(default=True)
+    #: Relance à mi-parcours de la campagne (entre l'inscription et l'échéance).
+    mid_course = models.BooleanField(default=True)
+    #: Jours AVANT l'échéance. 0 = pas de relance à ce moment.
+    before_due_days = models.PositiveSmallIntegerField(default=3)
+    #: Jours APRÈS l'échéance. 0 = on ne relance pas une fois le délai passé.
+    after_due_days = models.PositiveSmallIntegerField(default=2)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["tenant"], name="unique_reminder_policy_per_tenant"),
+        ]
+
+    def __str__(self):
+        return f"Relances de {self.tenant_id} ({'actives' if self.enabled else 'coupées'})"
+
+
+class ReminderLog(TenantScopedModel):
+    """Une relance envoyée. Sa raison d'être est l'unicité.
+
+    ``unique(enrollment, kind)`` est le garde-fou contre le défaut le plus
+    facile à produire ici : une tâche quotidienne qui renvoie le même message
+    tous les jours parce que la condition reste vraie. Chaque nature de relance
+    part **une fois** par inscription, et jamais plus.
+    """
+
+    class Kind(models.TextChoices):
+        MID = "mid", "À mi-parcours"
+        BEFORE = "before", "Avant l'échéance"
+        AFTER = "after", "Après l'échéance"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    enrollment = models.ForeignKey(Enrollment, on_delete=models.CASCADE, related_name="reminders")
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["enrollment", "kind"], name="unique_reminder_per_kind"),
+        ]
+        ordering = ["-sent_at"]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} — {self.enrollment_id}"
+
+
+class NominativeAccessLog(TenantScopedModel):
+    """Qui a consulté le suivi NOMINATIF des salariés, et quand (F3, ADR-041).
+
+    Le module publie des agrégats. La liste par salarié existe pour une seule
+    raison — savoir qui relancer — et cet usage-là se trace : c'est la
+    contrepartie que le RGPD attend d'un traitement des données de salariés
+    par leur employeur.
+
+    On enregistre le NOMBRE de lignes consultées, pas les lignes : un journal
+    d'accès qui recopierait les données qu'il protège serait un second fichier
+    du même traitement.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+    #: Le cours consulté, ou vide pour « tous ».
+    course = models.ForeignKey(
+        Course, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    rows = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["tenant", "-created_at"])]
+
+    def __str__(self):
+        return f"{self.actor_id} → {self.rows} ligne(s) le {self.created_at:%d/%m/%Y}"
+
+
+class MeasureSuggestion(TenantScopedModel):
+    """Une campagne de formation propose de renseigner une mesure du
+    diagnostic, **preuve à l'appui** (F3, ADR-041).
+
+    Le mot qui compte est *propose*. Une mesure de conformité cochée sans que
+    personne l'ait décidée serait une affirmation que le client n'a pas faite,
+    et qu'il découvrirait devant un auditeur. La proposition attend donc une
+    confirmation humaine, et conserve la trace de qui a tranché.
+
+    Les chiffres sont **figés à la proposition** : ils constituent la preuve.
+    Relire le taux de participation six mois plus tard donnerait un autre
+    nombre, et la preuve ne prouverait plus ce qu'elle disait.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "À confirmer"
+        ACCEPTED = "accepted", "Confirmée"
+        DISMISSED = "dismissed", "Écartée"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="+")
+    referential_slug = models.SlugField(max_length=220)
+    measure_code = models.CharField(max_length=50)
+    #: Figé : une mesure renommée ne doit pas rendre illisible une preuve.
+    measure_title = models.CharField(max_length=300)
+
+    learners_total = models.PositiveIntegerField()
+    learners_done = models.PositiveIntegerField()
+    participation_rate = models.PositiveSmallIntegerField()
+    success_rate = models.PositiveSmallIntegerField()
+    period_start = models.DateField()
+    period_end = models.DateField()
+
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            # Une seule proposition VIVANTE par cours et par mesure : la tâche
+            # quotidienne ne doit pas empiler des doublons.
+            models.UniqueConstraint(
+                fields=["tenant", "course", "measure_code"],
+                condition=models.Q(status="pending"),
+                name="unique_pending_measure_suggestion",
+            ),
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.measure_code} ← {self.course_id} ({self.status})"
+
+
 class Certificate(TenantScopedModel):
     """L'attestation de suivi. Son existence EST la preuve de réussite.
 
