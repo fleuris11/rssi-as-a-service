@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { formationApi } from '../api/endpoints'
 import ContenuEcran from '../components/formation/ContenuEcran'
+import LecteurAudio from '../components/formation/LecteurAudio'
 import Button from '../components/ui/Button'
 
 /**
@@ -270,6 +271,13 @@ export default function FormationPage() {
             >
               {ecran.title}
             </h2>
+            {/* La lecture à voix haute, proposée sous le titre : on la voit
+                avant de commencer à lire, pas après. Elle disparaît d'elle-même
+                si l'appareil n'a pas de voix française. */}
+            <div className="mt-3">
+              <LecteurAudio blocs={ecran.content} cleEcran={ecran.id} />
+            </div>
+
             <div className="mt-5">
               <ContenuEcran blocs={ecran.content} />
             </div>
