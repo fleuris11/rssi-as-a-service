@@ -9,6 +9,7 @@ import {
   FileBarChart,
   GraduationCap,
   MessageSquareText,
+  PenSquare,
   Radar,
   ScrollText,
   ShieldAlert,
@@ -56,6 +57,9 @@ export const NAV_ITEMS = [
   // l'offre ne la comprend pas voit l'entrée désactivée (levier commercial) ;
   // un client à qui elle a été retirée ne la voit pas du tout (ADR-038).
   { to: '/formation', label: 'Formation', icon: GraduationCap, fonctionnalite: 'training' },
+  // F2 : écrire ses propres cours. Clé distincte de `training` — suivre des
+  // cours et en écrire ne se vendent pas ensemble.
+  { to: '/studio', label: 'Studio', icon: PenSquare, fonctionnalite: 'training_studio' },
   // B5.18 : la veille reglementaire vue du client. Lecture seule, et
   // seulement ce qui a ete juge pertinent.
   { to: '/veille', label: 'Veille', icon: Newspaper },

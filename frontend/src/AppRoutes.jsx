@@ -20,6 +20,7 @@ import NotificationPreferencesPage from './pages/NotificationPreferencesPage'
 import NotificationsPage from './pages/NotificationsPage'
 import ResultsPage from './pages/ResultsPage'
 import SurveillancePage from './pages/SurveillancePage'
+import StudioPage from './pages/StudioPage'
 import TrainingPage from './pages/TrainingPage'
 import TwoFactorSettingsPage from './pages/TwoFactorSettingsPage'
 
@@ -55,6 +56,10 @@ export default function AppRoutes() {
           {/* Le PILOTAGE des formations. Le parcours du salarié, lui, vit hors
               de l'espace client : /formation/:token, sans compte. */}
           <Route path="/formation" element={<TrainingPage />} />
+          {/* Le studio n'est PAS sous /formation : cette adresse porte déjà
+              la route publique /formation/:token, et « studio » y passerait
+              pour un jeton d'apprenant. */}
+          <Route path="/studio" element={<StudioPage />} />
           <Route path="/assistant" element={<AssistantPage />} />
           <Route path="/preferences" element={<NotificationPreferencesPage />} />
           <Route path="/securite" element={<TwoFactorSettingsPage />} />

@@ -209,6 +209,28 @@ export const formationApi = {
   reemettreLien: (id) => apiClient.post(`/api/v1/formation/pilotage/inscriptions/${id}/lien/`),
   accorderEssai: (id, count = 1) =>
     apiClient.post(`/api/v1/formation/pilotage/inscriptions/${id}/essais/`, { count }),
+
+  // Le studio (F2). Mêmes appels pour l'exploitant et pour un client : c'est
+  // la même mécanique, seul le propriétaire du cours change.
+  studioCours: () => apiClient.get('/api/v1/formation/studio/cours/'),
+  studioCreerCours: (payload) => apiClient.post('/api/v1/formation/studio/cours/', payload),
+  studioCours1: (id) => apiClient.get(`/api/v1/formation/studio/cours/${id}/`),
+  studioNouvelleVersion: (id, payload) =>
+    apiClient.post(`/api/v1/formation/studio/cours/${id}/`, payload),
+  studioDupliquer: (id, payload) =>
+    apiClient.post(`/api/v1/formation/studio/cours/${id}/dupliquer/`, payload),
+  studioVersion: (id) => apiClient.get(`/api/v1/formation/studio/versions/${id}/`),
+  studioPublier: (id) => apiClient.post(`/api/v1/formation/studio/versions/${id}/publier/`),
+  studioEcrireEcran: (versionId, payload) =>
+    apiClient.post(`/api/v1/formation/studio/versions/${versionId}/ecrans/`, payload),
+  studioOrdreEcrans: (versionId, order) =>
+    apiClient.post(`/api/v1/formation/studio/versions/${versionId}/ecrans/ordre/`, { order }),
+  studioSupprimerEcran: (versionId, screenId) =>
+    apiClient.delete(`/api/v1/formation/studio/versions/${versionId}/ecrans/${screenId}/`),
+  studioEcrireQuestion: (versionId, payload) =>
+    apiClient.post(`/api/v1/formation/studio/versions/${versionId}/questions/`, payload),
+  studioSupprimerQuestion: (versionId, questionId) =>
+    apiClient.delete(`/api/v1/formation/studio/versions/${versionId}/questions/${questionId}/`),
 }
 
 export const authApi = {
