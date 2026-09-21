@@ -102,11 +102,67 @@ ouverture d'écran.
 
 `source` : facultative ; si elle est présente, elle doit être non vide.
 
+## Le gras (F2)
+
+Une **seule** marque en ligne, et elle s'écrit `**comme ceci**`.
+
+F1 n'en autorisait aucune, et disait pourquoi : autoriser des marques rouvre
+la porte à l'analyseur qu'on cherchait à éviter. Le studio de F2 en demande
+une — mettre un mot en valeur est le minimum vital pour un auteur.
+
+Ce qui rend la chose sûre n'est pas la marque mais le **rendu** : le texte est
+découpé en segments (`blocks.segments()`), et l'interface met les uns en gras.
+Rien de ce qu'écrit un auteur n'atteint le navigateur sous forme de balise —
+l'injection est impossible par construction, pas par filtrage.
+
+Une marque non fermée est **refusée à l'écriture**. La lecture, elle, reste
+tolérante : elle affiche le texte brut plutôt que d'inventer une
+interprétation.
+
+## Les variables contextuelles (F2)
+
+Un texte peut contenir `{score_maturite}`. Les clés disponibles sont déclarées
+dans `backend/apps/training/variables.py` et **proposées par le studio** : on
+n'écrit pas une variable qui n'existe pas, et une clé inconnue est refusée à
+l'écriture.
+
+### La formulation de repli est obligatoire
+
+Dès qu'un bloc contient une variable, il **doit** porter un champ `repli` :
+
+```json
+{
+  "type": "paragraphe",
+  "texte": "Votre entreprise a {fuites_ouvertes} comptes compromis.",
+  "repli": "Des comptes de votre entreprise pourraient déjà circuler dans des fuites."
+}
+```
+
+Le repli est affiché — pour le **bloc entier**, jamais variable par variable —
+dans quatre cas :
+
+1. la donnée n'existe pas (client neuf, diagnostic jamais fait) ;
+2. elle vaut zéro : « vous avez eu 0 incident » annoncé sur le ton de l'alerte
+   est au mieux ridicule ;
+3. le décompte est **inférieur à 3** : dans une entreprise de six salariés,
+   « 1 compte compromis » désigne quelqu'un sans le nommer ;
+4. la variable relève d'une fonctionnalité absente de l'offre du client.
+
+Le repli ne peut pas lui-même contenir de variable — c'est précisément le
+texte affiché quand les variables manquent.
+
+Les valeurs sont calculées **à l'affichage**, jamais figées à l'inscription,
+et ne sont recopiées nulle part : ni dans la progression, ni dans la
+tentative, ni dans l'attestation.
+
 ## Ce que le format ne fait pas
 
-- **Pas de HTML, pas de gras/italique dans le texte.** Un bloc porte du texte
-  brut. Autoriser des marques inline rouvrirait la porte à l'analyseur qu'on
-  cherche à éviter, et à l'injection qu'il faudrait alors filtrer.
+- **Pas de HTML, et aucune autre marque que le gras.** Un bloc porte du texte
+  brut. Ajouter l'italique ou les liens rouvrirait la porte à l'analyseur
+  qu'on cherche à éviter.
+- **Aucune variable de texte.** Une variable rend un nombre. C'est ce qui rend
+  impossible qu'un nom, une adresse ou un mot de passe se retrouve dans un
+  cours — y compris par erreur d'un auteur (ADR-040).
 - **Pas de vidéo** (décision de cadrage F1) : lourde à produire, à héberger, et
   inutilisable sans sous-titres — qui sont eux-mêmes un travail de production.
 - **Pas d'imbrication.** Une liste ne contient pas de blocs, un encadré ne
