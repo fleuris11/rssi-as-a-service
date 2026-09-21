@@ -45,6 +45,30 @@ class GrantAttemptsSerializer(serializers.Serializer):
     count = serializers.IntegerField(min_value=1, max_value=5, default=1)
 
 
+class ReminderPolicySerializer(serializers.Serializer):
+    """Le rythme des relances. Tout est facultatif : on règle un curseur sans
+    avoir à renvoyer les autres."""
+
+    enabled = serializers.BooleanField(required=False)
+    mid_course = serializers.BooleanField(required=False)
+    # 0 = pas de relance à ce moment. Bornés : au-delà d'une quinzaine de
+    # jours, une « relance avant l'échéance » n'en est plus une.
+    before_due_days = serializers.IntegerField(min_value=0, max_value=15, required=False)
+    # Après l'échéance, le lien ne survit que quelques jours (ADR-039) :
+    # relancer au-delà enverrait vers un lien mort.
+    after_due_days = serializers.IntegerField(min_value=0, max_value=7, required=False)
+
+
+class ImportSerializer(serializers.Serializer):
+    """Le contenu d'un fichier, collé ou téléversé — pas le fichier lui-même.
+
+    Le produit n'a aucun stockage de fichiers, et un import n'a aucune raison
+    d'en avoir besoin : on lit, on crée des salariés, on jette.
+    """
+
+    content = serializers.CharField(max_length=200_000)
+
+
 # --- Studio (F2) ------------------------------------------------------------
 
 

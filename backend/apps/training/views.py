@@ -18,7 +18,7 @@ from rest_framework.views import APIView
 
 from apps.billing import api_guards, features
 
-from . import certificates, services
+from . import campagnes, certificates, services
 from .models import Certificate, Course, Enrollment, Learner
 from .permissions import IsTenantAdminForWrites
 from .serializers import (
@@ -259,7 +259,10 @@ class EnrollmentsView(VuePilotage):
             raise NotFound("Ce cours n'existe pas.")
 
         try:
-            inscription, jeton = services.inscrire(
+            # F3 : l'inscription envoie le lien au salarié. Une inscription
+            # muette serait pire qu'aucune — le salarié ne saurait rien, et
+            # l'administrateur croirait l'avoir prévenu.
+            inscription, jeton = campagnes.inscrire_et_inviter(
                 tenant=request.tenant,
                 learner=salarie,
                 course=cours,

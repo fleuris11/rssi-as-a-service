@@ -31,6 +31,71 @@ def _administrateurs(tenant) -> list[str]:
     )
 
 
+#: Ce que dit chaque relance. Trois messages distincts : « il vous reste du
+#: temps », « le délai approche », « le délai est passé ». Le même texte aux
+#: trois moments donnerait l'impression d'un automate, et un automate qui
+#: répète se fait filtrer.
+RELANCES = {
+    "mid": (
+        "Votre formation vous attend",
+        "Vous avez commencé — ou pas encore — la formation « {cours} ». "
+        "Il vous reste du temps : l'échéance est fixée au {echeance}.",
+    ),
+    "before": (
+        "Votre formation se termine bientôt",
+        "La formation « {cours} » doit être suivie avant le {echeance}. "
+        "Comptez une dizaine de minutes.",
+    ),
+    "after": (
+        "Votre formation n'a pas été terminée",
+        "L'échéance du {echeance} est passée et la formation « {cours} » "
+        "n'est pas terminée. Le lien reste valable encore quelques jours.",
+    ),
+}
+
+
+def _ecrire_au_salarie(enrollment, *, sujet, corps) -> int:
+    """Un message au salarié, avec son lien.
+
+    Le lien est NEUF à chaque envoi et remplace le précédent : le jeton n'est
+    stocké que haché, on ne peut pas rappeler celui d'avant. Le message le dit,
+    pour que personne ne cherche en vain l'ancien courriel.
+    """
+    send_mail(
+        subject=sujet,
+        message=corps,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[enrollment.learner.email],
+        fail_silently=False,
+    )
+    return 1
+
+
+def envoyer_invitation(enrollment, lien: str) -> int:
+    cours = enrollment.version.course.title
+    corps = (
+        f"Bonjour {enrollment.learner.full_name},\n\n"
+        f"{enrollment.tenant.name} vous inscrit à la formation « {cours} ».\n"
+        f"Comptez une dizaine de minutes. À suivre avant le "
+        f"{enrollment.due_date:%d/%m/%Y}.\n\n"
+        f"Votre lien personnel :\n{lien}\n\n"
+        "Ce lien vous est propre : ne le transmettez pas.\n"
+    )
+    return _ecrire_au_salarie(enrollment, sujet=f"Formation à suivre — {cours}", corps=corps)
+
+
+def envoyer_relance(enrollment, lien: str, nature: str) -> int:
+    cours = enrollment.version.course.title
+    sujet, phrase = RELANCES[nature]
+    corps = (
+        f"Bonjour {enrollment.learner.full_name},\n\n"
+        + phrase.format(cours=cours, echeance=f"{enrollment.due_date:%d/%m/%Y}")
+        + f"\n\nVotre lien :\n{lien}\n\n"
+        "Ce lien remplace celui des messages précédents.\n"
+    )
+    return _ecrire_au_salarie(enrollment, sujet=f"{sujet} — {cours}", corps=corps)
+
+
 def envoyer_demande_dacces(enrollment) -> int:
     """Prévient les administrateurs qu'un salarié redemande l'accès.
 
