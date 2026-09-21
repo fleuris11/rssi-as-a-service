@@ -48,12 +48,13 @@ class TestSeuils:
         with services.contexte_du_client(tenant):
             assert preuves.proposer(tenant) == []
 
-    def test_une_participation_faible_ne_prouve_rien(
+    def test_une_campagne_a_demi_suivie_ne_prouve_rien(
         self, tenant, tenant_owner, cours, bonnes_reponses
     ):
         _campagne_reussie(tenant, tenant_owner, cours, bonnes_reponses, combien=3)
         with services.contexte_du_client(tenant):
-            # Deux inscrits de plus qui n'ouvrent rien : participation 60 %.
+            # Deux inscrits de plus qui n'ouvrent rien : 3 terminés sur 5,
+            # soit 60 % — sous le seuil unique de réussite.
             for rang in (8, 9):
                 salarie = services.creer_apprenant(
                     tenant=tenant, full_name=f"Absent {rang}", email=f"a{rang}@exemple.fr"

@@ -130,9 +130,19 @@ relèvent pas du code :
 
 ## Décision 7 — La formation prouve une mesure, elle ne la valide pas
 
-Une campagne qui atteint **80 % de participation et 80 % de réussite**, sur au
-moins **trois salariés**, peut renseigner la mesure de sensibilisation du guide
-d'hygiène ANSSI (mesure 2).
+Une campagne qui atteint **80 % de réussite**, sur au moins **trois
+salariés**, peut renseigner la mesure de sensibilisation du guide d'hygiène
+ANSSI (mesure 2).
+
+**Un seul seuil, et c'est le résultat d'une vérification.** Le premier jet en
+posait deux — 80 % de participation *et* 80 % de réussite. En neutralisant le
+premier pour vérifier qu'un test le tenait, il est apparu qu'il ne décidait
+jamais rien : le taux de réussite se calcule sur l'effectif total, il est donc
+toujours inférieur ou égal au taux de participation. Exiger 80 % de réussite
+exige déjà, mécaniquement, 80 % de participation. Le second seuil a été
+retiré : garder une condition qui ne départage rien donne l'apparence d'un
+contrôle qui n'existe pas. Le taux de participation reste relevé et figé dans
+la preuve — il est informatif, pas décisionnel.
 
 **C'est une proposition.** Le produit refuse depuis le début de cocher une case
 de conformité à la place de quelqu'un : une mesure renseignée sans qu'une

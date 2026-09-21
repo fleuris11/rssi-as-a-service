@@ -26,12 +26,18 @@ from .models import Course, Enrollment, MeasureSuggestion
 REFERENTIEL = "anssi-hygiene-informatique"
 MESURE = "2"
 
-#: Ce qui fait d'une campagne une preuve.
+#: Ce qui fait d'une campagne une preuve : **un seul seuil**, et c'est voulu.
 #:
-#: 80 % des deux côtés : une campagne suivie par la moitié de l'entreprise ne
-#: prouve pas que l'entreprise est sensibilisée, et une campagne suivie par
-#: tous mais ratée par la moitié non plus.
-SEUIL_PARTICIPATION = 80
+#: Le premier jet en posait deux — 80 % de participation ET 80 % de réussite.
+#: Une neutralisation a montré que le premier ne décidait jamais rien : le
+#: taux de réussite se calcule sur l'effectif TOTAL, il est donc toujours
+#: inférieur ou égal au taux de participation. Exiger 80 % de réussite exige
+#: déjà, mécaniquement, 80 % de participation.
+#:
+#: Garder les deux aurait donné l'apparence d'un contrôle supplémentaire qui
+#: n'existait pas — et aucun test n'aurait pu tenir le second, faute de
+#: situation où il départage quoi que ce soit. Le taux de participation reste
+#: relevé et figé dans la preuve : il est informatif, pas décisionnel.
 SEUIL_REUSSITE = 80
 
 #: En deçà, la campagne ne prouve rien de statistique — et « 2 salariés sur
@@ -62,8 +68,6 @@ def campagnes_probantes(tenant) -> list[dict]:
     ):
         chiffres = rapports.agregats(tenant, course=cours)
         if chiffres["learners_total"] < MINIMUM_SALARIES:
-            continue
-        if chiffres["participation_rate"] < SEUIL_PARTICIPATION:
             continue
         if chiffres["success_rate"] < SEUIL_REUSSITE:
             continue
