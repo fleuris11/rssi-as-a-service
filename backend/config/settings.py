@@ -256,6 +256,13 @@ DEFAULT_FROM_EMAIL = env(
 # email) — the frontend's own origin, not the API's.
 FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:5173")
 
+# Durée de conservation des résultats détaillés de formation, en mois
+# (F3, ADR-041). Passé ce délai, les tentatives et les réponses question par
+# question sont effacées — c'est la partie nominative et détaillée du
+# traitement. Les attestations, elles, sont conservées : elles sont la preuve
+# que l'entreprise a formé ses salariés.
+TRAINING_RESULTS_RETENTION_MONTHS = env.int("TRAINING_RESULTS_RETENTION_MONTHS", default=24)
+
 # --- IA (Phase 4, CLAUDE.md règle d'architecture n°3) : tout appel passe
 # exclusivement par apps.ai_assistant.services, jamais dans le cycle
 # requête/réponse HTTP (toujours via Celery, file "ai").

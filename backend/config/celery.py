@@ -56,4 +56,28 @@ app.conf.beat_schedule = {
         "task": "apps.threat_intelligence.tasks.purge_expired_secrets_task",
         "schedule": crontab(hour="3", minute="30"),
     },
+    # Formation (F3). Les relances partent une fois par jour, en milieu de
+    # matinée : un message de formation reçu à 3 h du matin se lit mal, et une
+    # relance se compte en jours, jamais en heures. Idempotente — la
+    # contrainte d'unicité en base empêche un second envoi le même jour.
+    "training-envoyer-les-relances": {
+        "task": "apps.training.tasks.envoyer_les_relances",
+        "schedule": crontab(hour="9", minute="30"),
+    },
+    # Les propositions de preuve pour le diagnostic, et les trois événements
+    # du centre de notifications. Rien n'est coché automatiquement (ADR-041).
+    "training-proposer-les-preuves": {
+        "task": "apps.training.tasks.proposer_les_preuves",
+        "schedule": crontab(hour="6", minute="45"),
+    },
+    "training-surveiller-les-campagnes": {
+        "task": "apps.training.tasks.surveiller_les_campagnes",
+        "schedule": crontab(hour="7", minute="15"),
+    },
+    # Durée de conservation des résultats détaillés (ADR-041). Une fois par
+    # mois : c'est une obligation de rétention, pas une urgence.
+    "training-purger-les-resultats": {
+        "task": "apps.training.tasks.purger_les_resultats",
+        "schedule": crontab(day_of_month="2", hour="4", minute="0"),
+    },
 }

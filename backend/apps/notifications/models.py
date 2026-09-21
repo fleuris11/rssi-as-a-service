@@ -84,6 +84,16 @@ class Notification(models.Model):
         WATCHED_FINDINGS_NEW = "watched_findings_new", "Nouvelles fuites sur un compte surveillé"
         COMMITTEE_REPORT_READY = "committee_report_ready", "Rapport de comité disponible"
         WATCH_UPDATE_PUBLISHED = "watch_update_published", "Publication de veille retenue"
+        # F3 — le module Formation se branche ici plutôt que d'ouvrir un
+        # second canal : l'administrateur a déjà une cloche, il n'en veut pas
+        # deux.
+        TRAINING_CAMPAIGN_DONE = "training_campaign_done", "Formation terminée par tous"
+        TRAINING_DUE_PASSED = "training_due_passed", "Échéance de formation dépassée"
+        TRAINING_LOW_PARTICIPATION = "training_low_participation", "Participation faible"
+        TRAINING_MEASURE_SUGGESTED = (
+            "training_measure_suggested",
+            "Une formation peut renseigner le diagnostic",
+        )
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications"
