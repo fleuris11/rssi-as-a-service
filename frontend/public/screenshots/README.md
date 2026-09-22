@@ -98,3 +98,17 @@ substitut CSS reste affiché à sa place — c'est le comportement prévu.
 
 **À recapturer après la refonte de l'espace client**, qui vient après la
 vitrine : ces quatre images montrent encore l'interface d'avant.
+
+## Refaites apres la refonte complete (22/09/2026)
+
+Les quatre captures ont ete reprises sur l'interface refondue (ADR-042), avec
+le client de DEMONSTRATION, par `e2e/zz-captures-produit2.spec.js` (non
+commite : il porte un mot de passe en clair).
+
+Le tableau de bord et le diagnostic sont pris en profil **Dirigeant**,
+l'exposition et la formation en profil **Technique** : la vitrine montre les
+deux surfaces du produit, pas deux fois la meme.
+
+Format : 1456 x 880 px, converties en WebP qualite 82 (269 ko au total
+contre 583 ko en PNG). Le cadre de navigateur les affiche au plus a 728 px,
+d'ou le facteur deux pour les ecrans a forte densite.
