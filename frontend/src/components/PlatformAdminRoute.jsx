@@ -2,6 +2,7 @@ import { Loader2 } from 'lucide-react'
 import { LogOut } from 'lucide-react'
 import { Link, Navigate, NavLink, Outlet } from 'react-router-dom'
 import { STAFF_NAV_ITEMS } from '../config/navigation'
+import { Monogramme } from './AuthLayout'
 import { useAuth } from '../context/AuthContext'
 
 /**
@@ -33,20 +34,20 @@ export default function PlatformAdminRoute() {
     <div className="min-h-screen bg-canvas">
       {/* En-tête sombre et libellé explicite : on doit voir d'un coup d'œil
           qu'on n'est pas dans l'espace d'un client. */}
-      <header className="border-b border-bati-600 bg-bati-800">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3">
-          <span className="flex items-center gap-3 text-white">
-            {/* Le seul endroit où le logo complet s'affiche tel quel : cet
-                en-tête est déjà sombre, aucune adaptation n'est nécessaire. */}
-            <img
-              src="/logo-complet.webp"
-              srcSet="/logo-complet.webp 1x, /logo-complet@2x.webp 2x"
-              width="132"
-              height="54"
-              alt="RSSI as a Service"
-              className="h-8 w-auto"
-            />
-            <span className="font-display text-sm font-semibold">Administration plateforme</span>
+      <header className="sur-bati border-b border-bati-600">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-2.5 sm:px-6">
+          <span className="flex items-center gap-2.5">
+            {/* Le monogramme dessiné remplace l'image du logo : à 132 px de
+                large réduite à 32, elle se voyait matricée sur les écrans à
+                forte densité, et c'était la première chose visible de la
+                console. */}
+            <Monogramme sombre />
+            <span
+              className="font-display text-sm font-semibold text-craie"
+              style={{ fontVariationSettings: "'wdth' 92" }}
+            >
+              Administration plateforme
+            </span>
           </span>
 
           <nav aria-label="Administration" className="flex flex-wrap gap-1">
@@ -55,10 +56,10 @@ export default function PlatformAdminRoute() {
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
-                  `transition-smooth rounded-md px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-white ${
+                  `transition-smooth t-menu relative rounded-sm px-3 py-1.5 ${
                     isActive
-                      ? 'bg-bati-700 text-white'
-                      : 'text-craie-douce hover:bg-bati-700/60 hover:text-white'
+                      ? 'bg-bati-700 text-craie before:absolute before:inset-x-2 before:bottom-0 before:h-0.5 before:rounded-full before:bg-action-claire'
+                      : 'text-craie-douce hover:bg-bati-700/60 hover:text-craie'
                   }`
                 }
               >
@@ -70,14 +71,14 @@ export default function PlatformAdminRoute() {
           <div className="ml-auto flex items-center gap-3">
             <Link
               to="/tableau-de-bord"
-              className="transition-smooth rounded-md px-3 py-1.5 text-sm text-craie-douce hover:text-white focus-visible:outline-2 focus-visible:outline-white"
+              className="transition-smooth t-menu rounded-sm px-3 py-1.5 text-craie-douce hover:text-craie"
             >
               Espace client
             </Link>
             <button
               type="button"
               onClick={logout}
-              className="transition-smooth flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-craie-douce hover:text-white focus-visible:outline-2 focus-visible:outline-white"
+              className="transition-smooth t-menu flex items-center gap-2 rounded-sm px-3 py-1.5 text-craie-douce hover:text-craie"
             >
               <LogOut className="size-4" aria-hidden="true" />
               Déconnexion
@@ -86,7 +87,11 @@ export default function PlatformAdminRoute() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 py-8">
+      {/* `data-densite` en compacte : la console sert a traiter des dizaines
+          de lignes a la suite, pas a lire trois chiffres. C'est le meme
+          reglage que le profil Technique de l'espace client, applique ici par
+          defaut. */}
+      <main data-densite="compacte" className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         <Outlet />
       </main>
     </div>

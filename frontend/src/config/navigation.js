@@ -87,7 +87,7 @@ const SECONDARY_TITLES = {
 // espace client mieux doté, c'est un espace séparé.
 export const STAFF_NAV_ITEMS = [
   { to: '/admin/plateforme', label: 'Plateforme', icon: Building2 },
-  { to: '/admin/renseignement', label: 'Licence CTI', icon: Radar },
+  { to: '/admin/renseignement', label: 'Renseignement', icon: Radar },
 ]
 
 /**

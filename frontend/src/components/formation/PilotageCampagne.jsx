@@ -4,6 +4,7 @@ import { formationApi } from '../../api/endpoints'
 import Badge from '../ui/Badge'
 import Button from '../ui/Button'
 import Card from '../ui/Card'
+import Defilement from '../ui/Defilement'
 
 /**
  * Le pilotage d'une campagne (F3) : relances, import, rapport, preuves.
@@ -295,7 +296,7 @@ export function RapportCampagne({ onErreur }) {
       {rapport.campaigns.length > 1 && (
         <section className="mt-6">
           <h3 className="font-medium text-ink-900">Campagne après campagne</h3>
-          <div className="mt-3 overflow-x-auto">
+          <Defilement className="mt-3">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-ink-200 text-left text-ink-600">
@@ -320,7 +321,7 @@ export function RapportCampagne({ onErreur }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Defilement>
         </section>
       )}
 

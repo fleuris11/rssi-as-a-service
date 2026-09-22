@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 import { threatIntelligenceApi } from '../api/endpoints'
 import Badge from '../components/ui/Badge'
+import Button from '../components/ui/Button'
 import Card, { CardHeader } from '../components/ui/Card'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
+import Defilement from '../components/ui/Defilement'
 
 const TRIGGERED_BY_LABEL = { initial: 'Scan initial', manual: 'Scan manuel' }
 
 function StatTile({ label, value, hint }) {
   return (
-    <div className="rounded-md border border-ink-200 px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-ink-500">{label}</p>
-      <p className="mt-1 font-display text-2xl font-semibold text-ink-900">{value}</p>
-      {hint && <p className="mt-0.5 text-xs text-ink-500">{hint}</p>}
+    <div className="border-t border-ink-200 pt-3">
+      <p className="t-legende">{label}</p>
+      <p className="n mt-1 text-2xl text-ink-900">{value}</p>
+      {hint && <p className="t-meta mt-0.5">{hint}</p>}
     </div>
   )
 }
@@ -51,17 +53,37 @@ export default function AdminRenseignementPage() {
       </div>
     )
   }
-  if (!data) return null
+
+  // `return null` laissait un ÉCRAN ENTIÈREMENT VIDE quand l'appel échouait :
+  // impossible de distinguer une licence non configurée d'une panne, et rien
+  // pour réessayer. Une notification passagère ne suffit pas, elle disparaît.
+  if (!data) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="t-display">Renseignement sur la menace</h1>
+          <p className="t-meta mt-1">Vue réservée aux administrateurs plateforme.</p>
+        </div>
+        <div className="panneau p-6">
+          <p className="t-body">
+            L’état de la licence n’a pas pu être chargé. Soit aucune licence n’est configurée
+            sur cet environnement, soit le service de renseignement n’a pas répondu.
+          </p>
+          <Button className="mt-4" onClick={load}>
+            Réessayer
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   const { quota, pool, recent_usage: recentUsage, recent_reveal_audits: recentRevealAudits } = data
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-semibold text-ink-900">
-          Renseignement sur la menace — Administration
-        </h1>
-        <p className="mt-1 text-sm text-ink-500">
+        <h1 className="t-display">Renseignement sur la menace</h1>
+        <p className="t-meta mt-1">
           Licence de renseignement partagée par toute la plateforme — vue
           réservée aux administrateurs plateforme.
         </p>
@@ -90,7 +112,7 @@ export default function AdminRenseignementPage() {
         {recentUsage.length === 0 ? (
           <p className="text-sm text-ink-500">Aucune requête enregistrée pour le moment.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <Defilement>
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500">
@@ -119,7 +141,7 @@ export default function AdminRenseignementPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Defilement>
         )}
       </Card>
 
@@ -132,7 +154,7 @@ export default function AdminRenseignementPage() {
         {recentRevealAudits.length === 0 ? (
           <p className="text-sm text-ink-500">Aucune révélation enregistrée pour le moment.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <Defilement>
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500">
@@ -163,7 +185,7 @@ export default function AdminRenseignementPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Defilement>
         )}
       </Card>
     </div>

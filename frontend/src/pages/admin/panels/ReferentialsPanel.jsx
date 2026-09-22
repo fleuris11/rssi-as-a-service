@@ -11,6 +11,7 @@ import CreationReferentiel from './referentiels/CreationReferentiel'
 import EditionReferentiel from './referentiels/EditionReferentiel'
 import ImportReferentiel from './referentiels/ImportReferentiel'
 import ReformulationClient from './referentiels/ReformulationClient'
+import Defilement from '../../../components/ui/Defilement'
 
 const KIND_VARIANT = { open: 'ok', licensed: 'warning', custom: 'brand' }
 
@@ -220,7 +221,7 @@ export default function ReferentialsPanel({ clients = [] }) {
             description="Importez-en un avec le formulaire ci-dessus, ou créez-le à la main."
           />
         ) : (
-          <div className="overflow-x-auto">
+          <Defilement>
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-ink-200 text-ink-500">
@@ -256,7 +257,7 @@ export default function ReferentialsPanel({ clients = [] }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Defilement>
         )}
       </Card>
     </div>

@@ -23,6 +23,7 @@ import { useToast } from '../components/ui/Toast'
 import { useAuth } from '../context/AuthContext'
 import { useDisplayProfile } from '../context/useDisplayProfile'
 import { Explanation, ProfileDate, TechnicalValue } from '../components/DisplayProfile'
+import Defilement from '../components/ui/Defilement'
 
 const SEVERITY_LABEL = { critical: 'Critique', high: 'Élevée', attention: 'Attention' }
 const SEVERITY_VARIANT = { critical: 'critical', high: 'critical', attention: 'warning' }
@@ -450,7 +451,7 @@ function RevealAuditPanel({ audits, onLoad, loading }) {
         jamais le secret lui-même.
       </p>
       {audits !== null && (
-        <div className="overflow-x-auto">
+        <Defilement>
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500">
@@ -487,7 +488,7 @@ function RevealAuditPanel({ audits, onLoad, loading }) {
               )}
             </tbody>
           </table>
-        </div>
+        </Defilement>
       )}
     </PanneauSecondaire>
   )

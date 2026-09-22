@@ -33,6 +33,7 @@ import ProspectsPanel from './panels/ProspectsPanel'
 import ReferentialsPanel from './panels/ReferentialsPanel'
 import RequestsPanel from './panels/RequestsPanel'
 import WatchPanel from './panels/WatchPanel'
+import Defilement from '../../components/ui/Defilement'
 
 const TABS = [
   { id: 'capacity', label: 'Ressources', icon: Gauge },
@@ -56,6 +57,28 @@ const STATUS_VARIANT = {
   suspended: 'warning',
   cancelled: 'neutral',
   expired: 'critical',
+}
+
+/**
+ * Le serveur renvoie une clé technique ; l'exploitant lit du français.
+ *
+ * Le tableau affichait `row.status` tel quel : « active », « trial »,
+ * « cancelled ». En anglais, en minuscule, au milieu d'une interface
+ * française. Une clé inconnue reste affichée telle quelle plutôt que masquée
+ * — mieux vaut un libellé brut qu'une cellule vide — mais elle est au moins
+ * capitalisée.
+ */
+const STATUS_LIBELLE = {
+  active: 'Actif',
+  trial: 'Essai',
+  suspended: 'Suspendu',
+  cancelled: 'Résilié',
+  expired: 'Expiré',
+}
+
+function libelleEtat(cle) {
+  if (!cle) return 'Inconnu'
+  return STATUS_LIBELLE[cle] ?? cle.charAt(0).toUpperCase() + cle.slice(1)
 }
 
 function ratioVariant(ratio) {
@@ -124,7 +147,7 @@ function CapacityPanel({ data }) {
           Ce qu’il resterait d’emplacements de surveillance si vous activiez un client
           supplémentaire sur chaque offre.
         </p>
-        <div className="overflow-x-auto">
+        <Defilement>
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500">
@@ -153,12 +176,12 @@ function CapacityPanel({ data }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </Defilement>
       </Card>
 
       <Card>
         <CardHeader title="Répartition par client" />
-        <div className="overflow-x-auto">
+        <Defilement>
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500">
@@ -175,7 +198,9 @@ function CapacityPanel({ data }) {
                   <td className="py-2 pr-4 text-ink-800">{row.tenant_name}</td>
                   <td className="py-2 pr-4 text-ink-600">{row.plan_name}</td>
                   <td className="py-2 pr-4">
-                    <Badge variant={STATUS_VARIANT[row.status] || 'neutral'}>{row.status}</Badge>
+                    <Badge variant={STATUS_VARIANT[row.status] || 'neutral'} dot>
+                      {libelleEtat(row.status)}
+                    </Badge>
                   </td>
                   <td className="py-2 pr-4 text-ink-600">{row.monitored_assets}</td>
                   <td className="py-2 text-ink-600">{row.monthly_scans_used}</td>
@@ -183,7 +208,7 @@ function CapacityPanel({ data }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </Defilement>
       </Card>
     </div>
   )
@@ -210,7 +235,7 @@ function HealthPanel({ health }) {
           {health.checks.map((check) => (
             <li
               key={check.name}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-ink-50 px-3 py-2"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-creuse px-3 py-2"
             >
               <span className="text-sm text-ink-800">{check.label}</span>
               <span className="flex items-center gap-3">
@@ -226,7 +251,8 @@ function HealthPanel({ health }) {
 
       <Card>
         <CardHeader title="Tâches planifiées" />
-        <table className="w-full text-left text-sm">
+        <Defilement libelle="Tâches planifiées, défilement horizontal">
+          <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500">
               <th className="py-2 pr-4 font-medium">Tâche</th>
@@ -247,7 +273,8 @@ function HealthPanel({ health }) {
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </Defilement>
       </Card>
 
       <Card>
@@ -300,7 +327,7 @@ function AuditPanel({ audit }) {
           </span>
         )}
       </div>
-      <div className="overflow-x-auto">
+      <Defilement>
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500">
@@ -329,7 +356,7 @@ function AuditPanel({ audit }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </Defilement>
     </Card>
   )
 }

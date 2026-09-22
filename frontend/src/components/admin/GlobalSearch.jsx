@@ -54,14 +54,14 @@ export default function GlobalSearch({ onSelectTenant, onSelectProspect }) {
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Rechercher une entreprise, une personne, un prospect…"
         aria-label="Recherche globale"
-        className="w-full rounded-md border border-bati-600 bg-bati-700 py-1.5 pl-9 pr-8 text-sm text-white placeholder:text-craie-douce focus-visible:outline-2 focus-visible:outline-white"
+        className="w-full rounded-md border border-bati-600 bg-bati-700 py-1.5 pl-9 pr-8 text-sm text-craie placeholder:text-craie-douce"
       />
       {query && (
         <button
           type="button"
           onClick={() => setQuery('')}
           aria-label="Effacer la recherche"
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-craie-douce hover:text-white"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-craie-douce hover:text-craie"
         >
           <X className="size-4" aria-hidden="true" />
         </button>
@@ -83,7 +83,7 @@ export default function GlobalSearch({ onSelectTenant, onSelectProspect }) {
                   key={tenant.id}
                   type="button"
                   onClick={() => pick(() => onSelectTenant(tenant.id))}
-                  className="block w-full px-3 py-1.5 text-left text-sm text-ink-800 hover:bg-ink-50"
+                  className="block w-full px-3 py-1.5 text-left text-sm text-ink-800 hover:bg-creuse"
                 >
                   {tenant.name}
                   {tenant.plan_name && <span className="text-ink-500"> — {tenant.plan_name}</span>}
@@ -104,7 +104,7 @@ export default function GlobalSearch({ onSelectTenant, onSelectProspect }) {
                   type="button"
                   disabled={!user.tenant_id}
                   onClick={() => pick(() => onSelectTenant(user.tenant_id))}
-                  className="block w-full px-3 py-1.5 text-left text-sm text-ink-800 hover:bg-ink-50 disabled:text-ink-400"
+                  className="block w-full px-3 py-1.5 text-left text-sm text-ink-800 hover:bg-creuse disabled:text-ink-400"
                 >
                   {user.email}
                   {user.tenant_name && <span className="text-ink-500"> — {user.tenant_name}</span>}
@@ -125,7 +125,7 @@ export default function GlobalSearch({ onSelectTenant, onSelectProspect }) {
                   key={prospect.id}
                   type="button"
                   onClick={() => pick(() => onSelectProspect(prospect.id))}
-                  className="block w-full px-3 py-1.5 text-left text-sm text-ink-800 hover:bg-ink-50"
+                  className="block w-full px-3 py-1.5 text-left text-sm text-ink-800 hover:bg-creuse"
                 >
                   {prospect.company} — {prospect.full_name}
                   <span className="text-ink-500"> · {prospect.status_label}</span>

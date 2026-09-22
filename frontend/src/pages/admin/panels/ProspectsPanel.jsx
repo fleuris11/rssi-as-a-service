@@ -228,7 +228,7 @@ function ProspectCard({ prospect, onChanged, onConvert }) {
       </div>
 
       {askingReason && (
-        <div className="mt-3 flex flex-wrap items-end gap-2 rounded-md bg-ink-50 px-3 py-2">
+        <div className="mt-3 flex flex-wrap items-end gap-2 rounded-md bg-creuse px-3 py-2">
           <div className="min-w-56 flex-1">
             <Field
               label="Motif de la perte"

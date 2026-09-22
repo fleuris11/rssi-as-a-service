@@ -46,7 +46,7 @@ export default function ConfirmDialog({
         {consequences.length > 0 && (
           <div
             className={`rounded-md border px-4 py-3 ${
-              danger ? 'border-critical-border bg-critical-subtle' : 'border-ink-200 bg-ink-50'
+              danger ? 'border-critical-border bg-critical-subtle' : 'border-ink-200 bg-creuse'
             }`}
           >
             <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-ink-600">

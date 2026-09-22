@@ -4,6 +4,7 @@ import { filtrerParTexte } from '../../utils/recherche'
 import Button from './Button'
 import EmptyState from './EmptyState'
 import SearchInput from './SearchInput'
+import Defilement from './Defilement'
 
 /**
  * Le tableau de données du produit — un seul, réutilisé partout.
@@ -187,7 +188,7 @@ export default function DataTable({
           description={texte ? 'Aucune ligne ne correspond à cette recherche.' : descriptionVide}
         />
       ) : (
-        <div className="overflow-x-auto">
+        <Defilement>
           <table className="tableau" data-densite={densite}>
             <caption className="sr-only">{legende}</caption>
             <thead>
@@ -272,7 +273,7 @@ export default function DataTable({
               })}
             </tbody>
           </table>
-        </div>
+        </Defilement>
       )}
 
       {filtrees.length > parPage && (

@@ -5,6 +5,7 @@ import Badge from '../../../components/ui/Badge'
 import Card, { CardHeader } from '../../../components/ui/Card'
 import EmptyState from '../../../components/ui/EmptyState'
 import { SkeletonCard } from '../../../components/ui/Skeleton'
+import Defilement from '../../../components/ui/Defilement'
 
 /**
  * Les actifs dont la possession n'est pas établie (ADR-026).
@@ -72,7 +73,7 @@ export default function OwnershipReviewPanel() {
       </Card>
 
       <Card>
-        <div className="overflow-x-auto">
+        <Defilement>
           <table className="w-full min-w-[40rem] text-sm">
             <thead>
               <tr className="border-b border-ink-100 text-left">
@@ -106,7 +107,7 @@ export default function OwnershipReviewPanel() {
               ))}
             </tbody>
           </table>
-        </div>
+        </Defilement>
       </Card>
     </div>
   )

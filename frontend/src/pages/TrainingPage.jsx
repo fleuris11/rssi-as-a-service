@@ -7,6 +7,7 @@ import Card from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
 import SearchInput from '../components/ui/SearchInput'
 import { filtrerParTexte } from '../utils/recherche'
+import Defilement from '../components/ui/Defilement'
 import {
   ImportSalaries,
   PropositionsPreuve,
@@ -169,7 +170,7 @@ export default function TrainingPage() {
             }
           />
         ) : (
-          <div className="mt-4 overflow-x-auto">
+          <Defilement className="mt-4">
             <table className="w-full text-sm">
               <caption className="sr-only">
                 Salariés inscrits, avec l’état de leur parcours
@@ -242,7 +243,7 @@ export default function TrainingPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Defilement>
         )}
       </Card>
     </div>

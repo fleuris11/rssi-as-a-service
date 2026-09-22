@@ -6,6 +6,7 @@ import ApercuProduit from './components/ApercuProduit'
 import { Acte, Action } from './atomes'
 import BrowserFrame from './components/BrowserFrame'
 import FlowDiagram from './components/FlowDiagram'
+import Defilement from '../components/ui/Defilement'
 import {
   AUSSI_LIVRE,
   DIAGNOSTIC,
@@ -327,7 +328,7 @@ export function Offres() {
           Défilement horizontal sur petit écran plutôt qu'un second rendu en
           blocs : deux rendus du même contenu doubleraient chaque libellé dans
           la page, donc pour un lecteur d'écran aussi. */}
-      <div className="mt-10 overflow-x-auto">
+      <Defilement className="mt-10" libelle="Comparaison des offres, défilement horizontal">
         {/* `aria-label` plutôt qu'un `<caption>` masqué : un caption en
             position absolue s'échappe de son conteneur à défilement et élargit
             la PAGE de 123 px au téléphone. Mesuré, pas supposé. */}
@@ -446,7 +447,7 @@ export function Offres() {
             </tr>
           </tbody>
         </table>
-      </div>
+      </Defilement>
       <p className="t-meta mt-8 max-w-2xl">{PRICING.disclaimer}</p>
     </Acte>
   )

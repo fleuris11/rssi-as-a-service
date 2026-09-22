@@ -12,6 +12,7 @@ import {
   orPlaceholder,
 } from '../legalConfig'
 import { useSeo } from '../useSeo'
+import Defilement from '../../components/ui/Defilement'
 
 /**
  * Pages légales, générées depuis `legalConfig.js`.
@@ -116,7 +117,7 @@ function PrivacyPolicy() {
       </Section>
       <Section heading="Sous-traitants ultérieurs">
         <p>Nous faisons appel aux prestataires suivants, et à eux seuls :</p>
-        <div className="overflow-x-auto">
+        <Defilement>
           <table className="mt-2 w-full text-left text-sm">
             <thead>
               <tr className="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500">
@@ -135,10 +136,10 @@ function PrivacyPolicy() {
               ))}
             </tbody>
           </table>
-        </div>
+        </Defilement>
       </Section>
       <Section heading="Durées de conservation">
-        <div className="overflow-x-auto">
+        <Defilement>
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500">
@@ -157,7 +158,7 @@ function PrivacyPolicy() {
               ))}
             </tbody>
           </table>
-        </div>
+        </Defilement>
       </Section>
       <Section heading="Droits des personnes">
         <p>

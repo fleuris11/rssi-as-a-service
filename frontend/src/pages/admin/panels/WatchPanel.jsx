@@ -17,6 +17,7 @@ import SearchInput from '../../../components/ui/SearchInput'
 import { SkeletonCard } from '../../../components/ui/Skeleton'
 import { useToast } from '../../../components/ui/Toast'
 import { filtrerParTexte } from '../../../utils/recherche'
+import Defilement from '../../../components/ui/Defilement'
 
 const STATUT_VARIANT = {
   new: 'warning',
@@ -219,7 +220,7 @@ function Suggestion({ suggestion, referentiels, onAction, occupe }) {
       )}
 
       {suggestion.source_excerpt && (
-        <p className="mt-2 max-h-24 overflow-y-auto rounded-md bg-ink-50 px-3 py-2 text-xs text-ink-600">
+        <p className="mt-2 max-h-24 overflow-y-auto rounded-md bg-creuse px-3 py-2 text-xs text-ink-600">
           {suggestion.source_excerpt}
         </p>
       )}
@@ -291,7 +292,7 @@ function Suggestion({ suggestion, referentiels, onAction, occupe }) {
               key={qualification.value}
               type="button"
               onClick={() => onAction(suggestion, 'kept', qualification.value)}
-              className={`transition-smooth rounded-full border px-2.5 py-1 text-xs ${
+              className={`transition-smooth rounded-sm border px-2.5 py-1 text-xs ${
                 suggestion.kind === qualification.value
                   ? 'border-brand-600 bg-brand-50 text-ink-800'
                   : 'border-ink-200 text-ink-500 hover:border-brand-300'
@@ -443,7 +444,7 @@ export default function WatchPanel({ referentiels = [] }) {
                 type="button"
                 onClick={() => setFiltre(onglet.value)}
                 aria-pressed={filtre === onglet.value}
-                className={`transition-smooth rounded-full px-3 py-1.5 text-xs ${
+                className={`transition-smooth rounded-sm px-3 py-1.5 text-xs ${
                   filtre === onglet.value
                     ? 'bg-brand-600 text-white'
                     : 'bg-ink-100 text-ink-600 hover:text-brand-700'
@@ -533,7 +534,7 @@ export default function WatchPanel({ referentiels = [] }) {
             description="Uniquement des sources primaires : l'organisme qui publie le texte, jamais celui qui le commente."
           />
         </div>
-        <div className="overflow-x-auto px-5 pb-4">
+        <Defilement className="px-5 pb-4">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-ink-200 text-ink-500">
@@ -582,7 +583,7 @@ export default function WatchPanel({ referentiels = [] }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </Defilement>
       </Card>
     </div>
   )

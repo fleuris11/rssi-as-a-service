@@ -308,7 +308,7 @@ export function SettingsPanel({ configuration }) {
           {(configuration?.keys || []).map((key) => (
             <li
               key={key.name}
-              className="flex items-center justify-between gap-3 rounded-md bg-ink-50 px-3 py-2"
+              className="flex items-center justify-between gap-3 rounded-md bg-creuse px-3 py-2"
             >
               <span className="text-sm text-ink-800">{key.label}</span>
               <Badge variant={key.present && key.valid ? 'ok' : 'critical'} dot>

@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, ChevronLeft, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import Button from '../ui/Button'
+import Defilement from '../ui/Defilement'
 
 const PAGE_SIZE = 50
 
@@ -78,26 +79,29 @@ export default function DataTable({
               }}
               placeholder="Filtrer cette liste…"
               aria-label="Filtrer cette liste"
-              className="transition-smooth w-full rounded-md border border-ink-200 py-2 pl-9 pr-3 text-sm focus-visible:outline-2 focus-visible:outline-brand-600"
+              className="transition-smooth w-full rounded-md border border-ink-300 bg-surface py-2 pl-9 pr-3 text-sm hover:border-ink-400"
             />
           </div>
         )}
         {toolbar}
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
+      {/* Le tableau prend la grammaire commune (`.tableau`) : en-tetes en
+          serigraphie condensee, filet d'1 px, et surtout une densite pilotee
+          par la variable CSS `--cellule-y`. La console ouvre en compacte. */}
+      <Defilement>
+        <table className="tableau">
           <thead>
-            <tr className="border-b border-ink-200 text-xs uppercase tracking-wide text-ink-500">
+            <tr>
               {columns.map((column) => (
-                <th key={column.key} className="py-2 pr-4 font-medium">
+                <th key={column.key} scope="col">
                   {column.sortable === false ? (
                     column.label
                   ) : (
                     <button
                       type="button"
                       onClick={() => toggleSort(column.key)}
-                      className="flex items-center gap-1 hover:text-ink-800"
+                      className="flex items-center gap-1 uppercase tracking-[0.09em] hover:text-ink-800"
                       aria-label={`Trier par ${column.label}`}
                     >
                       {column.label}
@@ -117,13 +121,11 @@ export default function DataTable({
             {visible.map((row) => (
               <tr
                 key={getRowKey(row)}
-                className={`border-b border-ink-100 last:border-0 ${
-                  onRowClick ? 'cursor-pointer hover:bg-ink-50' : ''
-                }`}
+                className={onRowClick ? 'cursor-pointer' : undefined}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
               >
                 {columns.map((column) => (
-                  <td key={column.key} className="py-2.5 pr-4 text-ink-700">
+                  <td key={column.key} className="text-ink-700">
                     {column.render ? column.render(row) : String(row[column.key] ?? '—')}
                   </td>
                 ))}
@@ -131,13 +133,17 @@ export default function DataTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </Defilement>
 
-      {visible.length === 0 && <p className="py-6 text-center text-sm text-ink-500">{emptyMessage}</p>}
+      {visible.length === 0 && (
+        <p className="border-t border-ink-200 py-8 text-center text-sm text-ink-500">
+          {emptyMessage}
+        </p>
+      )}
 
       {pageCount > 1 && (
         <div className="flex items-center justify-between text-sm text-ink-600">
-          <span>
+          <span className="n">
             {current * PAGE_SIZE + 1}–{Math.min((current + 1) * PAGE_SIZE, sorted.length)} sur{' '}
             {sorted.length}
           </span>

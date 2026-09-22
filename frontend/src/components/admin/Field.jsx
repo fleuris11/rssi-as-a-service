@@ -1,6 +1,6 @@
 const baseInput =
   'transition-smooth mt-1 w-full rounded-md border border-ink-200 px-3 py-2 text-sm ' +
-  'focus-visible:outline-2 focus-visible:outline-brand-600 disabled:bg-ink-50 disabled:text-ink-500'
+  'focus-visible:outline-2 focus-visible:outline-brand-600 disabled:bg-creuse disabled:text-ink-500'
 
 /**
  * Champ de formulaire de la console.

@@ -726,13 +726,13 @@ function FeaturesSection({ tenant }) {
       {/* Aperçu : le menu tel que ce client le voit, sans se connecter à son
           compte — un administrateur plateforme n'entre pas dans un espace
           client (décision ADR-014). */}
-      <section className="mt-4 rounded-md border border-ink-200 bg-ink-50/60 p-4">
+      <section className="mt-4 rounded-md border border-ink-200 bg-creuse p-4">
         <h3 className="text-sm font-medium text-ink-800">Son menu, avec cette composition</h3>
         <ul className="mt-2 flex flex-wrap gap-1.5">
           {[...principale, ...techniques].map((item) => (
             <li
               key={item.to}
-              className="rounded-full border border-ink-200 bg-surface px-2.5 py-1 text-xs text-ink-700"
+              className="rounded-sm border border-ink-300 bg-surface px-2.5 py-1 text-xs text-ink-700"
             >
               {item.label}
             </li>
@@ -978,7 +978,7 @@ export function ClientDetail({ tenantId, plans, onBack, onChanged }) {
           </div>
           <Field label="Adresse" name="address" type="textarea" rows={2} value={form.address} onChange={(n, v) => setForm((p) => ({ ...p, [n]: v }))} />
 
-          <div className="rounded-md border border-ink-200 bg-ink-50/60 p-4">
+          <div className="rounded-md border border-ink-200 bg-creuse p-4">
             <p className="text-sm font-medium text-ink-800">Délai entre deux analyses</p>
             <p className="mt-1 text-sm text-ink-600">
               Temps d’attente imposé à ce client entre deux analyses lancées depuis son
