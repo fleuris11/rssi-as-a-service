@@ -78,3 +78,23 @@ Dans `src/marketing/pages/LandingPage.jsx`, passer le chemin au composant :
 Le composant bascule automatiquement de la reconstitution CSS vers l'image.
 Renseigner un `alt` **descriptif** : il est lu par les lecteurs d'écran et
 affiché si l'image ne charge pas.
+
+## Mise à jour de la refonte (09/2026)
+
+Les captures sont désormais **livrées en WebP** (`.webp`), produites par
+`e2e/zz-captures-produit.spec.js` puis converties : 595 ko de PNG devenaient
+282 ko en WebP, pour une page d'accueil qui en charge quatre.
+
+| Fichier | Où il apparaît |
+|---|---|
+| `exposition.webp` | accroche de la page d'accueil |
+| `diagnostic.webp` | section « Diagnostic » |
+| `formation.webp` | section « Également livré » |
+| `tableau-de-bord.webp` | disponible, non encore employé |
+
+`revelation.png` n'existe pas : la modale de révélation affiche un secret, et
+la mettre en capture demanderait de mettre en scène une vraie valeur. Le
+substitut CSS reste affiché à sa place — c'est le comportement prévu.
+
+**À recapturer après la refonte de l'espace client**, qui vient après la
+vitrine : ces quatre images montrent encore l'interface d'avant.

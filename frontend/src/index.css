@@ -354,6 +354,28 @@ body {
   border-top: 1px solid var(--color-ink-100);
 }
 
+/* Masqué à l'œil, lu par les technologies d'assistance — SANS position
+   absolue.
+ *
+ * `sr-only` de Tailwind positionne l'élément en absolu. À l'intérieur d'un
+ * conteneur à défilement horizontal, sa position statique se calcule dans
+ * l'espace du CONTENU (640 px de tableau), si bien que l'élément s'échappe du
+ * conteneur et élargit la page entière : la vitrine débordait de 123 px au
+ * téléphone à cause de deux mots invisibles. Mesuré, puis bissecté section
+ * par section.
+ *
+ * Ici l'élément reste dans le flux, large d'un pixel : il ne peut rien
+ * déborder. À employer partout où un texte masqué vit dans un tableau ou une
+ * zone qui défile. */
+.lecture-seule {
+  display: inline-block;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
 /* Chiffres en chasse tabulaire. Sans cela, une colonne de nombres
    « danse » d'une ligne à l'autre et devient illisible en balayage — c'est
    le défaut le plus visible d'un tableau de données. */

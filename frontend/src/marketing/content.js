@@ -58,6 +58,58 @@ export const HERO = {
   note: 'Aucune installation. Aucun agent à déployer sur vos postes.',
 }
 
+/**
+ * Le bandeau de preuve, juste sous l'accroche.
+ *
+ * **Uniquement des faits vérifiables dans le code ou la documentation.**
+ * Aucun chiffre commercial — nombre de clients, de fuites détectées, taux de
+ * satisfaction : le produit n'a qu'un client, et tout chiffre de ce genre
+ * serait faux. Un prospect qui vérifie une seule affirmation fausse cesse de
+ * croire les autres.
+ *
+ * Sources : 42 mesures = le référentiel ANSSI embarqué (backend/data) ;
+ * 90 jours = BREACH_SECRET_RETENTION_DAYS ; hébergement = mentions légales.
+ */
+export const PREUVES = [
+  {
+    valeur: '42',
+    libelle: 'mesures du guide d’hygiène de l’ANSSI, reprises une à une',
+  },
+  {
+    valeur: '90 jours',
+    libelle: 'puis les mots de passe retrouvés sont effacés automatiquement',
+  },
+  {
+    valeur: 'France',
+    libelle: 'hébergement et traitement des données, sans sortie de l’Union européenne',
+  },
+]
+
+/**
+ * Ce que le produit fait AUSSI, et qui n'apparaissait nulle part sur la
+ * vitrine alors que c'est livré. Trois sujets, trois phrases : le but n'est
+ * pas de tout détailler mais de ne rien cacher.
+ */
+export const AUSSI_LIVRE = {
+  title: 'Et aussi, parce que c’est livré',
+  subtitle:
+    'Trois volets qui ne tiennent pas dans la page d’accueil, mais qui existent et fonctionnent.',
+  items: [
+    {
+      title: 'Comptes désignés',
+      body: "Faites surveiller des comptes précis — direction, comptes sensibles — indépendamment de vos noms de domaine. La finalité est déclarée et conservée, parce que ce sont les données d'une personne.",
+    },
+    {
+      title: 'Veille réglementaire',
+      body: 'Les publications des autorités, triées et rattachées à vos obligations. La veille suggère ; elle ne modifie jamais votre diagnostic toute seule.',
+    },
+    {
+      title: 'Formation des salariés',
+      body: "Des cours de dix minutes envoyés par lien personnel, sans créer de compte, avec une attestation de suivi. Aucun classement des salariés par score n'est produit.",
+    },
+  ],
+}
+
 export const PROBLEM = {
   title: 'Ce qui se passe pendant que vous travaillez',
   items: [

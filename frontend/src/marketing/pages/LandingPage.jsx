@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Mail } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { publicApi } from '../../api/endpoints'
@@ -9,6 +9,7 @@ import FlowDiagram from '../components/FlowDiagram'
 import MarketingLayout from '../components/MarketingLayout'
 import Reveal from '../components/Reveal'
 import {
+  AUSSI_LIVRE,
   DIAGNOSTIC,
   DIFFERENTIATORS,
   FAQ,
@@ -16,6 +17,7 @@ import {
   HERO,
   HOW_IT_WORKS,
   NOTIFICATIONS,
+  PREUVES,
   PRICING,
   PROBLEM,
   quotaLines,
@@ -28,7 +30,7 @@ function Section({ id, children, className = '' }) {
     // Rythme vertical unique entre sections : deux valeurs voisines (80 px
     // puis 96 px) ne créaient aucune régularité perceptible, seulement de
     // l'irrégularité.
-    <section id={id} className={`px-5 py-20 sm:py-28 ${className}`}>
+    <section id={id} className={`px-5 py-14 sm:py-20 ${className}`}>
       <div className="mx-auto max-w-6xl">{children}</div>
     </section>
   )
@@ -63,12 +65,11 @@ function SectionTitle({ eyebrow, title, subtitle }) {
 
 function Hero() {
   return (
-    <div className="relative overflow-hidden border-b border-ink-200/70">
-      {/* Décor : dégradé discret et grille légère, en CSS pur. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_0%,var(--color-brand-100,#e3eaf6)_0%,transparent_70%)]"
-      />
+    <div className="relative overflow-hidden border-b border-ink-200 bg-surface">
+      {/* Plus de dégradé de fond (refonte). Il était discret, mais il faisait
+          exactement ce qu'on reproche au web généré : poser une ambiance à la
+          place d'une preuve. Ce qui doit attirer l'œil ici est la capture du
+          produit, pas la lumière derrière le titre. */}
       <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 py-20 sm:py-24 lg:grid-cols-[1.05fr_1fr] lg:gap-16">
         <div>
           {/* L'accroche doit se lire en une seconde. Trois leviers, aucun
@@ -80,9 +81,8 @@ function Hero() {
                 produit. « Se connecter » s'adresse à un client existant, pas
                 au prospect : elle n'a pas à peser autant. */}
           <Reveal>
-            <h1 className="t-display max-w-[19ch] text-3xl leading-[1.08] sm:text-4xl lg:text-[3rem]">
-              {HERO.title}
-            </h1>
+            {/* `t-hero` : le seul emploi de ce rôle dans tout le produit. */}
+            <h1 className="t-hero max-w-[19ch]">{HERO.title}</h1>
           </Reveal>
           <Reveal delay={80}>
             <p className="t-lead mt-5 max-w-[46ch] text-lg">{HERO.subtitle}</p>
@@ -108,9 +108,9 @@ function Hero() {
 
         <Reveal delay={220}>
           <BrowserFrame
-            src="/screenshots/exposition.png"
+            src="/screenshots/exposition.webp"
             alt="Page Exposition du produit : les actifs classés par niveau d’exposition, avec l’analyse en tête."
-            caption="Page Exposition — reconstitution de l’interface réelle."
+            caption="Page Exposition — capture réelle, sur le client de démonstration."
           >
             <ExposureMockup />
           </BrowserFrame>
@@ -120,24 +120,87 @@ function Hero() {
   )
 }
 
+/**
+ * Le bandeau de preuve, juste sous l'accroche.
+ *
+ * Trois faits, pas trois arguments. Chacun est vérifiable dans le code ou la
+ * documentation (voir `PREUVES` dans content.js) : aucun chiffre commercial
+ * n'y figure, parce que le produit n'a qu'un client et que tout chiffre de ce
+ * genre serait faux.
+ */
+function Preuves() {
+  return (
+    <div className="border-b border-ink-200 bg-brand-900">
+      <div className="mx-auto grid max-w-6xl gap-8 px-5 py-9 sm:grid-cols-3">
+        {PREUVES.map((preuve) => (
+          <div key={preuve.valeur}>
+            <p className="num font-display text-2xl font-bold text-white sm:text-3xl">
+              {preuve.valeur}
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-brand-200">{preuve.libelle}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Comptes désignés, veille réglementaire, formation — livrés, et absents de
+ * la vitrine jusqu'ici. Raccourcir la page ne doit rien faire disparaître de
+ * ce que le produit fait.
+ */
+function AussiLivre() {
+  return (
+    <Section className="bg-ink-50/50">
+      <Reveal>
+        <SectionTitle
+          eyebrow="Également livré"
+          title={AUSSI_LIVRE.title}
+          subtitle={AUSSI_LIVRE.subtitle}
+        />
+      </Reveal>
+      <div className="mt-10 grid items-start gap-10 lg:grid-cols-[7fr_5fr]">
+        <div>
+          {AUSSI_LIVRE.items.map((item, index) => (
+            <Reveal key={item.title} delay={index * 60} className="ligne-liste block py-5">
+              <h3 className="t-title text-base">{item.title}</h3>
+              <p className="t-body mt-1.5">{item.body}</p>
+            </Reveal>
+          ))}
+        </div>
+        <Reveal delay={120}>
+          <BrowserFrame
+            src="/screenshots/formation.webp"
+            alt="Le module de formation : campagnes, taux de participation et questions les plus ratées."
+            caption="La formation des salariés — capture réelle, sur le client de démonstration."
+          />
+        </Reveal>
+      </div>
+    </Section>
+  )
+}
+
 function Problem() {
   return (
     <Section id="probleme" className="bg-ink-50/50">
       <Reveal>
         <SectionTitle eyebrow="Le constat" title={PROBLEM.title} />
       </Reveal>
-      <div className="mt-10 grid gap-6 md:grid-cols-3">
+      {/* Trois constats, donc une LISTE — pas trois cartes. Le constat se lit
+          d'un trait, et trois boîtes de même forme obligeaient l'œil à
+          repartir de zéro à chaque fois. */}
+      <div className="mt-10 max-w-3xl">
         {PROBLEM.items.map((item, index) => (
-          <Reveal key={item.title} delay={index * 90}>
-            <div className="h-full rounded-lg border border-ink-200 bg-surface p-6">
-              <span
-                aria-hidden="true"
-                className="block h-1 w-10 rounded-full bg-brand-600"
-              />
-              <h3 className="mt-4 font-display text-lg font-semibold text-ink-900">
-                {item.title}
-              </h3>
-              <p className="mt-2.5 text-sm leading-relaxed text-ink-600">{item.body}</p>
+          <Reveal key={item.title} delay={index * 60}>
+            <div className="ligne-liste flex gap-5 py-5">
+              <span className="t-meta num shrink-0 pt-0.5 text-ink-400">
+                {String(index + 1).padStart(2, '0')}
+              </span>
+              <div>
+                <h3 className="t-title text-lg">{item.title}</h3>
+                <p className="t-body mt-1.5">{item.body}</p>
+              </div>
             </div>
           </Reveal>
         ))}
@@ -152,7 +215,7 @@ function Differentiators() {
       <Reveal>
         <SectionTitle eyebrow="Le produit" title={DIFFERENTIATORS.title} />
       </Reveal>
-      <div className="mt-12 space-y-14">
+      <div className="mt-10 space-y-12">
         {DIFFERENTIATORS.items.map((item, index) => (
           <Reveal key={item.id}>
             <article
@@ -286,18 +349,21 @@ function HowItWorks() {
           <FlowDiagram />
         </div>
       </Reveal>
-      <ol className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      {/* Quatre étapes, donc une bande — pas quatre cartes surmontées d'une
+          pastille ronde, qui est la mise en page la plus reconnaissable du
+          web généré. Le filet vertical porte la progression sur grand écran,
+          le numéro la porte partout. */}
+      <ol className="mt-10 grid gap-x-8 gap-y-7 md:grid-cols-2 lg:grid-cols-4">
         {HOW_IT_WORKS.steps.map((step, index) => (
-          <Reveal key={step.number} as="li" delay={index * 80} className="h-full">
-            <div className="h-full rounded-lg border border-ink-200 bg-surface p-6">
-              <span className="flex size-8 items-center justify-center rounded-full bg-brand-100 font-display text-sm font-semibold text-brand-800">
-                {step.number}
-              </span>
-              <h3 className="mt-4 font-display text-base font-semibold text-ink-900">
-                {step.title}
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-ink-600">{step.body}</p>
-            </div>
+          <Reveal
+            key={step.number}
+            as="li"
+            delay={index * 60}
+            className="lg:border-l lg:border-ink-200 lg:pl-5"
+          >
+            <span className="t-eyebrow num text-brand-700">Étape {step.number}</span>
+            <h3 className="t-title mt-2 text-base">{step.title}</h3>
+            <p className="t-body mt-1.5">{step.body}</p>
           </Reveal>
         ))}
       </ol>
@@ -323,26 +389,38 @@ function Diagnostic() {
           subtitle={DIAGNOSTIC.subtitle}
         />
       </Reveal>
-      <ol className="mt-10 grid gap-6 md:grid-cols-2">
-        {DIAGNOSTIC.steps.map((step, index) => (
-          <Reveal key={step.title} as="li" delay={index * 70} className="h-full">
-            <div className="h-full rounded-lg border border-ink-200 bg-surface p-6">
+      {/* La preuve à droite, l'explication à gauche : c'est le score et le
+          plan d'action que le visiteur veut voir, pas quatre encadrés. */}
+      <div className="mt-10 grid items-start gap-10 lg:grid-cols-[5fr_7fr]">
+        <ol>
+          {DIAGNOSTIC.steps.map((step, index) => (
+            <Reveal key={step.title} as="li" delay={index * 60} className="ligne-liste block py-4">
               {/* Le numéro encode une progression réelle : on répond, on
                   obtient un score, on en tire un plan, puis des documents.
                   Il n'est pas décoratif — d'où la liste ordonnée. */}
-              <span className="flex size-8 items-center justify-center rounded-full bg-brand-100 font-display text-sm font-semibold text-brand-800">
-                {index + 1}
-              </span>
-              <h3 className="mt-4 font-display text-base font-semibold text-ink-900">
-                {step.title}
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-ink-600">{step.body}</p>
-            </div>
-          </Reveal>
-        ))}
-      </ol>
+              <div className="flex gap-4">
+                <span className="t-meta num shrink-0 pt-0.5 text-ink-400">
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                <div>
+                  <h3 className="t-title text-base">{step.title}</h3>
+                  <p className="t-body mt-1">{step.body}</p>
+                </div>
+              </div>
+            </Reveal>
+          ))}
+        </ol>
+
+        <Reveal delay={120}>
+          <BrowserFrame
+            src="/screenshots/diagnostic.webp"
+            alt="Résultats du diagnostic : score de maturité, détail par domaine et plan d’action."
+            caption="Les résultats du diagnostic — capture réelle, sur le client de démonstration."
+          />
+        </Reveal>
+      </div>
       <Reveal>
-        <p className="mt-8 max-w-2xl text-sm text-ink-500">{DIAGNOSTIC.note}</p>
+        <p className="t-meta mt-8 max-w-2xl">{DIAGNOSTIC.note}</p>
       </Reveal>
     </Section>
   )
@@ -363,22 +441,15 @@ function Notifications() {
           subtitle={NOTIFICATIONS.subtitle}
         />
       </Reveal>
-      <div className="mt-10 grid gap-x-10 gap-y-8 md:grid-cols-2">
+      {/* La même enveloppe devant les quatre entrées ne disait rien : une
+          icône répétée à l'identique est un ornement, pas une information.
+          Le filet sépare, le titre porte le sens. */}
+      <div className="mt-10 grid gap-x-12 md:grid-cols-2">
         {NOTIFICATIONS.items.map((item, index) => (
-          <Reveal key={item.title} delay={index * 60}>
-            <div className="flex gap-4">
-              <span
-                aria-hidden="true"
-                className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-brand-100 text-brand-700"
-              >
-                <Mail className="size-4" />
-              </span>
-              <div>
-                <h3 className="font-display text-base font-semibold text-ink-900">{item.title}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-ink-600">{item.body}</p>
-                {item.detail && <p className="mt-2 text-sm text-ink-500">{item.detail}</p>}
-              </div>
-            </div>
+          <Reveal key={item.title} delay={index * 60} className="ligne-liste block py-5">
+            <h3 className="t-title text-base">{item.title}</h3>
+            <p className="t-body mt-1.5">{item.body}</p>
+            {item.detail && <p className="t-meta mt-2">{item.detail}</p>}
           </Reveal>
         ))}
       </div>
@@ -392,26 +463,35 @@ function Trust() {
       <Reveal>
         <SectionTitle eyebrow="Sécurité et données" title={TRUST.title} subtitle={TRUST.subtitle} />
       </Reveal>
-      <div className="mt-10 grid gap-x-10 gap-y-8 md:grid-cols-2">
+      {/* Les six engagements sont CONSERVÉS en entier : c'est la section
+          qu'un RSSI lit vraiment, et elle ne se résume pas à une question de
+          la foire aux questions. Seule la forme change — des filets, et la
+          coche répétée en moins. */}
+      <div className="mt-10 grid gap-x-12 md:grid-cols-2">
         {TRUST.items.map((item, index) => (
-          <Reveal key={item.title} delay={index * 60}>
-            <div className="flex gap-4">
-              <span
-                aria-hidden="true"
-                className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-brand-100 text-brand-700"
-              >
-                <Check className="size-4" />
-              </span>
-              <div>
-                <h3 className="font-display text-base font-semibold text-ink-900">{item.title}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-ink-600">{item.body}</p>
-              </div>
-            </div>
+          <Reveal key={item.title} delay={index * 50} className="ligne-liste block py-5">
+            <h3 className="t-title text-base">{item.title}</h3>
+            <p className="t-body mt-1.5">{item.body}</p>
           </Reveal>
         ))}
       </div>
     </Section>
   )
+}
+
+/**
+ * L'union des fonctionnalités de toutes les offres, dans l'ordre où elles
+ * apparaissent. Une comparaison n'a de sens que si chaque ligne existe pour
+ * toutes les colonnes — sinon on ne compare pas, on juxtapose.
+ */
+function fonctionnalitesComparees(plans) {
+  const vues = []
+  for (const plan of plans) {
+    for (const feature of plan.features || []) {
+      if (!vues.includes(feature.label)) vues.push(feature.label)
+    }
+  }
+  return vues
 }
 
 function Pricing() {
@@ -450,73 +530,148 @@ function Pricing() {
       <Reveal>
         <SectionTitle eyebrow="Tarifs" title={PRICING.title} subtitle={PRICING.subtitle} />
       </Reveal>
-      <div className="mt-10 grid gap-6 lg:grid-cols-3">
-        {displayed.map((plan, index) => (
-          <Reveal key={plan.code} delay={index * 90}>
-            <div
-              className={`flex h-full flex-col rounded-lg border bg-surface p-6 ${
-                plan.is_highlighted
-                  ? 'border-brand-600 shadow-elevated ring-1 ring-brand-600'
-                  : 'border-ink-200'
-              }`}
-            >
-              {plan.is_highlighted && (
-                <span className="mb-3 self-start rounded-full bg-brand-100 px-2.5 py-1 text-xs font-medium text-brand-800">
-                  Le plus demandé
-                </span>
-              )}
-              <h3 className="font-display text-lg font-semibold text-ink-900">{plan.name}</h3>
-              {plan.tagline && <p className="mt-1 text-sm text-ink-600">{plan.tagline}</p>}
-              <p className="mt-5">
-                {plan.is_quote_only ? (
-                  <span className="font-display text-2xl font-semibold text-ink-900">
-                    {PRICING.quoteLabel}
-                  </span>
-                ) : (
-                  <>
-                    <span className="font-display text-3xl font-semibold text-ink-900">
-                      {Math.round(Number(plan.price_monthly))} {PRICING.currency}
+      {/* Un TABLEAU comparatif, et non trois cartes flottantes : un
+          dirigeant compare des colonnes, il ne lit pas trois fiches l'une
+          après l'autre. Les données restent celles de l'API, avec le repli
+          statique — seule la présentation change.
+
+          Défilement horizontal sur petit écran plutôt qu'un second rendu en
+          blocs : deux rendus du même contenu doubleraient chaque libellé dans
+          la page, donc pour un lecteur d'écran aussi. */}
+      <div className="mt-10 overflow-x-auto">
+        {/* `aria-label` plutôt qu'un `<caption className="sr-only">` : un
+            caption en position absolue s'échappe de son conteneur à
+            défilement et élargit la PAGE de 123 px au téléphone. Mesuré, pas
+            supposé — la page débordait horizontalement à 390 px. */}
+        <table
+          className="w-full min-w-[640px] border-collapse text-left"
+          aria-label="Comparaison des offres : prix, quotas et fonctionnalités incluses"
+        >
+          <thead>
+            <tr>
+              <th scope="col" className="t-meta w-2/6 border-b border-ink-200 px-4 py-3 align-bottom">
+                Ce que vous obtenez
+              </th>
+              {displayed.map((plan) => (
+                <th
+                  key={plan.code}
+                  scope="col"
+                  className={`border-b border-ink-200 px-4 py-3 align-bottom ${
+                    plan.is_highlighted ? 'bg-brand-50' : ''
+                  }`}
+                >
+                  {plan.is_highlighted && (
+                    <span className="t-eyebrow mb-1.5 block text-brand-700">Le plus demandé</span>
+                  )}
+                  <span className="t-title block text-lg">{plan.name}</span>
+                  {plan.tagline && <span className="t-meta mt-1 block font-normal">{plan.tagline}</span>}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row" className="t-body border-b border-ink-100 px-4 py-3 font-medium">
+                Par mois
+              </th>
+              {displayed.map((plan) => (
+                <td
+                  key={plan.code}
+                  className={`border-b border-ink-100 px-4 py-3 ${plan.is_highlighted ? 'bg-brand-50' : ''}`}
+                >
+                  {plan.is_quote_only ? (
+                    <span className="font-display text-xl font-semibold text-ink-900">
+                      {PRICING.quoteLabel}
                     </span>
-                    <span className="text-sm text-ink-500"> / mois</span>
-                  </>
-                )}
-              </p>
-              {/* Quotas d'abord, fonctionnalités ensuite. Un dirigeant compare
-                  « combien » avant « quoi », et les quotas sont ce qui change
-                  vraiment d'une offre à l'autre — les fonctionnalités de
-                  Pilotage et de Souverain sont identiques.
-                  Les libellés sont DÉRIVÉS des champs de l'offre
-                  (quotaLines) : aucun nombre n'est recopié à la main, ni ici
-                  ni dans le repli. Voir ADR-013 sur le pool partagé. */}
-              <ul className="mt-6 space-y-2.5 border-b border-ink-200 pb-5">
-                {quotaLines(plan).map((line) => (
-                  <li key={line} className="flex gap-2.5 text-sm font-medium text-ink-800">
-                    <Check className="mt-0.5 size-4 shrink-0 text-brand-600" aria-hidden="true" />
-                    {line}
-                  </li>
-                ))}
-              </ul>
-              <ul className="mt-5 flex-1 space-y-2.5">
-                {(plan.features || []).map((feature) => (
-                  <li key={feature.key} className="flex gap-2.5 text-sm text-ink-700">
-                    <Check className="mt-0.5 size-4 shrink-0 text-brand-600" aria-hidden="true" />
-                    {feature.label}
-                  </li>
-                ))}
-              </ul>
-              <Link
-                to="/demonstration"
-                className={`transition-smooth mt-7 rounded-md px-4 py-2.5 text-center text-sm font-medium ${
-                  plan.is_highlighted
-                    ? 'bg-brand-700 text-white hover:bg-brand-800'
-                    : 'border border-ink-300 text-ink-800 hover:bg-ink-50'
-                } focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600`}
-              >
-                Demander une démonstration
-              </Link>
-            </div>
-          </Reveal>
-        ))}
+                  ) : (
+                    <>
+                      <span className="num font-display text-2xl font-semibold text-ink-900">
+                        {Math.round(Number(plan.price_monthly))} {PRICING.currency}
+                      </span>
+                      <span className="t-meta"> / mois</span>
+                    </>
+                  )}
+                </td>
+              ))}
+            </tr>
+
+            <tr>
+              <th scope="row" className="t-body border-b border-ink-100 px-4 py-3 font-medium">
+                Ce qui est compté
+              </th>
+              {displayed.map((plan) => (
+                <td
+                  key={plan.code}
+                  className={`border-b border-ink-100 px-4 py-3 align-top ${
+                    plan.is_highlighted ? 'bg-brand-50' : ''
+                  }`}
+                >
+                  {/* Les libellés sont DÉRIVÉS des champs de l'offre
+                      (quotaLines) : aucun nombre n'est recopié à la main, ni
+                      ici ni dans le repli. Voir ADR-013 sur le pool partagé. */}
+                  <ul className="space-y-1.5">
+                    {quotaLines(plan).map((line) => (
+                      <li key={line} className="t-body text-ink-800">
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                </td>
+              ))}
+            </tr>
+
+            {fonctionnalitesComparees(displayed).map((libelle) => (
+              <tr key={libelle}>
+                <th scope="row" className="t-body border-b border-ink-100 px-4 py-3 font-normal">
+                  {libelle}
+                </th>
+                {displayed.map((plan) => {
+                  const inclus = (plan.features || []).some((f) => f.label === libelle)
+                  return (
+                    <td
+                      key={plan.code}
+                      className={`border-b border-ink-100 px-4 py-3 ${
+                        plan.is_highlighted ? 'bg-brand-50' : ''
+                      }`}
+                    >
+                      {/* La coche ne suffit pas : elle n'est pas lue, et un
+                          tiret seul ne se distingue pas d'une cellule vide. */}
+                      {inclus ? (
+                        <span className="flex items-center gap-2 text-brand-700">
+                          <Check className="size-4 shrink-0" aria-hidden="true" />
+                          <span className="lecture-seule">Inclus</span>
+                        </span>
+                      ) : (
+                        <span className="t-meta">
+                          <span aria-hidden="true">—</span>
+                          <span className="lecture-seule">Non inclus</span>
+                        </span>
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+
+            <tr>
+              <td className="p-4" />
+              {displayed.map((plan) => (
+                <td key={plan.code} className={`p-4 ${plan.is_highlighted ? 'bg-brand-50' : ''}`}>
+                  <Link
+                    to="/demonstration"
+                    className={`transition-smooth inline-block rounded-md px-4 py-2.5 text-center text-sm font-medium ${
+                      plan.is_highlighted
+                        ? 'bg-brand-700 text-white hover:bg-brand-800'
+                        : 'border border-ink-300 text-ink-800 hover:bg-ink-50'
+                    } focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600`}
+                  >
+                    Demander une démonstration
+                  </Link>
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
       </div>
       <Reveal>
         <p className="mt-8 max-w-2xl text-sm text-ink-500">{PRICING.disclaimer}</p>
@@ -609,10 +764,12 @@ export default function LandingPage() {
   return (
     <MarketingLayout showSectionNav>
       <Hero />
+      <Preuves />
       <Problem />
       <Differentiators />
       <Diagnostic />
       <Notifications />
+      <AussiLivre />
       <HowItWorks />
       <Trust />
       <Pricing />
