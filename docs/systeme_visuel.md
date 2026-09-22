@@ -1,5 +1,16 @@
 # Système visuel — RSSI as a Service
 
+> **CE DOCUMENT EST CADUC.** Il décrit la direction « le trait plutôt que
+> l'ombre », abandonnée le 22/09/2026 sur décision du commanditaire. La
+> direction en vigueur est **`docs/design.md`** (« la salle de supervision »),
+> arbitrée par **`docs/adr/042-la-salle-de-supervision.md`**.
+>
+> Il est conservé, non corrigé, pour deux raisons : le dossier de
+> certification doit pouvoir montrer l'état antérieur et pourquoi il a été
+> remplacé, et plusieurs de ses raisonnements restent valides — en
+> particulier celui sur la couleur qui ne doit dire que le risque, repris tel
+> quel dans la nouvelle direction.
+
 > Source unique : `frontend/src/index.css` (bloc `@theme` + utilitaires).
 > Ce document explique **pourquoi**. Le code fait foi pour les valeurs.
 

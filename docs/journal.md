@@ -7036,3 +7036,115 @@ c'est pour cela que ce relevé-là a été fait séparément.
   produit ne connaît pas (demande du salarié, fin de contrat).
 - Le rapport ne se filtre pas encore par campagne dans l'interface : l'API
   l'accepte (`?course=`), l'écran affiche l'ensemble.
+
+---
+
+## 22/09/2026 — Refonte complète du front : la salle de supervision
+
+### Ce qui a été fait
+
+Refonte de toute l'interface — vitrine, authentification, espace client,
+console — sur une direction visuelle entièrement nouvelle. Carte blanche du
+commanditaire, dont le verdict sur l'état précédent était : « propre, mais
+fade, monotone, aux couleurs ternes, sans aucun effet waouh, et la vitrine
+est trop dense : le visiteur se perd ».
+
+**La direction n'a pas été choisie au goût.** Elle a été tirée par
+`impeccable concept-seed` (graine `22c7b0c6`, index assigné 4) parmi sept
+directions ancrées classées par résonance, précisément pour ne pas retomber
+sur la première — celle que tout modèle proposerait. Les six mondes adverses
+tirés du catalogue ont été pesés, avec leur verdict et les quatre disciplines
+qu'ils ont données à la direction retenue. Tout est écrit dans
+`docs/design.md`, arbitré par `docs/adr/042-la-salle-de-supervision.md`.
+
+Le monde retenu est le **pupitre de conduite** d'éCO2mix et du signal
+Ecowatt : un bâti graphite autour d'une face d'instrument claire et réglée.
+Ce n'est pas un mode sombre — le choix vient de la scène d'usage, un gérant
+de PME lit sur son téléphone en plein jour depuis un email.
+
+Ce que ce monde résout et qu'aucun réglage ne résolvait : **Dirigeant et
+Technique ne sont plus deux densités du même écran, ce sont le signal public
+et la console de l'exploitant**, qui lisent la même donnée à la même seconde.
+
+Outils réellement employés : le skill `ui-ux-pro-max` (neuf recherches, dont
+la quasi-totalité des recommandations ont été **écartées** — glassmorphisme,
+bleu-confiance, Plus Jakarta Sans : exactement l'esthétique interdite), le
+skill `impeccable` (plancher de qualité, tirage de direction, détecteur de
+tells), et le MCP Magic UI (78 composants parcourus, 3 mécanismes retenus,
+réécrits sans leur dépendance `motion`).
+
+### Décisions prises
+
+- **Archivo Variable + Chivo Mono Variable** remplacent Fraunces et Inter.
+  Archivo porte titres, interface et texte grâce à son axe de LARGEUR
+  (62–125 %) : les légendes sont de l'Archivo condensé en capitales, comme la
+  sérigraphie d'un pupitre. Chivo Mono ne sert qu'à ce qui se mesure.
+- **`tokens.css` devient la source unique.** Un test refuse tout `#rrggbb`
+  écrit dans un composant, calcule les 42 contrastes au lieu de les croire, et
+  interdit `ink-400` comme couleur de texte.
+- **Le sur-titre disparaît du produit** : le plancher de qualité d'`impeccable`
+  l'interdit. `.t-eyebrow` devient `.t-legende`, qui nomme un instrument et ne
+  se pose jamais au-dessus d'un titre.
+- **L'accueil passe de sept sections d'un tenant à six actes**, et de 10 082 px
+  à 4 263 px. Rien n'est supprimé : le détail part sur `/fonctionnalites`,
+  `/securite-du-produit`, `/offres` et `/questions`.
+- **Le nom du fournisseur de renseignement disparaît du code livré au
+  navigateur** (route, composant, fichier, libellés). Il reste nommé dans les
+  **mentions légales uniquement** : un sous-traitant doit être nommé dans la
+  politique de confidentialité, l'en retirer serait une régression de
+  conformité sur un produit de conformité. Écart assumé, signalé ici.
+
+### Difficultés rencontrées, et ce qu'elles ont révélé
+
+Dix défauts réels, tous **invisibles à la relecture**, tous trouvés en
+mesurant plutôt qu'en regardant :
+
+1. `ink-500` rendait 4,09:1 sur le fond de page et 4,38:1 sur la face creuse.
+   Deux contrastes sous le minimum AA, dans un produit dont la conformité est
+   l'argument. Le second n'a été vu que par axe-core, sur la tête des panneaux.
+2. Les rôles typographiques déclarés hors `@layer` battaient les utilitaires
+   de Tailwind : `class="t-legende text-craie"` restait en encre secondaire,
+   soit 3,42:1 sur le bâti.
+3. Le monogramme sortait à 1,3:1 sur fond bleu — une classe qui fixe une
+   couleur l'emporte sur la couleur héritée du parent.
+4. **`AuthLayout` recevait `title` de la page d'invitation et le jetait** :
+   ces écrans n'avaient aucun titre de premier niveau. axe-core ne le relève
+   pas, il vérifie la hiérarchie, pas la présence d'un `h1`.
+5. Six classes pointaient vers des jetons inexistants (`bg-ok-50`,
+   `border-warning-200`…). Tailwind n'émettait donc rien : l'encadré de succès
+   du parcours de formation n'avait **ni fond ni bordure depuis le début**.
+6. recharts pose `tabindex=0` sur sa surface, dans un conteneur `aria-hidden` :
+   le clavier atteignait ce que le lecteur d'écran ne voyait pas.
+7. Onze conteneurs à défilement horizontal n'étaient pas atteignables au
+   clavier. La souris faisait défiler les colonnes de droite d'un tableau, les
+   flèches non. C'est du contenu réellement inaccessible.
+8. Les neuf onglets de la console totalisaient 1 155 px à 390 px de large et
+   élargissaient la page entière, sans moyen d'atteindre les derniers.
+9. Le tableau de bord Technique débordait de 35 px au téléphone. La grille
+   était juste : un élément de grille a `min-width: auto` par défaut, donc une
+   adresse de site élargissait sa piste.
+10. **Trois trous blancs**, de la même famille que celui que le commanditaire
+    avait signalé : le tableau de bord n'affichait rien pendant le chargement
+    des indicateurs ni en cas d'échec ; l'écran Renseignement rendait `null`
+    quand son appel échouait ; « À traiter en premier » laissait un cadre vide.
+    Chacun se lit comme une panne. Les trois ont désormais un message qui dit
+    ce qui manque et pourquoi.
+
+Le détecteur d'`impeccable` a relevé un tell que je n'aurais pas vu :
+l'amortissement du pas d'animation dépassait à 1,15, ce qui se lit comme un
+rebond élastique. Sur une valeur mesurée, un ressort se lit comme une
+hésitation. Corrigé en sortie exponentielle.
+
+### Ce qui reste à faire
+
+- **Aucune route de réinitialisation de mot de passe n'existe côté serveur.**
+  La page `/mot-de-passe-oublie` dit donc la procédure réelle (réinvitation
+  par un administrateur) au lieu d'afficher un formulaire qui n'enverrait
+  rien. À traiter hors refonte : jeton à usage unique, haché en base, valeur
+  en clair une seule fois, expiration courte — la même discipline que
+  l'invitation.
+- Un test (`WatchPage.recherche`) échoue par intermittence sous la charge de
+  la suite complète (405 s sur cette machine) et passe au relancement isolé.
+  C'est le motif jsdom/Windows déjà consigné, pas une régression.
+- Le studio de formation et quelques écrans secondaires n'ont reçu que la
+  mise à niveau des primitives partagées, pas une reprise de composition.
