@@ -64,3 +64,10 @@ Thumbs.db
 *.log
 logs/
 frontend/captures/
+
+# --- Outillage de design (impeccable) ---
+# Etat local du skill : briefs de surface, captures de revue, config machine.
+.impeccable/
+
+# Artefacts de Playwright (traces, captures d echec).
+test-results/

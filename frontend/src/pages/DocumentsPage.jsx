@@ -299,7 +299,7 @@ function CatalogEntry({ entry, versions, onGenerate, onPreview, onSelect, select
           l'autre, indistinguable au clavier. */}
       {versions.length > 0 && (
         <div className="border-t border-ink-100 pt-3">
-          <p className="t-eyebrow mb-2">Historique</p>
+          <p className="t-legende mb-2">Historique</p>
           <ul className="flex flex-wrap gap-2">
             {versions.map((version) => (
               <li key={version.id}>

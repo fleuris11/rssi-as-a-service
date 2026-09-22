@@ -45,7 +45,7 @@ export default function GlobalSearch({ onSelectTenant, onSelectProspect }) {
   return (
     <div className="relative">
       <Search
-        className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-brand-300"
+        className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-craie-douce"
         aria-hidden="true"
       />
       <input
@@ -54,14 +54,14 @@ export default function GlobalSearch({ onSelectTenant, onSelectProspect }) {
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Rechercher une entreprise, une personne, un prospect…"
         aria-label="Recherche globale"
-        className="w-full rounded-md border border-brand-700 bg-brand-800 py-1.5 pl-9 pr-8 text-sm text-white placeholder:text-brand-300 focus-visible:outline-2 focus-visible:outline-white"
+        className="w-full rounded-md border border-bati-600 bg-bati-700 py-1.5 pl-9 pr-8 text-sm text-white placeholder:text-craie-douce focus-visible:outline-2 focus-visible:outline-white"
       />
       {query && (
         <button
           type="button"
           onClick={() => setQuery('')}
           aria-label="Effacer la recherche"
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-brand-300 hover:text-white"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-craie-douce hover:text-white"
         >
           <X className="size-4" aria-hidden="true" />
         </button>

@@ -145,8 +145,8 @@ function FindingCard({ finding, onUpdateStatus, updating, canReveal, onReveal })
       key="action"
       className={
         isTechnical
-          ? 'mt-2 text-xs text-accent-900'
-          : 'mt-2 rounded-md bg-accent-100/50 px-3 py-2 text-sm text-accent-900'
+          ? 'mt-2 text-xs text-ink-700'
+          : 'mt-2 rounded-md bg-ink-100 px-3 py-2 text-sm text-ink-800'
       }
     >
       <span className="font-semibold">À faire : </span>
@@ -331,7 +331,7 @@ function PanneauSecondaire({ titre, action, children }) {
   return (
     <section className="border-t border-ink-200 pt-5">
       <div className="mb-3 flex items-start justify-between gap-4">
-        <h2 className="t-eyebrow">{titre}</h2>
+        <h2 className="t-legende">{titre}</h2>
         {action}
       </div>
       {children}
@@ -824,7 +824,7 @@ export default function CompromisesPage() {
                   style={{ backgroundColor: groupe.teinte }}
                   aria-hidden="true"
                 />
-                <h2 id={`gravite-${groupe.severite}`} className="t-eyebrow">
+                <h2 id={`gravite-${groupe.severite}`} className="t-legende">
                   {groupe.libelle}
                 </h2>
                 <span className="h-px flex-1 bg-ink-200" aria-hidden="true" />

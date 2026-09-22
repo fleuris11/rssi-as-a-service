@@ -89,7 +89,7 @@ function FormulaireDeclaration({ declarationText, onCreated, onCancel }) {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label className="t-eyebrow" htmlFor="vip-valeur">
+            <label className="t-legende" htmlFor="vip-valeur">
               Compte à surveiller
             </label>
             <input
@@ -103,7 +103,7 @@ function FormulaireDeclaration({ declarationText, onCreated, onCancel }) {
             />
           </div>
           <div>
-            <label className="t-eyebrow" htmlFor="vip-libelle">
+            <label className="t-legende" htmlFor="vip-libelle">
               Intitulé (facultatif)
             </label>
             <input
@@ -116,7 +116,7 @@ function FormulaireDeclaration({ declarationText, onCreated, onCancel }) {
             />
           </div>
           <div>
-            <label className="t-eyebrow" htmlFor="vip-categorie">
+            <label className="t-legende" htmlFor="vip-categorie">
               De qui s’agit-il ?
             </label>
             <select
@@ -133,7 +133,7 @@ function FormulaireDeclaration({ declarationText, onCreated, onCancel }) {
             </select>
           </div>
           <div>
-            <label className="t-eyebrow" htmlFor="vip-base">
+            <label className="t-legende" htmlFor="vip-base">
               À quel titre le surveillez-vous ?
             </label>
             <select
@@ -152,7 +152,7 @@ function FormulaireDeclaration({ declarationText, onCreated, onCancel }) {
         </div>
 
         <div>
-          <label className="t-eyebrow" htmlFor="vip-finalite">
+          <label className="t-legende" htmlFor="vip-finalite">
             Pourquoi surveillez-vous ce compte ?
           </label>
           <textarea
@@ -344,17 +344,17 @@ export default function WatchedAccountsPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap gap-6">
             <div>
-              <p className="t-eyebrow">Comptes surveillés</p>
+              <p className="t-legende">Comptes surveillés</p>
               <p className="font-display text-2xl font-semibold text-ink-900">{resume.accounts}</p>
             </div>
             <div>
-              <p className="t-eyebrow">Résultats à traiter</p>
+              <p className="t-legende">Résultats à traiter</p>
               <p className="font-display text-2xl font-semibold text-ink-900">
                 {resume.open_findings}
               </p>
             </div>
             <div>
-              <p className="t-eyebrow">Dernière analyse</p>
+              <p className="t-legende">Dernière analyse</p>
               <p className="mt-1.5 text-sm text-ink-700">{dateCourte(resume.last_scanned_at)}</p>
             </div>
           </div>

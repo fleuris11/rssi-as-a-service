@@ -58,7 +58,7 @@ function LigneDetail({ ligne, onStatut, occupe }) {
           <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
             {ligne.details.map((champ) => (
               <div key={champ.label} className="min-w-0">
-                <dt className="t-eyebrow">{champ.label}</dt>
+                <dt className="t-legende">{champ.label}</dt>
                 <dd className="truncate text-sm text-ink-800" title={champ.value}>
                   {champ.value}
                 </dd>

@@ -12,7 +12,7 @@ export default function Tabs({ tabs, activeId, onChange, className = '' }) {
             onClick={() => onChange(tab.id)}
             className={`transition-smooth -mb-px border-b-2 px-3 py-2 text-sm font-medium outline-offset-2 focus-visible:outline-2 focus-visible:outline-brand-600 ${
               isActive
-                ? 'border-accent-600 text-ink-900'
+                ? 'border-brand-600 text-ink-900'
                 : 'border-transparent text-ink-500 hover:text-ink-800'
             }`}
           >

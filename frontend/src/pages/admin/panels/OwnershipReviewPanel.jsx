@@ -52,11 +52,11 @@ export default function OwnershipReviewPanel() {
         />
         <div className="flex flex-wrap gap-6 px-1 pt-2">
           <div>
-            <p className="t-eyebrow">À régulariser</p>
+            <p className="t-legende">À régulariser</p>
             <p className="font-display text-2xl font-semibold text-ink-900">{data.count}</p>
           </div>
           <div>
-            <p className="t-eyebrow">Dont en surveillance continue</p>
+            <p className="t-legende">Dont en surveillance continue</p>
             {/* Le sous-ensemble urgent : ceux-là occupent un emplacement de la
                 licence et font parvenir des alertes sur un domaine qui n'est
                 peut-être pas celui du client. */}
@@ -76,11 +76,11 @@ export default function OwnershipReviewPanel() {
           <table className="w-full min-w-[40rem] text-sm">
             <thead>
               <tr className="border-b border-ink-100 text-left">
-                <th className="t-eyebrow py-2">Client</th>
-                <th className="t-eyebrow py-2">Actif</th>
-                <th className="t-eyebrow py-2">Domaine</th>
-                <th className="t-eyebrow py-2">Déclaré le</th>
-                <th className="t-eyebrow py-2">État</th>
+                <th className="t-legende py-2">Client</th>
+                <th className="t-legende py-2">Actif</th>
+                <th className="t-legende py-2">Domaine</th>
+                <th className="t-legende py-2">Déclaré le</th>
+                <th className="t-legende py-2">État</th>
               </tr>
             </thead>
             <tbody>

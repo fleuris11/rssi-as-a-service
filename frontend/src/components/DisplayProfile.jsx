@@ -232,7 +232,7 @@ export function AlertReading({ meaning, action, detail, detailSummary = 'Ce qui 
       className={
         isTechnical
           ? 'mt-1 text-xs text-ink-600'
-          : 'mt-2 rounded-md bg-accent-100/50 px-3 py-2 text-sm text-accent-900'
+          : 'mt-2 rounded-md bg-ink-100 px-3 py-2 text-sm text-ink-800'
       }
     >
       <span className="font-semibold">À faire : </span>

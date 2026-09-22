@@ -33,7 +33,7 @@ export default function PlatformAdminRoute() {
     <div className="min-h-screen bg-canvas">
       {/* En-tête sombre et libellé explicite : on doit voir d'un coup d'œil
           qu'on n'est pas dans l'espace d'un client. */}
-      <header className="border-b border-brand-800 bg-brand-900">
+      <header className="border-b border-bati-600 bg-bati-800">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3">
           <span className="flex items-center gap-3 text-white">
             {/* Le seul endroit où le logo complet s'affiche tel quel : cet
@@ -57,8 +57,8 @@ export default function PlatformAdminRoute() {
                 className={({ isActive }) =>
                   `transition-smooth rounded-md px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-white ${
                     isActive
-                      ? 'bg-brand-800 text-white'
-                      : 'text-brand-200 hover:bg-brand-800/60 hover:text-white'
+                      ? 'bg-bati-700 text-white'
+                      : 'text-craie-douce hover:bg-bati-700/60 hover:text-white'
                   }`
                 }
               >
@@ -70,14 +70,14 @@ export default function PlatformAdminRoute() {
           <div className="ml-auto flex items-center gap-3">
             <Link
               to="/tableau-de-bord"
-              className="transition-smooth rounded-md px-3 py-1.5 text-sm text-brand-200 hover:text-white focus-visible:outline-2 focus-visible:outline-white"
+              className="transition-smooth rounded-md px-3 py-1.5 text-sm text-craie-douce hover:text-white focus-visible:outline-2 focus-visible:outline-white"
             >
               Espace client
             </Link>
             <button
               type="button"
               onClick={logout}
-              className="transition-smooth flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-brand-200 hover:text-white focus-visible:outline-2 focus-visible:outline-white"
+              className="transition-smooth flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-craie-douce hover:text-white focus-visible:outline-2 focus-visible:outline-white"
             >
               <LogOut className="size-4" aria-hidden="true" />
               Déconnexion

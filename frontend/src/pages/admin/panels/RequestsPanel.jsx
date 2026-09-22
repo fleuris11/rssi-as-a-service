@@ -119,7 +119,7 @@ export default function RequestsPanel() {
         <div className="mb-4 flex flex-wrap gap-4 border-b border-ink-100 pb-3">
           {COLONNES.map((colonne) => (
             <div key={colonne.status}>
-              <p className="t-eyebrow">{colonne.label}</p>
+              <p className="t-legende">{colonne.label}</p>
               <p className="font-display text-xl font-semibold text-ink-900">
                 {ouvertes.filter((d) => d.status === colonne.status).length}
               </p>

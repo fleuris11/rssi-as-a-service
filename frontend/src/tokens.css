@@ -1,0 +1,188 @@
+/* =====================================================================
+ * JETONS — source unique de la direction « salle de supervision ».
+ *
+ * Raisonnement complet : docs/design.md. Décision : docs/adr/042.
+ *
+ * Le monde est un PUPITRE DE CONDUITE : un bâti graphite (rail, bandeau
+ * d'état, pied de page) autour d'une face d'instrument claire et réglée où
+ * se lit le contenu. Ce n'est pas un « mode sombre » : c'est un bâti. Le
+ * choix vient de la scène d'usage — un gérant de PME lit sur son téléphone,
+ * en plein jour, depuis un email ; le texte long ne peut pas être sur fond
+ * noir, le bâti si.
+ *
+ * Toute couleur du produit est ici. Une couleur écrite dans un composant est
+ * un défaut : `src/__tests__/jetons.test.js` refuse la construction si un
+ * `#rrggbb` apparaît hors de ce fichier, et calcule les contrastes plutôt
+ * que de les croire.
+ * ================================================================= */
+
+@theme {
+  /* --- Familles -------------------------------------------------- */
+  /* Archivo Variable : une seule famille porte les titres, l'interface et
+     le texte courant, grâce à son axe de LARGEUR (62 % → 125 %) en plus de
+     la graisse. Les légendes d'instrument sont de l'Archivo condensé en
+     capitales, comme la sérigraphie d'un pupitre ; le titre de l'accueil est
+     de l'Archivo large et gras. Un seul fichier woff2 par sous-ensemble.
+     Chivo Mono, même fonderie, ne sert QU'À CE QUI SE MESURE — la mono comme
+     costume « technique » est refusée. */
+  --font-sans: 'Archivo Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Archivo Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Chivo Mono Variable', ui-monospace, monospace;
+
+  /* --- Le bâti ---------------------------------------------------- */
+  --color-bati-900: #0e151b;
+  --color-bati-800: #141d25;
+  --color-bati-700: #1e2a34;
+  --color-bati-600: #2b3a47;
+  --color-bati-500: #43586a;
+  --color-craie: #e9eef2;
+  /* Teintée depuis la teinte du bâti, jamais grise : le plancher de qualité
+     refuse le gris-sur-gris sur une surface colorée. */
+  --color-craie-douce: #a2b3c0;
+
+  /* --- La face d'instrument --------------------------------------- */
+  --color-canvas: #f6f8f9;
+  --color-surface: #ffffff;
+  --color-creuse: #edf1f3;
+
+  /* --- L'encre ---------------------------------------------------- */
+  /* ink-500 est employé partout comme texte secondaire. Il doit passer sur
+     les TROIS fonds clairs, pas seulement sur le fond de page : à #6b7c88 il
+     rendait 4,09:1 sur `canvas`, et à #61727e encore 4,38:1 sur `creuse` —
+     défaut relevé par axe-core sur la tête des panneaux, pas à l'œil.
+     Assombri jusqu'à passer partout ; mesuré, pas estimé. */
+  --color-ink-50: #fafbfc;
+  --color-ink-100: #edf1f3;
+  --color-ink-200: #d8e0e6;
+  --color-ink-300: #b9c6cf;
+  --color-ink-400: #8b9aa6;
+  --color-ink-500: #5e6f7b;
+  --color-ink-600: #4a5c69;
+  --color-ink-700: #33434e;
+  --color-ink-800: #1e2a34;
+  --color-ink-900: #0e151b;
+  --color-ink-950: #080d11;
+
+  /* --- L'action : UNE couleur, et elle n'est jamais un état -------- */
+  /* Boutons principaux, liens, curseur « maintenant », anneau de focus,
+     sélection. Aucun niveau de risque ne l'emprunte, et elle n'emprunte
+     aucun niveau de risque. */
+  --color-brand-50: #edf2fd;
+  --color-brand-100: #d9e4fb;
+  --color-brand-200: #b4c8f6;
+  --color-brand-300: #83a5ee;
+  --color-brand-400: #4c7be3;
+  --color-brand-500: #2560da;
+  --color-brand-600: #1650cf;
+  --color-brand-700: #103fa6;
+  --color-brand-800: #0d3585;
+  --color-brand-900: #0b2963;
+  --color-brand-950: #071a40;
+  /* Sur le bâti, l'action doit s'éclaircir pour rester lisible : 7,75:1 sur
+     bati-800, contre 1,6:1 pour brand-600. */
+  --color-action-claire: #89b0ff;
+
+  /* --- L'échelle de risque : quatre crans, et elle ne sert qu'à ça -- */
+  /* Vocabulaire de la vigilance publique française, qui a quatre niveaux et
+     que tout le monde sait lire. Chaque cran porte aussi un MOT et un
+     GLYPHE : jamais d'information par la couleur seule. */
+  --color-risk-calm: #0b6e3f;
+  --color-risk-calm-surface: #e6f2eb;
+  --color-risk-calm-border: #8fc4a9;
+
+  --color-risk-watch: #8a5300;
+  --color-risk-watch-surface: #fbf0dc;
+  --color-risk-watch-border: #ddb673;
+
+  --color-risk-concern: #ae3b0b;
+  --color-risk-concern-surface: #fceae0;
+  --color-risk-concern-border: #e39c79;
+
+  --color-risk-critical: #9e1219;
+  --color-risk-critical-surface: #fbe6e7;
+  --color-risk-critical-border: #de8f93;
+  /* Le seul endroit du produit où une couleur occupe une grande surface :
+     le bandeau d'état se GORGE quand le cran atteint « critique ». C'est le
+     seul moment où l'on veut que le gérant lève les yeux. */
+  --color-risk-critical-drape: #6e0d12;
+
+  /* --- L'échelle opérationnelle ----------------------------------- */
+  /* Un actif répond ou ne répond pas ; un abonnement est actif ou expiré.
+     Ce n'est pas une gravité graduée, et ça n'emprunte jamais l'échelle de
+     risque. */
+  --color-ok-strong: #0b6e3f;
+  --color-ok-subtle: #e6f2eb;
+  --color-warning-strong: #8a5300;
+  --color-warning-subtle: #fbf0dc;
+  --color-critical-strong: #9e1219;
+  --color-critical-subtle: #fbe6e7;
+
+  /* --- Espacement : unité 4 px ------------------------------------ */
+  --spacing-e1: 0.25rem;
+  --spacing-e2: 0.5rem;
+  --spacing-e3: 0.75rem;
+  --spacing-e4: 1rem;
+  --spacing-e5: 1.5rem;
+  --spacing-e6: 2rem;
+  --spacing-e7: 3rem;
+  --spacing-e8: 4.5rem;
+  --spacing-e9: 7rem;
+
+  --space-tight: 0.5rem;
+  --space-block: 1.25rem;
+  --space-section: 2rem;
+
+  /* --- Rayons : rien au-dessus de 10 px --------------------------- */
+  /* L'arrondi généralisé est l'un des tells les plus sûrs du web généré. */
+  --radius-sm: 0.1875rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.625rem;
+
+  /* --- Profondeur -------------------------------------------------- */
+  /* Deux ombres, toutes deux avec décalage ET flou. Un halo coloré sans
+     décalage est une décoration, pas une profondeur. La séparation ordinaire
+     passe par un FILET d'1 px, pas par une ombre. */
+  --shadow-soft: 0 1px 2px rgb(14 21 27 / 0.06), 0 2px 8px -2px rgb(14 21 27 / 0.08);
+  --shadow-elevated: 0 8px 28px -8px rgb(14 21 27 / 0.22), 0 2px 6px -2px rgb(14 21 27 / 0.1);
+}
+
+/* =====================================================================
+ * Variables non exposées à Tailwind : durées, rythme, densité.
+ * ================================================================= */
+:root {
+  /* Rien ne glisse : un changement d'état saute d'un CRAN ENTIER.
+     La discipline est portée par la discrétisation du déplacement (on bouge
+     d'une ligne entière, jamais d'une fraction), pas par un rebond : le
+     détecteur d'`impeccable` a relevé à juste titre le dépassement à 1,15 —
+     un ressort élastique sur une valeur mesurée se lit comme une hésitation.
+     Sortie exponentielle, donc, comme le veut le plancher de qualité. */
+  --pas: 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  --vif: 120ms ease-out;
+  --calme: 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* Une sortie est plus rapide qu'une entrée. */
+  --sortie: 150ms ease-in;
+
+  --rythme-bloc: 2rem;
+  --rythme-section: clamp(3.5rem, 7vw, 6.5rem);
+
+  /* Densité de la face : le profil Technique ouvre en compacte, le profil
+     Dirigeant en confortable. */
+  --cellule-y: 0.4375rem;
+
+  color-scheme: light;
+  accent-color: var(--color-brand-600);
+}
+
+[data-densite='confortable'] {
+  --cellule-y: 0.8125rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --pas: 0.01ms linear;
+    --vif: 0.01ms linear;
+    --calme: 0.01ms linear;
+    --sortie: 0.01ms linear;
+  }
+}

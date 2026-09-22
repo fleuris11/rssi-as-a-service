@@ -20,7 +20,8 @@ import EmptyState from '../components/ui/EmptyState'
 import { SkeletonCard } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/Toast'
 
-const RADAR_COLOR = '#2a4f84' // brand-600
+// Une variable CSS est une valeur SVG valide : le jeton reste unique.
+const RADAR_COLOR = 'var(--color-brand-600)'
 
 function formatScore(score) {
   return score === null || score === undefined ? 'Non évalué' : `${score}/100`

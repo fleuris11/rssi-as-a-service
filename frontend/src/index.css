@@ -1,236 +1,134 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
-/* UI typeface: Inter — neutral, highly legible at small sizes (dense
-   dashboards, form labels). Weights kept to what the interface actually
-   uses (no 300/800/900), and subsets limited to latin/latin-ext (this is a
-   French-only UI — no need to ship cyrillic/greek/vietnamese glyphs) to
-   keep the font payload lean (Green IT). */
-@import "@fontsource/inter/latin-400.css";
-@import "@fontsource/inter/latin-ext-400.css";
-@import "@fontsource/inter/latin-500.css";
-@import "@fontsource/inter/latin-ext-500.css";
-@import "@fontsource/inter/latin-600.css";
-@import "@fontsource/inter/latin-ext-600.css";
-@import "@fontsource/inter/latin-700.css";
-@import "@fontsource/inter/latin-ext-700.css";
+/* Archivo Variable — une seule famille pour les titres, l'interface et le
+   texte. Le fichier `wdth` porte les DEUX axes (largeur 62→125, graisse
+   100→900) : c'est lui qu'on charge, pas `wght`, sinon l'axe de largeur
+   n'existe pas et toutes les légendes retombent en largeur normale.
+   Les @font-face de tous les sous-ensembles sont declares, mais chacun porte
+   son `unicode-range` : le navigateur ne telecharge que le latin pour une
+   interface francaise. */
+@import '@fontsource-variable/archivo/wdth.css';
 
-/* Display typeface: Fraunces — a warm, slightly editorial serif used only
-   for page titles and hero numbers. This is what keeps the interface from
-   reading as a generic admin template: a serious, non-technical audience
-   (dirigeants de PME) reads a serif headline as considered, not cold. */
-@import "@fontsource/fraunces/latin-500-italic.css";
-@import "@fontsource/fraunces/latin-ext-500-italic.css";
-@import "@fontsource/fraunces/latin-600.css";
-@import "@fontsource/fraunces/latin-ext-600.css";
-@import "@fontsource/fraunces/latin-700.css";
-@import "@fontsource/fraunces/latin-ext-700.css";
+/* Chivo Mono Variable — uniquement ce qui se mesure : scores, pourcentages,
+   dates, compteurs, colonnes de chiffres, identifiants tronqués. */
+@import '@fontsource-variable/chivo-mono/wght.css';
 
-/* ---------------------------------------------------------------------
- * Design tokens (Tailwind v4 @theme — each custom property below (color,
- * font, radius, shadow) becomes a utility class, e.g. --color-brand-600
- * generates bg-brand-600, text-brand-600 and border-brand-600).
- *
- * Palette rationale (docs/journal.md has the full writeup):
- * - brand: deep navy-blue (H215), the sidebar/wordmark/primary-action color.
- *   Signature over generic — not the stock Tailwind slate/blue.
- * - accent: warm amber/gold (H36), used ONLY for the single primary CTA per
- *   screen and active/selected states — never for large surfaces.
- * - ink: a low-saturation neutral tinted with the same H215 hue as brand,
- *   so grays/borders/body text feel like one coherent palette instead of
- *   brand colors dropped onto stock Tailwind gray.
- * - canvas: the app background — a barely-there brand-tinted off-white,
- *   not pure #fff/#f9fafb.
- * - ok/warning/critical: semantic status colors. Every "-strong" shade
- *   below is verified >=4.5:1 against white (badges with white text) and
- *   every "-subtle" background is verified >=4.5:1 against its matching
- *   "-strong" text color (soft badges) — see docs/journal.md for the
- *   computed ratios, carried over from the Phase 5 accessibility pass.
- * ------------------------------------------------------------------- */
-@theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Fraunces", ui-serif, Georgia, serif;
-
-  --color-canvas: #f6f8fa;
-  --color-surface: #ffffff;
-
-  --color-brand-50: #f3f7fb;
-  --color-brand-100: #e4ecf6;
-  --color-brand-200: #c5d5ed;
-  --color-brand-300: #9ab7df;
-  --color-brand-400: #5c8bcc;
-  --color-brand-500: #3666ab;
-  --color-brand-600: #2a4f84;
-  --color-brand-700: #203d65;
-  --color-brand-800: #162a46;
-  --color-brand-900: #0f1c2f;
-  --color-brand-950: #09101b;
-
-  --color-accent-50: #fef9f1;
-  --color-accent-100: #fdeed9;
-  --color-accent-200: #f9d9a9;
-  --color-accent-300: #f5bc66;
-  --color-accent-400: #f2a736;
-  --color-accent-500: #f0960f;
-  --color-accent-600: #c97e0d;
-  --color-accent-700: #a3660a;
-  --color-accent-800: #7d4e08;
-  --color-accent-900: #5b3906;
-  --color-accent-950: #3a2404;
-
-  --color-ink-50: #fbfbfc;
-  --color-ink-100: #f3f4f6;
-  --color-ink-200: #e1e5ea;
-  --color-ink-300: #c4cad4;
-  --color-ink-400: #95a0b2;
-  /* L44, not the "textbook" L50 midpoint: ink-500 is used pervasively as
-     muted body text directly on white/canvas throughout the app, and L50
-     (#6b7b94) only reaches ~4.3:1 there — under the WCAG AA 4.5:1 minimum.
-     Caught by axe-core, not by eye. */
-  --color-ink-500: #5e6c82;
-  --color-ink-600: #566276;
-  --color-ink-700: #404a59;
-  --color-ink-800: #2b313b;
-  --color-ink-900: #1c2026;
-  --color-ink-950: #111418;
-
-  --color-ok-strong: #22775b;
-  --color-ok-subtle: #ebf9f5;
-  --color-warning-strong: #8e5e0b;
-  --color-warning-subtle: #fdf5e7;
-  --color-critical-strong: #bc242c;
-  --color-critical-subtle: #fceeef;
-
-  /* ---------------------------------------------------------------
-   * ECHELLE DE GRAVITE — quatre niveaux, alignés sur les seuils
-   * d'ADR-016 : calme < 20 <= à surveiller < 50 <= préoccupant < 75 <=
-   * critique. Le serveur renvoie déjà ces quatre paliers ; l'interface
-   * n'en connaissait que trois couleurs et empruntait `accent` pour le
-   * quatrième — c'est-à-dire la couleur des boutons. Une teinte qui
-   * sert à la fois d'action et de gravité ne signifie plus rien.
-   *
-   * Ces teintes sont RESERVEES au risque. Aucun élément d'interface
-   * neutre (bouton, onglet, lien, bordure de carte) ne doit y toucher.
-   *
-   * Distinct de `ok`/`warning`/`critical`, qui restent l'état
-   * OPERATIONNEL d'une chose (un actif répond ou non, un abonnement est
-   * actif ou expiré) : un état binaire n'est pas une gravité graduée.
-   *
-   * Contrastes calculés, pas estimés (texte `-strong` sur blanc, puis
-   * sur son propre `-surface`) :
-   *   calm      5.44 / 4.95      concern   6.03 / 5.33
-   *   watch     5.38 / 4.94      critical  6.13 / 5.44
-   * ------------------------------------------------------------- */
-  --color-risk-calm: #22775b;
-  --color-risk-calm-surface: #eaf7f2;
-  --color-risk-calm-border: #b8e2d4;
-
-  /* Olive, et non ambre. L'ambre du premier palier était à 2° de teinte de
-     l'ambre du LOGO (H38 contre H36) : la marque et « à surveiller » se
-     confondaient à l'œil, sur l'en-tête comme sur les exports PDF. Aucun
-     conflit fonctionnel — l'ambre ne porte plus d'action — mais une confusion
-     de sens diffuse, ce qui est pire parce qu'on ne sait pas la nommer.
-     L'olive porte l'écart à 36°, et elle éloigne du même coup « à
-     surveiller » de « préoccupant » : 55° au lieu de 21°, ce qui rend
-     l'échelle à quatre paliers lisible palier par palier. */
-  --color-risk-watch: #5f7213;
-  --color-risk-watch-surface: #f4f7e4;
-  --color-risk-watch-border: #dde7b4;
-
-  --color-risk-concern: #a8431c;
-  --color-risk-concern-surface: #fdeee7;
-  --color-risk-concern-border: #f3cdba;
-
-  --color-risk-critical: #bc242c;
-  --color-risk-critical-surface: #fceef0;
-  --color-risk-critical-border: #f3c6ca;
-
-  /* ---------------------------------------------------------------
-   * RYTHME D'ESPACEMENT — trois valeurs, pas un continuum.
-   *
-   * L'application utilisait tout l'intervalle de 8 à 24 px : rien ne
-   * séparait « dans un bloc » de « entre deux sections », donc aucun
-   * rythme, donc un mur continu. Trois crans suffisent à hiérarchiser,
-   * et l'écart entre eux doit être franc pour se voir.
-   * ------------------------------------------------------------- */
-  --space-tight: 0.5rem;
-  --space-block: 1.25rem;
-  --space-section: 2.5rem;
-
-  --radius-sm: 0.375rem;
-  --radius-md: 0.625rem;
-  --radius-lg: 1rem;
-  --radius-xl: 1.5rem;
-
-  /* Two elevation levels only (mission constraint) — a barely-there resting
-     shadow, and a slightly stronger one for popovers/modals/dropdowns. Both
-     tinted with the brand hue instead of pure black, so shadows read as
-     "depth" rather than "smudge" on the tinted canvas. */
-  --shadow-soft: 0 1px 2px 0 rgb(15 28 47 / 0.06), 0 1px 1px 0 rgb(15 28 47 / 0.04);
-  --shadow-elevated: 0 12px 24px -8px rgb(15 28 47 / 0.18), 0 4px 8px -4px rgb(15 28 47 / 0.08);
-}
+@import './tokens.css';
 
 body {
   background-color: var(--color-canvas);
   color: var(--color-ink-800);
   font-family: var(--font-sans);
+  /* Les chiffres d'Archivo sont proportionnels par défaut : une colonne de
+     nombres « danse » d'une ligne à l'autre. `lnum` au niveau du document,
+     `tnum` là où c'est une colonne (voir `.num`). */
+  font-feature-settings: 'lnum' 1;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* ---------------------------------------------------------------------
- * ROLES TYPOGRAPHIQUES — six, pas davantage.
+/* =====================================================================
+ * LES SURFACES DU NAVIGATEUR
  *
- * Le défaut n'était pas l'absence de tailles (Tailwind les fournit
- * toutes) mais leur non-emploi : sur Exposition et Compromissions,
- * 35 usages sur 38 étaient `text-sm` ou `text-xs`, soit 14 ou 12 px. Entre
- * le titre de page et le corps, il n'y avait rien — donc, à l'intérieur
- * d'une carte, le titre d'une fuite, son explication et l'action à mener
- * pesaient pareil.
+ * Sélection, curseur de saisie, barres de défilement, soulignement : ce
+ * qu'on ne dessine pas porte quand même le design. C'est le point que le
+ * plancher de qualité d'`impeccable` signale comme le plus souvent oublié,
+ * et le signal le moins cher qu'une page a été construite et non assemblée.
+ * ================================================================= */
+::selection {
+  background-color: var(--color-brand-100);
+  color: var(--color-ink-900);
+}
+
+.sur-bati ::selection,
+.sur-bati::selection {
+  background-color: var(--color-bati-600);
+  color: var(--color-craie);
+}
+
+input,
+textarea,
+[contenteditable] {
+  caret-color: var(--color-brand-600);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-300) transparent;
+}
+
+.sur-bati * {
+  scrollbar-color: var(--color-bati-500) transparent;
+}
+
+a:not([class*='rounded']):not([class*='bg-']) {
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: 1px;
+}
+
+/* =====================================================================
+ * RÔLES TYPOGRAPHIQUES
  *
- * Des RÔLES plutôt que des tailles : une page déclare ce qu'un texte est
- * (`t-lead`, `t-meta`), pas sa dimension. Une taille se choisit au cas par
- * cas et dérive ; un rôle se relit.
- * ------------------------------------------------------------------- */
-/* Un SEPTIEME role, et un seul : l'accroche de la vitrine.
-   `t-display` (30 px) est le titre d'une PAGE ; une accroche commerciale doit
-   dominer la première image du produit, ce que 30 px ne font pas à 1440 px de
-   large. On ne l'emploie qu'une fois par page, et jamais dans l'application —
-   un outil de travail n'a pas d'accroche. */
+ * Déclarés dans `@layer components`, et c'est essentiel : hors couche, une
+ * règle de ce fichier bat les utilitaires de Tailwind, si bien que
+ * `class="t-legende text-craie"` restait en `ink-500` — illisible sur le
+ * bâti, et relevé par axe-core à 3,42:1. Dans la couche, l'utilitaire gagne,
+ * comme on l'attend en l'écrivant.
+ *
+ * Une page déclare ce qu'un texte EST, pas sa dimension. Une taille se
+ * choisit au cas par cas et dérive ; un rôle se relit.
+ *
+ * La largeur variable d'Archivo fait ici le gros du travail : `.t-legende`
+ * est condensée à 70 %, `.t-hero` est portée à 96 %. C'est ce qui donne la
+ * voix du pupitre sans changer de police.
+ * ================================================================= */
+@layer components {
+
+/* L'accroche. Une seule par page, jamais dans l'application — un outil de
+   travail n'a pas d'accroche. */
 .t-hero {
   font-family: var(--font-display);
-  font-size: clamp(2rem, 1.35rem + 2.2vw, 2.875rem);
-  line-height: 1.08;
-  font-weight: 700;
-  letter-spacing: -0.025em;
+  font-variation-settings: 'wdth' 96;
+  font-size: clamp(2.25rem, 1.2rem + 4.4vw, 4.25rem);
+  line-height: 1.02;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
   color: var(--color-ink-900);
 }
 
 .t-display {
   font-family: var(--font-display);
-  font-size: 1.875rem;
-  line-height: 1.15;
-  font-weight: 600;
+  font-variation-settings: 'wdth' 100;
+  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.125rem);
+  line-height: 1.12;
+  font-weight: 700;
   letter-spacing: -0.02em;
+  text-wrap: balance;
   color: var(--color-ink-900);
 }
 
 .t-title {
   font-family: var(--font-display);
-  font-size: 1.25rem;
+  font-variation-settings: 'wdth' 100;
+  font-size: 1.125rem;
   line-height: 1.3;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 650;
+  letter-spacing: -0.012em;
   color: var(--color-ink-900);
 }
 
-/* La phrase qui compte : celle qu'on lit si on ne lit qu'une ligne. */
+/* La phrase qu'on lit si on ne lit qu'une ligne. */
 .t-lead {
-  font-size: 1.0625rem;
-  line-height: 1.55;
-  color: var(--color-ink-800);
+  font-size: clamp(1.0625rem, 1rem + 0.4vw, 1.25rem);
+  line-height: 1.6;
+  max-width: 62ch;
+  color: var(--color-ink-700);
 }
 
 .t-body {
   font-size: 0.9375rem;
-  line-height: 1.6;
+  line-height: 1.65;
+  max-width: 68ch;
   color: var(--color-ink-700);
 }
 
@@ -240,23 +138,65 @@ body {
   color: var(--color-ink-500);
 }
 
-/* Étiquette de section. Les majuscules ne sont lisibles qu'avec de
-   l'interlettrage et en petite dose — jamais sur une phrase. */
-.t-eyebrow {
+/* La sérigraphie du pupitre : en-tête de colonne, libellé d'axe, nom d'état.
+ *
+ * Ce n'est PAS un sur-titre. Le plancher de qualité interdit le sur-titre
+ * au-dessus d'un titre de section — pas « déconseille », interdit — et ce
+ * produit s'y conforme : cette classe ne se pose jamais au-dessus d'un
+ * `<h2>`. Elle nomme un instrument, elle n'annonce pas un chapitre. */
+.t-legende {
+  font-family: var(--font-display);
+  font-variation-settings: 'wdth' 70;
   font-size: 0.6875rem;
   line-height: 1.3;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--color-ink-500);
 }
 
-/* ---------------------------------------------------------------------
- * RYTHME — trois piles, correspondant aux trois jetons d'espacement.
- * `> * + *` plutôt qu'une marge sur chaque enfant : rien ne dépasse en
- * haut ni en bas du conteneur, donc les piles s'imbriquent sans corriger
- * les marges à la main.
- * ------------------------------------------------------------------- */
+.t-menu {
+  font-variation-settings: 'wdth' 92;
+  font-size: 0.9375rem;
+  font-weight: 550;
+}
+
+}
+
+/* =====================================================================
+ * LES CHIFFRES — Chivo Mono, et seulement là où ça se mesure.
+ * ================================================================= */
+.n-grand {
+  font-family: var(--font-mono);
+  font-size: clamp(2.5rem, 2rem + 2.6vw, 4rem);
+  line-height: 0.95;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.n {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+}
+
+/* Conservée : `num` est employée dans tout le produit pour les colonnes de
+   chiffres. Elle ne change pas de famille, elle fixe seulement la chasse. */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* =====================================================================
+ * RYTHME
+ *
+ * `> * + *` plutôt qu'une marge sur chaque enfant : rien ne dépasse du
+ * conteneur, donc les piles s'imbriquent sans corriger les marges à la main.
+ * Règle du plancher de qualité : plus d'espace AU-DESSUS d'un titre qu'en
+ * dessous.
+ * ================================================================= */
 .stack-tight > * + * {
   margin-top: var(--space-tight);
 }
@@ -267,19 +207,135 @@ body {
   margin-top: var(--space-section);
 }
 
-/* ---------------------------------------------------------------------
- * APPARITION AU DÉFILEMENT
+.stack-block > :is(h2, h3, .t-display, .t-title) + *,
+.stack-section > :is(h2, h3, .t-display, .t-title) + * {
+  margin-top: var(--space-tight);
+}
+
+/* =====================================================================
+ * LE BÂTI
  *
- * Une ANIMATION, jamais un état. La différence est tout l'intérêt : un
- * élément qui n'a pas reçu cette classe reste parfaitement visible, alors
- * qu'un élément laissé à `opacity-0` disparaît. Le contenu ne peut donc
- * plus être perdu par une animation qui ne se déclenche pas (robot
- * d'indexation, capture pleine hauteur, impression, saut direct en bas de
- * page).
+ * Rail, bandeau d'état, pied de page. Le cadre sombre d'un pupitre de
+ * conduite, autour d'une face claire. Ce n'est pas un mode sombre : il n'y
+ * a jamais de texte long dessus.
+ * ================================================================= */
+.sur-bati {
+  background-color: var(--color-bati-800);
+  color: var(--color-craie);
+}
+
+.sur-bati :is(a, button):focus-visible {
+  outline-color: var(--color-action-claire);
+}
+
+/* =====================================================================
+ * LA FACE D'INSTRUMENT
+ * ================================================================= */
+
+/* Le panneau : tête réglée, corps, pied d'actions. La profondeur vient du
+   filet, pas de l'ombre. */
+.panneau {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-ink-200);
+  border-radius: var(--radius-md);
+}
+
+.panneau > .panneau-tete {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-e3);
+  padding: var(--spacing-e3) var(--spacing-e4);
+  border-bottom: 1px solid var(--color-ink-200);
+  background-color: var(--color-creuse);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.panneau > .panneau-corps {
+  padding: var(--spacing-e4);
+}
+
+/* Une ligne de liste : filet ENTRE les éléments, jamais autour. Une liste de
+   quatre éléments est une liste, pas quatre cartes. */
+.ligne-liste + .ligne-liste {
+  border-top: 1px solid var(--color-ink-100);
+}
+
+/* =====================================================================
+ * TABLEAU DE DONNÉES — l'objet le plus utilisé du produit.
  *
- * `both` conserve l'état final : sans lui, l'élément retomberait à sa
- * position d'origine à la fin de l'animation.
- * ------------------------------------------------------------------- */
+ * La densité est une VARIABLE, pas deux jeux de classes : un prestataire qui
+ * balaie 200 lignes et un dirigeant qui en lit six n'ont pas le même besoin,
+ * et le réglage doit se voir changer sans recharger la page.
+ * ================================================================= */
+.tableau {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.tableau th {
+  padding: var(--spacing-e2) var(--spacing-e3);
+  text-align: left;
+  font-family: var(--font-display);
+  font-variation-settings: 'wdth' 70;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-ink-500);
+  background-color: var(--color-creuse);
+  border-bottom: 1px solid var(--color-ink-200);
+  white-space: nowrap;
+}
+
+.tableau td {
+  padding: var(--cellule-y) var(--spacing-e3);
+  border-bottom: 1px solid var(--color-ink-100);
+  vertical-align: top;
+}
+
+.tableau tbody tr:hover td {
+  background-color: var(--color-creuse);
+}
+
+.tableau tbody tr[data-selectionnee='true'] td {
+  background-color: var(--color-brand-50);
+}
+
+/* =====================================================================
+ * FOCUS — un seul anneau, partout. Posé sur `:focus-visible` uniquement :
+ * un anneau au clic à la souris est du bruit, son absence au clavier est un
+ * défaut d'accessibilité.
+ * ================================================================= */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-brand-600);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* =====================================================================
+ * MOUVEMENT
+ *
+ * Un moment d'auteur par surface, pas une entrée identique sur chaque
+ * section. Et rien ne glisse : tout saute d'un cran, dépasse, se pose.
+ * ================================================================= */
+.transition-smooth {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-duration: 120ms;
+  transition-timing-function: ease-out;
+}
+
+/* Un changement d'ÉTAT, pas un survol : le cran entier. */
+.pas {
+  transition: transform var(--pas), opacity var(--pas);
+}
+
+/* Apparition au défilement. Une ANIMATION, jamais un état : un élément qui
+   n'a pas reçu cette classe reste parfaitement visible. Le contenu ne peut
+   donc pas être perdu par une animation qui ne se déclenche pas — robot
+   d'indexation, capture pleine hauteur, impression, saut direct en bas de
+   page. `both` conserve l'état final. */
 @keyframes apparition {
   from {
     opacity: 0;
@@ -292,168 +348,7 @@ body {
 }
 
 .apparition {
-  animation: apparition 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .apparition {
-    animation: none;
-  }
-}
-
-/* Tracé du trait de liaison du schéma de fonctionnement. Même principe que
-   `.apparition` : le trait est dessiné par défaut, l'animation ne fait que
-   rejouer son tracé quand le schéma entre dans le champ de vision. */
-@keyframes trace-ligne {
-  from {
-    stroke-dashoffset: 100;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-.trace-ligne {
-  animation: trace-ligne 500ms ease-out both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .trace-ligne {
-    animation: none;
-  }
-}
-
-
-/* ---------------------------------------------------------------------
- * LE TRAIT PLUTOT QUE L'OMBRE (refonte visuelle)
- *
- * Le diagnostic a montré six cartes de forme identique par écran : même
- * rayon, même filet, même ombre. Rien ne disait ce qui comptait. Deux
- * corrections, et elles sont structurelles :
- *
- * 1. la SÉPARATION passe par un filet d'1 px, pas par une boîte. Une liste
- *    de quatre éléments est une liste, pas quatre cartes ;
- * 2. l'OMBRE ne subsiste que pour ce qui flotte réellement (modale, menu).
- *    Une ombre au repos sur chaque carte fabrique un relief qui ne
- *    correspond à aucune profondeur réelle.
- * ------------------------------------------------------------------- */
-.panneau {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-ink-200);
-  border-radius: var(--radius-md);
-}
-
-/* Le panneau qui porte l'état d'un écran : une seule chose domine, et son
-   filet de gauche prend la couleur du niveau de risque. */
-.panneau-etat {
-  border-left-width: 4px;
-}
-
-/* Une ligne de liste : filet entre les éléments, jamais autour. */
-.ligne-liste + .ligne-liste {
-  border-top: 1px solid var(--color-ink-100);
-}
-
-/* Masqué à l'œil, lu par les technologies d'assistance — SANS position
-   absolue.
- *
- * `sr-only` de Tailwind positionne l'élément en absolu. À l'intérieur d'un
- * conteneur à défilement horizontal, sa position statique se calcule dans
- * l'espace du CONTENU (640 px de tableau), si bien que l'élément s'échappe du
- * conteneur et élargit la page entière : la vitrine débordait de 123 px au
- * téléphone à cause de deux mots invisibles. Mesuré, puis bissecté section
- * par section.
- *
- * Ici l'élément reste dans le flux, large d'un pixel : il ne peut rien
- * déborder. À employer partout où un texte masqué vit dans un tableau ou une
- * zone qui défile. */
-.lecture-seule {
-  display: inline-block;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  white-space: nowrap;
-  clip-path: inset(50%);
-}
-
-/* Chiffres en chasse tabulaire. Sans cela, une colonne de nombres
-   « danse » d'une ligne à l'autre et devient illisible en balayage — c'est
-   le défaut le plus visible d'un tableau de données. */
-.num {
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
-}
-
-/* ---------------------------------------------------------------------
- * TABLEAU DE DONNEES — l'objet le plus utilisé du produit.
- *
- * La densité est une VARIABLE, pas deux jeux de classes : un RSSI qui
- * balaie 200 lignes et un dirigeant qui en lit six n'ont pas le même
- * besoin, et le réglage doit se voir changer sans recharger la page.
- * ------------------------------------------------------------------- */
-.tableau {
-  --cellule-y: 0.5rem;
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.875rem;
-}
-
-.tableau[data-densite='confortable'] {
-  --cellule-y: 0.875rem;
-}
-
-.tableau th {
-  padding: 0.5rem 0.75rem;
-  text-align: left;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--color-ink-500);
-  border-bottom: 1px solid var(--color-ink-200);
-  white-space: nowrap;
-}
-
-.tableau td {
-  padding: var(--cellule-y) 0.75rem;
-  border-bottom: 1px solid var(--color-ink-100);
-  vertical-align: top;
-}
-
-.tableau tbody tr:hover td {
-  background-color: var(--color-brand-50);
-}
-
-.tableau tbody tr[data-selectionnee='true'] td {
-  background-color: var(--color-brand-50);
-}
-
-/* ---------------------------------------------------------------------
- * FOCUS — un seul anneau, partout, visible sur fond clair comme sur la
- * barre latérale sombre. Posé sur `:focus-visible` uniquement : un
- * anneau au clic à la souris est du bruit, son absence au clavier est un
- * défaut d'accessibilité.
- * ------------------------------------------------------------------- */
-:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid var(--color-brand-600);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
-
-/* Consistent, calm 180ms transition for interactive state changes
-   (hover/focus/active) — the mission asks for "discrete" motion, not
-   spring/bounce effects. Opt-in via this utility rather than a global
-   transition on every element (which would also animate layout thrash). */
-.transition-smooth {
-  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
-  transition-duration: 180ms;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .transition-smooth {
-    transition-duration: 0.01ms;
-  }
+  animation: apparition 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes toast-in {
@@ -468,11 +363,52 @@ body {
 }
 
 .animate-toast-in {
-  animation: toast-in 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  animation: toast-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes trace-ligne {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.trace-ligne {
+  animation: trace-ligne 500ms ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-toast-in {
+  .apparition,
+  .animate-toast-in,
+  .trace-ligne {
     animation: none;
   }
+  .transition-smooth,
+  .pas {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* =====================================================================
+ * Masqué à l'œil, lu par les technologies d'assistance — SANS position
+ * absolue.
+ *
+ * `sr-only` de Tailwind positionne l'élément en absolu. Dans un conteneur à
+ * défilement horizontal, sa position statique se calcule dans l'espace du
+ * CONTENU (640 px de tableau), si bien qu'il s'échappe du conteneur et
+ * élargit la page entière : la vitrine débordait de 123 px au téléphone à
+ * cause de deux mots invisibles. Mesuré, puis bissecté section par section.
+ *
+ * Ici l'élément reste dans le flux, large d'un pixel : il ne peut rien
+ * déborder.
+ * ================================================================= */
+.lecture-seule {
+  display: inline-block;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
 }

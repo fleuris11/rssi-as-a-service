@@ -3,7 +3,7 @@ const VARIANTS = {
   warning: 'bg-warning-subtle text-warning-strong',
   critical: 'bg-critical-subtle text-critical-strong',
   neutral: 'bg-ink-100 text-ink-700',
-  accent: 'bg-accent-100 text-accent-900',
+  accent: 'bg-ink-100 text-ink-800',
   brand: 'bg-brand-100 text-brand-800',
 }
 
@@ -12,7 +12,7 @@ const DOT_COLOR = {
   warning: 'bg-warning-strong',
   critical: 'bg-critical-strong',
   neutral: 'bg-ink-500',
-  accent: 'bg-accent-600',
+  accent: 'bg-ink-500',
   brand: 'bg-brand-600',
 }
 

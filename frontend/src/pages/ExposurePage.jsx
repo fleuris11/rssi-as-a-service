@@ -67,7 +67,7 @@ function SynthesisBanner({ synthesis, onRefresh, refreshing, canRefresh }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <Sparkles className="size-4 shrink-0 text-brand-700" aria-hidden="true" />
-          <h2 className="t-eyebrow">Analyse</h2>
+          <h2 className="t-legende">Analyse</h2>
           {synthesis.is_stale && <Badge variant="warning">Antérieure à vos dernières actions</Badge>}
         </div>
         {canRefresh && (
@@ -86,7 +86,7 @@ function SynthesisBanner({ synthesis, onRefresh, refreshing, canRefresh }) {
           dernière position ; on la remonte pour qu'elle se voie. */}
       {priorite && (
         <p className="mt-3 flex gap-2 border-l-2 border-brand-300 pl-3">
-          <span className="t-eyebrow shrink-0 pt-1 text-brand-700">Priorité</span>
+          <span className="t-legende shrink-0 pt-1 text-brand-700">Priorité</span>
           <span className="t-body font-medium text-ink-900">{priorite}</span>
         </p>
       )}
@@ -136,7 +136,7 @@ function ScoreExplanation({ components }) {
 
   return (
     <div className="mt-4 rounded-md border border-ink-200/70 bg-ink-50/60 px-4 py-3">
-      <p className="t-eyebrow flex items-center gap-1.5">
+      <p className="t-legende flex items-center gap-1.5">
         <Info className="size-3.5" aria-hidden="true" />
         D’où vient ce score
       </p>
@@ -233,8 +233,8 @@ function FindingRow({ finding, canReveal, onReveal, retentionDays }) {
         </p>
       ))}
 
-      <div className="mt-2 flex flex-wrap items-start justify-between gap-2 rounded-md bg-accent-100/50 px-3 py-2">
-        <p className="text-sm text-accent-900">
+      <div className="mt-2 flex flex-wrap items-start justify-between gap-2 rounded-md bg-ink-100 px-3 py-2">
+        <p className="text-sm text-ink-800">
           <span className="font-semibold">À faire : </span>
           {finding.recommended_action}
         </p>

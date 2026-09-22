@@ -59,7 +59,7 @@ export function ToastProvider({ children }) {
                       toast.action.onClick()
                       dismiss(toast.id)
                     }}
-                    className="transition-smooth mt-2 font-medium text-accent-300 hover:text-accent-200"
+                    className="transition-smooth mt-2 font-medium text-brand-300 hover:text-brand-200"
                   >
                     {toast.action.label}
                   </button>

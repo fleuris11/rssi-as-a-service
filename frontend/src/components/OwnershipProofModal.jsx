@@ -42,7 +42,7 @@ function ValeurACopier({ etiquette, valeur }) {
 
   return (
     <div>
-      <p className="t-eyebrow mb-1">{etiquette}</p>
+      <p className="t-legende mb-1">{etiquette}</p>
       <div className="flex items-center gap-2">
         <code className="min-w-0 flex-1 truncate rounded-md bg-ink-50 px-3 py-2 text-xs text-ink-800">
           {valeur}

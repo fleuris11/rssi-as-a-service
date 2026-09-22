@@ -10,8 +10,8 @@ const linkBase =
 
 function linkClass({ isActive }, collapsed) {
   const state = isActive
-    ? 'bg-brand-800 text-white'
-    : 'text-brand-200 hover:bg-brand-800/60 hover:text-white'
+    ? 'bg-bati-700 text-white'
+    : 'text-craie-douce hover:bg-bati-700/60 hover:text-white'
   return `${linkBase} ${state} ${collapsed ? 'justify-center' : ''}`
 }
 
@@ -32,9 +32,9 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
   )
 
   return (
-    <div className="flex h-full flex-col bg-brand-950 text-white">
+    <div className="flex h-full flex-col bg-bati-900 text-white">
       <div className={`flex items-center gap-2.5 px-4 py-5 ${collapsed ? 'justify-center px-0' : ''}`}>
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent-600 font-display text-sm font-bold text-white">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-brand-600 font-display text-sm font-bold text-white">
           R
         </div>
         {!collapsed && (
@@ -65,7 +65,7 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
         {techniques.length > 0 && (
           <div role="group" aria-label="Détails techniques">
             <p
-              className={`mt-5 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-brand-300 ${
+              className={`mt-5 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-craie-douce ${
                 collapsed ? 'text-center' : ''
               }`}
             >
@@ -114,7 +114,7 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
         )}
       </nav>
 
-      <div className="space-y-1 border-t border-brand-800 px-3 py-3">
+      <div className="space-y-1 border-t border-bati-600 px-3 py-3">
         {!collapsed && currentTenant && (
           <div className="mb-2 flex items-center gap-2 rounded-md px-3 py-2">
             <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xs font-semibold text-brand-100">
@@ -156,7 +156,7 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
           type="button"
           onClick={logout}
           title={collapsed ? 'Déconnexion' : undefined}
-          className={`${linkBase} w-full text-brand-200 hover:bg-brand-800/60 hover:text-white ${collapsed ? 'justify-center' : ''}`}
+          className={`${linkBase} w-full text-craie-douce hover:bg-bati-700/60 hover:text-white ${collapsed ? 'justify-center' : ''}`}
         >
           <LogOut className="size-5 shrink-0" aria-hidden="true" />
           {!collapsed && <span>Déconnexion</span>}

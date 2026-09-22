@@ -21,8 +21,12 @@ import Card, { CardHeader } from '../ui/Card'
  * exactement l'écart qu'un comité remarque.
  */
 
-export const COULEUR_TRAIT = '#2a4f84' // brand-600
-export const COULEUR_SECONDE = '#1c7a4b' // ok-strong
+/* Les series de graphique prennent une couleur en PROPRIETE et ne peuvent pas
+   porter une classe Tailwind. Elles lisent donc le jeton directement : une
+   variable CSS est une valeur SVG valide, et la couleur reste ainsi dans
+   tokens.css comme partout ailleurs (garde : src/jetons.test.js). */
+export const COULEUR_TRAIT = 'var(--color-brand-600)'
+export const COULEUR_SECONDE = 'var(--color-risk-calm)'
 
 export function formatJour(valeur) {
   if (!valeur) return '—'
@@ -91,7 +95,7 @@ export function Evolution({ evolution, suffixe = '' }) {
 export function Indicateur({ titre, valeur, quoi, evolution, suffixe, lien, libelleLien }) {
   return (
     <Card padding="p-4" className="flex flex-col">
-      <p className="t-eyebrow">{titre}</p>
+      <p className="t-legende">{titre}</p>
       <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="font-display text-3xl font-semibold text-ink-900">{valeur}</span>
         <Evolution evolution={evolution} suffixe={suffixe} />

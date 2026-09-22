@@ -482,7 +482,7 @@ export default function DashboardPage() {
             <ul className="space-y-1.5">
               {prochainesActions.map((item) => (
                 <li key={item.id} className="flex items-start gap-1.5 text-sm text-ink-700">
-                  <Zap className="mt-0.5 size-3.5 shrink-0 text-accent-700" aria-hidden="true" />
+                  <Zap className="mt-0.5 size-3.5 shrink-0 text-ink-600" aria-hidden="true" />
                   {item.measure.statement || item.measure.official_title}
                 </li>
               ))}

@@ -113,7 +113,7 @@ export default function ReferentialsPanel({ clients = [] }) {
           title="Attribuer à un client"
           description="Un client ne voit que les référentiels qui lui sont attribués. Pour lui attribuer un questionnaire plus court, composez-le pour lui ci-dessous."
         />
-        <label className="t-eyebrow" htmlFor="client-referentiels">
+        <label className="t-legende" htmlFor="client-referentiels">
           Client
         </label>
         <select
@@ -133,7 +133,7 @@ export default function ReferentialsPanel({ clients = [] }) {
         {attributions && (
           <div className="mt-4 grid gap-6 lg:grid-cols-2">
             <div>
-              <p className="t-eyebrow">Attribués</p>
+              <p className="t-legende">Attribués</p>
               <ul className="mt-2 divide-y divide-ink-100">
                 {attributions.assigned.length === 0 && (
                   <li className="py-2 text-sm text-ink-500">Aucun.</li>
@@ -172,7 +172,7 @@ export default function ReferentialsPanel({ clients = [] }) {
               </ul>
             </div>
             <div>
-              <p className="t-eyebrow">Disponibles</p>
+              <p className="t-legende">Disponibles</p>
               <ul className="mt-2 divide-y divide-ink-100">
                 {attributions.available.length === 0 && (
                   <li className="py-2 text-sm text-ink-500">

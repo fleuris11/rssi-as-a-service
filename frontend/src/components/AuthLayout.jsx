@@ -15,10 +15,10 @@ export default function AuthLayout({ children }) {
           le nomme pour ce qu'il est : du contexte, pas le contenu. */}
       <aside
         aria-label="Présentation du produit"
-        className="hidden w-[42%] flex-col justify-between bg-brand-950 p-10 text-white lg:flex"
+        className="hidden w-[42%] flex-col justify-between bg-bati-900 p-10 text-white lg:flex"
       >
         <div className="flex items-center gap-2.5">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent-600 font-display text-sm font-bold text-white">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-brand-600 font-display text-sm font-bold text-white">
             R
           </div>
           <span className="font-display text-base font-semibold tracking-tight">
@@ -33,7 +33,7 @@ export default function AuthLayout({ children }) {
           <ul className="mt-8 space-y-4">
             {BENEFITS.map((benefit) => (
               <li key={benefit.text} className="flex items-start gap-3 text-sm text-brand-200">
-                <benefit.icon className="mt-0.5 size-5 shrink-0 text-accent-400" aria-hidden="true" />
+                <benefit.icon className="mt-0.5 size-5 shrink-0 text-craie-douce" aria-hidden="true" />
                 {benefit.text}
               </li>
             ))}
@@ -50,7 +50,7 @@ export default function AuthLayout({ children }) {
           rendant l'attente des parcours robuste, pas par l'audit. */}
       <main className="flex flex-1 flex-col items-center justify-center bg-canvas px-6 py-12">
         <div className="mb-6 flex items-center gap-2.5 lg:hidden">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent-600 font-display text-sm font-bold text-white">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-brand-600 font-display text-sm font-bold text-white">
             R
           </div>
           <span className="font-display text-base font-semibold tracking-tight text-ink-900">

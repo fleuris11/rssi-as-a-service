@@ -96,7 +96,7 @@ function FormulaireIntegration({ suggestion, referentiels, onIntegre, onCancel }
       </p>
       <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
         <div>
-          <label className="t-eyebrow" htmlFor={`ref-${suggestion.id}`}>
+          <label className="t-legende" htmlFor={`ref-${suggestion.id}`}>
             Référentiel
           </label>
           <select
@@ -113,7 +113,7 @@ function FormulaireIntegration({ suggestion, referentiels, onIntegre, onCancel }
           </select>
         </div>
         <div>
-          <label className="t-eyebrow" htmlFor={`dom-${suggestion.id}`}>
+          <label className="t-legende" htmlFor={`dom-${suggestion.id}`}>
             Domaine
           </label>
           {/* Une LISTE et non une saisie libre : c'est ce qui empechait le
@@ -136,7 +136,7 @@ function FormulaireIntegration({ suggestion, referentiels, onIntegre, onCancel }
           </select>
         </div>
         <div>
-          <label className="t-eyebrow" htmlFor={`code-${suggestion.id}`}>
+          <label className="t-legende" htmlFor={`code-${suggestion.id}`}>
             Code de la mesure
           </label>
           <input
@@ -148,7 +148,7 @@ function FormulaireIntegration({ suggestion, referentiels, onIntegre, onCancel }
           />
         </div>
         <div>
-          <label className="t-eyebrow" htmlFor={`titre-${suggestion.id}`}>
+          <label className="t-legende" htmlFor={`titre-${suggestion.id}`}>
             Intitulé officiel
           </label>
           <input
@@ -160,7 +160,7 @@ function FormulaireIntegration({ suggestion, referentiels, onIntegre, onCancel }
         </div>
       </div>
       <div className="mt-2.5">
-        <label className="t-eyebrow" htmlFor={`enonce-${suggestion.id}`}>
+        <label className="t-legende" htmlFor={`enonce-${suggestion.id}`}>
           Énoncé en langage clair (ce que lira le dirigeant)
         </label>
         <textarea
@@ -412,19 +412,19 @@ export default function WatchPanel({ referentiels = [] }) {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap gap-6">
             <div>
-              <p className="t-eyebrow">À examiner</p>
+              <p className="t-legende">À examiner</p>
               <p className="font-display text-2xl font-semibold text-ink-900">
                 {file.summary.new}
               </p>
             </div>
             <div>
-              <p className="t-eyebrow">Retenues</p>
+              <p className="t-legende">Retenues</p>
               <p className="font-display text-2xl font-semibold text-ink-900">
                 {file.summary.kept}
               </p>
             </div>
             <div>
-              <p className="t-eyebrow">Intégrées</p>
+              <p className="t-legende">Intégrées</p>
               <p className="font-display text-2xl font-semibold text-ink-900">
                 {file.summary.integrated}
               </p>

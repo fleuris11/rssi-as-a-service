@@ -446,7 +446,7 @@ export default function PlatformAdminPage() {
           {/* La console est hors du gabarit client : sans sa propre cloche,
               l'exploitant ne verrait jamais une demande arriver. */}
           <NotificationBell />
-          <div className="flex-1 rounded-md bg-brand-900 p-1">
+          <div className="flex-1 rounded-md bg-bati-800 p-1">
             <GlobalSearch
               onSelectTenant={(id) => {
                 setFocusedTenant(id)
