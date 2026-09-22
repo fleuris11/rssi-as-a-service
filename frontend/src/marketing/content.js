@@ -39,15 +39,85 @@ export const SITE = {
   contactEmail: 'contact@rssiasservice.online',
 }
 
+/**
+ * La navigation porte des PAGES, plus des ancres.
+ *
+ * L'accueil tenait sept sections d'un seul tenant, et le reproche était juste :
+ * le visiteur s'y perdait. Rien n'est supprimé pour autant — l'accueil accroche
+ * en six blocs, les pages secondaires expliquent. L'inventaire de ce qui a
+ * bougé est dans docs/design.md.
+ */
 export const NAV = [
-  { label: 'Le produit', href: '#produit' },
-  { label: 'Diagnostic', href: '#diagnostic' },
-  { label: 'Alertes', href: '#alertes' },
-  { label: 'Fonctionnement', href: '#fonctionnement' },
-  { label: 'Sécurité', href: '#securite' },
-  { label: 'Tarifs', href: '#tarifs' },
-  { label: 'Questions', href: '#questions' },
+  { label: 'Fonctionnalités', href: '/fonctionnalites' },
+  { label: 'Sécurité', href: '/securite-du-produit' },
+  { label: 'Offres', href: '/offres' },
+  { label: 'Questions', href: '/questions' },
 ]
+
+/**
+ * L'INSTRUMENT DU PREMIER ÉCRAN.
+ *
+ * Ce que montre la vitrine est le pupitre en marche, pas une promesse. Les
+ * données sont celles du client de DÉMONSTRATION (Cabinet Comptable Durand,
+ * `seed_demo_tenant`) : une entreprise fictive, jamais un client réel. C'est
+ * la première des deux règles de public/screenshots/README.md, et elle
+ * s'applique aussi aux chiffres écrits ici.
+ *
+ * Le score et la courbe sont cohérents entre eux : la dernière valeur de la
+ * série EST le score affiché. Un instrument qui se contredit à l'écran est
+ * pire qu'un instrument absent.
+ */
+export const DEMONSTRATION = {
+  entreprise: 'Cabinet Comptable Durand',
+  score: 38,
+  niveau: 'watch',
+  // Courte volontairement : au téléphone, le bandeau tenait cinq lignes et
+  // repoussait l'accroche sous la ligne de flottaison. Un signal public tient
+  // en une phrase, sinon ce n'est plus un signal.
+  phrase: 'Deux points méritent un œil cette semaine.',
+  // 90 jours, un point tous les cinq jours : assez pour voir une tendance,
+  // assez peu pour rester lisible sur un téléphone.
+  serie: [
+    { valeur: 61, libelle: 'il y a 90 j' },
+    { valeur: 59, libelle: 'il y a 85 j' },
+    { valeur: 62, libelle: 'il y a 80 j' },
+    { valeur: 55, libelle: 'il y a 75 j' },
+    { valeur: 54, libelle: 'il y a 70 j' },
+    { valeur: 48, libelle: 'il y a 65 j' },
+    { valeur: 49, libelle: 'il y a 60 j' },
+    { valeur: 44, libelle: 'il y a 55 j' },
+    { valeur: 45, libelle: 'il y a 50 j' },
+    { valeur: 41, libelle: 'il y a 45 j' },
+    { valeur: 43, libelle: 'il y a 40 j' },
+    { valeur: 40, libelle: 'il y a 35 j' },
+    { valeur: 42, libelle: 'il y a 30 j' },
+    { valeur: 39, libelle: 'il y a 25 j' },
+    { valeur: 41, libelle: 'il y a 20 j' },
+    { valeur: 38, libelle: 'il y a 15 j' },
+    { valeur: 39, libelle: 'il y a 10 j' },
+    { valeur: 37, libelle: 'il y a 5 j' },
+    { valeur: 38, libelle: "aujourd'hui" },
+  ],
+  // La liste affiche à l'envers — les récentes remontent — donc l'alerte la
+  // plus grave est écrite EN DERNIER pour se retrouver en haut. Une liste où
+  // « calme » domine « à surveiller » dit le contraire de ce qu'on veut dire.
+  alertes: [
+    {
+      cle: 'certificat',
+      cran: 'calme',
+      titre: 'Le certificat de www.cabinet-durand-demo.fr expire dans 21 jours',
+      corps: 'Renouvellement automatique non détecté.',
+      traduction: 'Passé cette date, les visiteurs verront un avertissement de sécurité.',
+    },
+    {
+      cle: 'domaine',
+      cran: 'surveille',
+      titre: 'Un nom de domaine ressemblant au vôtre a été déposé',
+      corps: 'cabinet-durand-cornptable.fr — déposé il y a 3 jours.',
+      traduction: 'C’est le préparatif habituel d’un faux email demandant un virement.',
+    },
+  ],
+}
 
 export const HERO = {
   title: 'Vous saurez que vos identifiants ont fuité avant vos clients.',
@@ -73,14 +143,20 @@ export const HERO = {
 export const PREUVES = [
   {
     valeur: '42',
+    mesure: true,
     libelle: 'mesures du guide d’hygiène de l’ANSSI, reprises une à une',
   },
   {
     valeur: '90 jours',
+    mesure: true,
     libelle: 'puis les mots de passe retrouvés sont effacés automatiquement',
   },
   {
+    // `mesure: false` : « France » est un lieu, pas une quantité. Le composer
+    // en chasse fixe avec les deux autres le ferait passer pour un chiffre, et
+    // la mono n'a pas à servir de costume.
     valeur: 'France',
+    mesure: false,
     libelle: 'hébergement et traitement des données, sans sortie de l’Union européenne',
   },
 ]
@@ -548,12 +624,12 @@ export const FOOTER = {
     {
       title: 'Produit',
       links: [
-        { label: 'Diagnostic et plan d’action', href: '/#diagnostic' },
-        { label: 'Alertes et météo cyber', href: '/#alertes' },
-        { label: 'Fonctionnement', href: '/#fonctionnement' },
-        { label: 'Sécurité et données', href: '/#securite' },
-        { label: 'Tarifs', href: '/#tarifs' },
-        { label: 'Questions fréquentes', href: '/#questions' },
+        { label: 'Ce que fait le produit', href: '/fonctionnalites' },
+        { label: 'Diagnostic et plan d’action', href: '/fonctionnalites#diagnostic' },
+        { label: 'Alertes et météo cyber', href: '/fonctionnalites#alertes' },
+        { label: 'Vos données et leur traitement', href: '/securite-du-produit' },
+        { label: 'Offres', href: '/offres' },
+        { label: 'Questions fréquentes', href: '/questions' },
       ],
     },
     {

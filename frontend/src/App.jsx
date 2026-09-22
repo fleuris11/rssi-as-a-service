@@ -9,6 +9,13 @@ import LandingPage from './marketing/pages/LandingPage'
 // aller-retour réseau avant le premier pixel.
 const DemoRequestPage = lazy(() => import('./marketing/pages/DemoRequestPage'))
 const LegalPage = lazy(() => import('./marketing/pages/LegalPage'))
+// Les pages secondaires de la vitrine portent le détail que l'accueil ne garde
+// plus. Chargées à la demande : un visiteur qui reste sur l'accueil ne
+// télécharge pas le tableau comparatif des offres ni la liste des questions.
+const FonctionnalitesPage = lazy(() => import('./marketing/pages/FonctionnalitesPage'))
+const SecuriteProduitPage = lazy(() => import('./marketing/pages/SecuriteProduitPage'))
+const OffresPage = lazy(() => import('./marketing/pages/OffresPage'))
+const QuestionsPage = lazy(() => import('./marketing/pages/QuestionsPage'))
 const AppRoutes = lazy(() => import('./AppRoutes'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const InvitationPage = lazy(() => import('./pages/InvitationPage'))
@@ -27,6 +34,14 @@ function App() {
       <Routes>
         {/* Vitrine publique */}
         <Route path="/" element={<LandingPage />} />
+        <Route path="/fonctionnalites" element={<FonctionnalitesPage />} />
+        {/* `/securite-du-produit` et non `/securite` : l'application occupe
+            déjà `/securite` (réglages de double authentification), et deux
+            pages sur la même adresse est un défaut qui ne se voit qu'une fois
+            connecté. */}
+        <Route path="/securite-du-produit" element={<SecuriteProduitPage />} />
+        <Route path="/offres" element={<OffresPage />} />
+        <Route path="/questions" element={<QuestionsPage />} />
         <Route path="/demonstration" element={<DemoRequestPage />} />
         <Route path="/mentions-legales" element={<LegalPage page="legal" />} />
         <Route path="/confidentialite" element={<LegalPage page="privacy" />} />

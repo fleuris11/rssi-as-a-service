@@ -36,7 +36,7 @@ export default function ApercuProduit({
           <span className="size-1.5 rounded-full bg-ink-300" />
           <span className="size-1.5 rounded-full bg-ink-300" />
         </span>
-        <span className="t-eyebrow">{label}</span>
+        <span className="t-legende">{label}</span>
       </figcaption>
       {/* Une capture réelle occupe tout le cadre ; le substitut CSS garde sa
           marge intérieure. */}

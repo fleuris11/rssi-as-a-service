@@ -66,8 +66,8 @@ export default function FlowDiagram() {
       >
         <defs>
           <linearGradient id="flow-line" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" className="[stop-color:var(--color-brand-400,#9db4d8)]" />
-            <stop offset="100%" className="[stop-color:var(--color-brand-700,#2c4a7c)]" />
+            <stop offset="0%" className="[stop-color:var(--color-brand-300)]" />
+            <stop offset="100%" className="[stop-color:var(--color-brand-600)]" />
           </linearGradient>
         </defs>
 
@@ -100,14 +100,14 @@ export default function FlowDiagram() {
                 cx={node.x}
                 cy={52}
                 r="26"
-                className="fill-brand-50 stroke-brand-300"
+                className="fill-surface stroke-ink-300"
                 strokeWidth="1.5"
               />
               <text
                 x={node.x}
                 y={58}
                 textAnchor="middle"
-                className="fill-brand-800 font-display text-[17px] font-semibold"
+                className="fill-ink-900 font-display text-[17px] font-semibold"
               >
                 {index + 1}
               </text>
