@@ -92,8 +92,17 @@ export default function StudioPage() {
 
   return (
     <div className="space-y-6">
+      {/* Titre de premier niveau, qui manquait ici aussi. */}
+      <div>
+        <h1 className="t-display">Studio de formation</h1>
+        <p className="t-meta mt-1">
+          Créer un cours, le composer écran par écran, le prévisualiser, puis le publier. Une
+          version publiée ne change plus : on en publie une nouvelle.
+        </p>
+      </div>
+
       {erreur && (
-        <p role="alert" className="rounded-lg bg-critical-50 px-4 py-3 text-sm text-critical-strong">
+        <p role="alert" className="rounded-md bg-critical-subtle px-4 py-3 text-sm text-critical-strong">
           {erreur}
         </p>
       )}
@@ -309,7 +318,7 @@ function Editeur({ coursId, variables, onFermer, erreur, problemes, onErreur, on
       </div>
 
       {erreur && (
-        <div role="alert" className="rounded-lg bg-critical-50 px-4 py-3 text-sm text-critical-strong">
+        <div role="alert" className="rounded-lg bg-critical-subtle px-4 py-3 text-sm text-critical-strong">
           {erreur}
           {problemes.length > 0 && (
             <ul className="mt-2 list-disc pl-5">
@@ -329,7 +338,7 @@ function Editeur({ coursId, variables, onFermer, erreur, problemes, onErreur, on
       )}
 
       {version.blocking?.length > 0 && (
-        <div className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-ink-900">
+        <div className="rounded-lg border border-warning-border bg-warning-subtle px-4 py-3 text-sm text-ink-900">
           <strong>À corriger avant publication</strong>
           <ul className="mt-1 list-disc pl-5">
             {version.blocking.map((refus) => (

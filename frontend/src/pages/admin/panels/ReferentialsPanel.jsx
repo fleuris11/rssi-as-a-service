@@ -236,12 +236,12 @@ export default function ReferentialsPanel({ clients = [] }) {
                   <tr key={ref.slug}>
                     <td className="py-2 pr-4 text-ink-800">
                       {ref.name}
-                      <span className="text-ink-400"> v{ref.version}</span>
+                      <span className="text-ink-500"> v{ref.version}</span>
                       {ref.owner_tenant_name && (
                         <span className="text-ink-500"> — propre à {ref.owner_tenant_name}</span>
                       )}
                       {ref.licence_notice && (
-                        <p className="text-xs text-ink-400">{ref.licence_notice}</p>
+                        <p className="text-xs text-ink-500">{ref.licence_notice}</p>
                       )}
                     </td>
                     <td className="py-2 pr-4 text-ink-600">{ref.publisher || '—'}</td>

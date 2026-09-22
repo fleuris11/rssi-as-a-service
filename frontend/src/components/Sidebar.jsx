@@ -6,13 +6,21 @@ import { useOptionalEntitlements } from '../context/EntitlementsContext'
 import { useDisplayProfile } from '../context/useDisplayProfile'
 
 const linkBase =
-  'transition-smooth flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium outline-offset-2 focus-visible:outline-2 focus-visible:outline-white'
+  'transition-smooth t-menu relative flex items-center gap-3 rounded-sm py-2 pl-3 pr-2 outline-offset-2'
 
+/**
+ * L'entrée active porte un FILET plein à gauche, pas un fond teinté.
+ *
+ * Le fond teinté avait deux défauts : sur le bâti il se distinguait mal du
+ * survol, et il occupait une surface colorée dans un produit où la couleur ne
+ * dit que le risque. Le filet marque la position sans rien peindre — c'est la
+ * grammaire d'un pupitre, où l'index repère une voie.
+ */
 function linkClass({ isActive }, collapsed) {
-  const state = isActive
-    ? 'bg-bati-700 text-white'
-    : 'text-craie-douce hover:bg-bati-700/60 hover:text-white'
-  return `${linkBase} ${state} ${collapsed ? 'justify-center' : ''}`
+  const etat = isActive
+    ? 'bg-bati-700 text-craie before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-action-claire'
+    : 'text-craie-douce hover:bg-bati-700/60 hover:text-craie'
+  return `${linkBase} ${etat} ${collapsed ? 'justify-center pl-2 pr-2' : ''}`
 }
 
 /**
@@ -32,13 +40,28 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
   )
 
   return (
-    <div className="flex h-full flex-col bg-bati-900 text-white">
-      <div className={`flex items-center gap-2.5 px-4 py-5 ${collapsed ? 'justify-center px-0' : ''}`}>
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-brand-600 font-display text-sm font-bold text-white">
-          R
-        </div>
+    <div className="sur-bati flex h-full flex-col bg-bati-900">
+      <div
+        className={`flex items-center gap-2.5 border-b border-bati-700 px-4 py-4 ${
+          collapsed ? 'justify-center px-0' : ''
+        }`}
+      >
+        <span
+          aria-hidden="true"
+          className="grid size-8 shrink-0 place-items-center rounded-sm bg-craie text-bati-900"
+        >
+          <span
+            className="text-[0.6875rem] font-semibold uppercase leading-none"
+            style={{ fontVariationSettings: "'wdth' 70" }}
+          >
+            net
+          </span>
+        </span>
         {!collapsed && (
-          <span className="font-display text-base font-semibold tracking-tight text-white">
+          <span
+            className="font-display text-sm font-semibold text-craie"
+            style={{ fontVariationSettings: "'wdth' 92" }}
+          >
             RSSI as a Service
           </span>
         )}
@@ -65,7 +88,7 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
         {techniques.length > 0 && (
           <div role="group" aria-label="Détails techniques">
             <p
-              className={`mt-5 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-craie-douce ${
+              className={`t-legende mt-6 px-3 pb-1.5 text-craie-douce ${
                 collapsed ? 'text-center' : ''
               }`}
             >
@@ -92,7 +115,7 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
         {user?.is_staff && (
           <>
             <p
-              className={`mt-5 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-brand-400 ${
+              className={`t-legende mt-6 px-3 pb-1.5 text-action-claire ${
                 collapsed ? 'text-center' : ''
               }`}
             >
@@ -116,11 +139,11 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
 
       <div className="space-y-1 border-t border-bati-600 px-3 py-3">
         {!collapsed && currentTenant && (
-          <div className="mb-2 flex items-center gap-2 rounded-md px-3 py-2">
-            <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xs font-semibold text-brand-100">
-              {currentTenant.tenant_name.slice(0, 2).toUpperCase()}
-            </div>
-            <span className="truncate text-sm text-brand-100">{currentTenant.tenant_name}</span>
+          <div className="mb-2 px-3 py-1.5">
+            <p className="t-legende text-craie-douce">Espace</p>
+            <p className="mt-0.5 truncate text-sm font-medium text-craie">
+              {currentTenant.tenant_name}
+            </p>
           </div>
         )}
         <NavLink
@@ -143,20 +166,20 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
         </NavLink>
         {user?.is_staff && (
           <NavLink
-            to="/admin/breachsense"
+            to="/admin/renseignement"
             onClick={onNavigate}
             className={(state) => linkClass(state, collapsed)}
-            title={collapsed ? 'Administration CTI' : undefined}
+            title={collapsed ? 'Renseignement' : undefined}
           >
             <ShieldEllipsis className="size-5 shrink-0" aria-hidden="true" />
-            {!collapsed && <span>Administration CTI</span>}
+            {!collapsed && <span>Renseignement</span>}
           </NavLink>
         )}
         <button
           type="button"
           onClick={logout}
           title={collapsed ? 'Déconnexion' : undefined}
-          className={`${linkBase} w-full text-craie-douce hover:bg-bati-700/60 hover:text-white ${collapsed ? 'justify-center' : ''}`}
+          className={`${linkBase} w-full text-craie-douce hover:bg-bati-700/60 hover:text-craie ${collapsed ? 'justify-center' : ''}`}
         >
           <LogOut className="size-5 shrink-0" aria-hidden="true" />
           {!collapsed && <span>Déconnexion</span>}

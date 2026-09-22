@@ -186,7 +186,7 @@ export default function FormationPage() {
           La période de formation est terminée, ou cet accès a été retiré.
         </p>
         {demandeEnvoyee ? (
-          <p className="mt-4 flex items-start gap-2 rounded-lg border border-ok-200 bg-ok-50 p-3 text-sm text-ink-800">
+          <p className="mt-4 flex items-start gap-2 rounded-lg border border-ok-border bg-ok-subtle p-3 text-sm text-ink-800">
             <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-ok-strong" aria-hidden="true" />
             Votre demande a été transmise aux responsables de votre entreprise. Ils vous
             renverront un accès.
@@ -257,7 +257,7 @@ export default function FormationPage() {
         )}
 
         {erreur && (
-          <p role="alert" className="mb-4 rounded-lg bg-critical-50 px-4 py-3 text-sm text-critical-strong">
+          <p role="alert" className="mb-4 rounded-lg bg-critical-subtle px-4 py-3 text-sm text-critical-strong">
             {erreur}
           </p>
         )}

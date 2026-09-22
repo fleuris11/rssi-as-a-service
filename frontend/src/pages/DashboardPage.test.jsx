@@ -16,6 +16,20 @@ vi.mock('../api/endpoints', () => ({
   reportingApi: { dashboard: vi.fn(), reportPdf: vi.fn(), exportCsv: vi.fn() },
 }))
 vi.mock('../components/ui/Toast', () => ({ useToast: () => ({ showToast: vi.fn() }) }))
+// Le profil n'est plus un vocabulaire, c'est une mise en page : les
+// indicateurs, le selecteur de periode, les courbes et le tableur vivent
+// desormais dans la CONSOLE (profil Technique). Chaque test declare donc le
+// profil qu'il exerce, au lieu de dependre d'un defaut.
+let profilCourant = 'technical'
+vi.mock('../context/useDisplayProfile', () => ({
+  EXECUTIVE: 'executive',
+  TECHNICAL: 'technical',
+  useDisplayProfile: () => ({
+    profile: profilCourant,
+    isTechnical: profilCourant === 'technical',
+    setProfile: vi.fn(),
+  }),
+}))
 vi.mock('../context/EntitlementsContext', () => ({
   useEntitlements: () => ({
     hasFeature: () => true,
@@ -88,7 +102,8 @@ function servir({ evaluations = [{ id: 1, status: 'completed' }], donnees = indi
   reportingApi.dashboard.mockResolvedValue({ data: donnees })
 }
 
-function rendre() {
+function rendre(profil = 'technical') {
+  profilCourant = profil
   return render(
     <MemoryRouter>
       <DashboardPage />
@@ -99,6 +114,58 @@ function rendre() {
 describe('DashboardPage — le tableau de bord d’un RSSI', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    profilCourant = 'technical'
+  })
+
+  describe('les deux profils sont deux ecrans, pas deux vocabulaires', () => {
+    it('le profil Dirigeant ne montre ni selecteur de periode, ni tableur', async () => {
+      servir()
+      rendre('executive')
+
+      // Le chiffre est la : c'est la MEME donnee, lue de la meme reponse.
+      // Il apparait deux fois — la jauge et le curseur de la courbe, qui se
+      // pose par defaut sur la derniere mesure. C'est voulu : les deux
+      // doivent dire la meme chose.
+      expect((await screen.findAllByText('41')).length).toBeGreaterThan(0)
+      // Mais l'outillage d'analyse n'y est pas : un dirigeant tranche, il
+      // n'analyse pas.
+      expect(screen.queryByRole('button', { name: /tableur/i })).not.toBeInTheDocument()
+      expect(screen.queryByText(/comparé aux 91 jours précédents/)).not.toBeInTheDocument()
+    })
+
+    it('le profil Dirigeant garde le rapport de comité', async () => {
+      servir()
+      rendre('executive')
+      expect(
+        await screen.findByRole('button', { name: /rapport de comité/i })
+      ).toBeInTheDocument()
+    })
+
+    it('les deux profils lisent le même score, jamais deux valeurs', async () => {
+      servir()
+      const dirigeant = rendre('executive')
+      expect((await screen.findAllByText('41')).length).toBeGreaterThan(0)
+      dirigeant.unmount()
+
+      servir()
+      rendre('technical')
+      expect(await screen.findByText('41/100')).toBeInTheDocument()
+    })
+
+    it('le panneau « À traiter en premier » n’est jamais un cadre vide', async () => {
+      // Sans alerte ni action rapide, l'ancienne version laissait un blanc :
+      // impossible de distinguer « rien à faire » d'un chargement rate.
+      servir()
+      actionsApi.listAll.mockResolvedValue([])
+      rendre('executive')
+
+      expect(
+        await screen.findByText(/Rien n’attend de décision de votre part aujourd’hui/)
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText(/Ce panneau se remplit tout seul/)
+      ).toBeInTheDocument()
+    })
   })
 
   it('compare à la période précédente par défaut', async () => {

@@ -233,11 +233,24 @@ a:not([class*='rounded']):not([class*='bg-']) {
  * ================================================================= */
 
 /* Le panneau : tête réglée, corps, pied d'actions. La profondeur vient du
-   filet, pas de l'ombre. */
+   filet, pas de l'ombre.
+ *
+ * `min-width: 0` n'est pas un détail : un élément de grille ou de flex a par
+ * défaut `min-width: auto`, donc un enfant large — une adresse de site, une
+ * colonne de tableau — élargit sa piste au lieu d'être tronqué. Le tableau de
+ * bord en profil Technique débordait ainsi de 35 px au téléphone, alors que
+ * la grille était correcte. Mesuré, puis bissecté élément par élément. */
 .panneau {
+  min-width: 0;
   background-color: var(--color-surface);
   border: 1px solid var(--color-ink-200);
   border-radius: var(--radius-md);
+}
+
+/* Même raison : la tête du panneau porte souvent une légende et un compteur,
+   et une légende longue poussait la piste. */
+.panneau > .panneau-tete > * {
+  min-width: 0;
 }
 
 .panneau > .panneau-tete {

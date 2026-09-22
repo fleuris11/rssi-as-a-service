@@ -143,9 +143,9 @@ function Groupe({ groupe, filtres, onStatut, occupe }) {
       >
         <div className="flex min-w-0 items-start gap-2">
           {ouvert ? (
-            <ChevronDown className="mt-0.5 size-4 shrink-0 text-ink-400" aria-hidden="true" />
+            <ChevronDown className="mt-0.5 size-4 shrink-0 text-ink-500" aria-hidden="true" />
           ) : (
-            <ChevronRight className="mt-0.5 size-4 shrink-0 text-ink-400" aria-hidden="true" />
+            <ChevronRight className="mt-0.5 size-4 shrink-0 text-ink-500" aria-hidden="true" />
           )}
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-ink-800">
@@ -287,7 +287,7 @@ export default function ResultatsComptes({ comptes = [], resume = {} }) {
         </p>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Filter className="size-4 text-ink-400" aria-hidden="true" />
+          <Filter className="size-4 text-ink-500" aria-hidden="true" />
           <label className="sr-only" htmlFor="filtre-statut">
             Statut
           </label>
@@ -356,7 +356,7 @@ export default function ResultatsComptes({ comptes = [], resume = {} }) {
           </select>
 
           <div className="flex items-center gap-1">
-            <Search className="size-4 text-ink-400" aria-hidden="true" />
+            <Search className="size-4 text-ink-500" aria-hidden="true" />
             <label className="sr-only" htmlFor="filtre-recherche">
               Rechercher un compte
             </label>

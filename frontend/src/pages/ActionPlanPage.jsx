@@ -138,7 +138,7 @@ function ActionCard({ item, members, updatingId, onUpdate, montrerReferentiel = 
           faute, elle est sans date, ce que le rapport dit séparément. */}
       <div className="flex items-center gap-2">
         <CalendarClock
-          className={`size-4 shrink-0 ${item.is_overdue ? 'text-critical-strong' : 'text-ink-400'}`}
+          className={`size-4 shrink-0 ${item.is_overdue ? 'text-critical-strong' : 'text-ink-500'}`}
           aria-hidden="true"
         />
         <input

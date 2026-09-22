@@ -12,7 +12,7 @@
  * été vérifiées une par une contre l'implémentation :
  *   - neuf sources de renseignement, pas dix (la dixième valeur de
  *     l'énumération, « webhook », est un canal de livraison, pas une source —
- *     voir providers/breachsense/client.py:QUERY_ENDPOINTS) ;
+ *     voir le client du fournisseur de renseignement, QUERY_ENDPOINTS) ;
  *   - la révélation exige une NOUVELLE vérification d'identité (mot de passe
  *     OU code à usage unique), ce qui n'est pas la même chose que « sous
  *     double authentification » : la 2FA est proposée, pas imposée ;

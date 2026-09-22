@@ -71,7 +71,7 @@ function ReferentielsADemander({ referentiels, demandes, onDemander, enCours }) 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="flex items-center gap-2 text-sm font-medium text-ink-700">
-                  <Lock className="size-3.5 shrink-0 text-ink-400" aria-hidden="true" />
+                  <Lock className="size-3.5 shrink-0 text-ink-500" aria-hidden="true" />
                   {ref.name}
                 </p>
                 <p className="mt-0.5 text-xs text-ink-500">

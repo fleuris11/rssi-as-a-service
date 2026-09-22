@@ -173,9 +173,21 @@ export function Courbe({ titre, question, lecture, donnees, traits, domaineY, fo
         <p className="text-sm text-ink-500">{vide}</p>
       ) : (
         <>
+          {/* Le trace est masque aux technologies d'assistance : la phrase de
+              lecture, juste en dessous, dit la meme chose en francais, et un
+              SVG de courbe ne s'ecoute pas. Mais recharts pose `tabindex=0`
+              sur sa surface : un element focalisable dans un sous-arbre
+              `aria-hidden` est une violation « serious » — le clavier peut
+              atteindre ce que le lecteur d'ecran ne voit pas.
+              `accessibilityLayer={false}` retire ce point d'arret. */}
           <div className="h-56 w-full" aria-hidden="true">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+              <LineChart
+                data={points}
+                accessibilityLayer={false}
+                tabIndex={-1}
+                margin={{ top: 8, right: 8, bottom: 0, left: -20 }}
+              >
                 <CartesianGrid stroke="var(--color-ink-100)" vertical={false} />
                 <XAxis
                   dataKey="libelle"

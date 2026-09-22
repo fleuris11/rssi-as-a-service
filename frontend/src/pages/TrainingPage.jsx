@@ -88,8 +88,18 @@ export default function TrainingPage() {
 
   return (
     <div className="space-y-6">
+      {/* Un titre de premier niveau, qui manquait : axe-core le releve en
+          « moderate », donc au seuil du balayage, et sans lui un lecteur
+          d'ecran ne sait pas sur quelle page il arrive. */}
+      <div>
+        <h1 className="t-display">Formation des salariés</h1>
+        <p className="t-meta mt-1">
+          Des parcours de dix minutes, envoyés par lien personnel. Aucun compte n’est créé,
+          et aucun classement des salariés par score n’est produit.
+        </p>
+      </div>
       {erreur && (
-        <p role="alert" className="rounded-lg bg-critical-50 px-4 py-3 text-sm text-critical-strong">
+        <p role="alert" className="rounded-lg bg-critical-subtle px-4 py-3 text-sm text-critical-strong">
           {erreur}
         </p>
       )}

@@ -278,7 +278,7 @@ export default function ResultsPage() {
                 </span>
                 <Link
                   to={`/plan-action?domaine=${encodeURIComponent(d.domain_name)}`}
-                  className="transition-smooth shrink-0 text-ink-400 hover:text-brand-600"
+                  className="transition-smooth shrink-0 text-ink-500 hover:text-brand-600"
                   aria-label={`Voir les mesures en écart pour ${d.domain_name}`}
                 >
                   <ArrowRight className="size-4" aria-hidden="true" />

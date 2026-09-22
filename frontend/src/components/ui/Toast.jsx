@@ -69,7 +69,7 @@ export function ToastProvider({ children }) {
                 type="button"
                 onClick={() => dismiss(toast.id)}
                 aria-label="Fermer la notification"
-                className="transition-smooth -m-1 shrink-0 rounded p-1 text-ink-400 hover:text-white"
+                className="transition-smooth -m-1 shrink-0 rounded p-1 text-ink-500 hover:text-white"
               >
                 <X className="size-4" aria-hidden="true" />
               </button>

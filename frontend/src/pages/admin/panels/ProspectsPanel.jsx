@@ -251,7 +251,7 @@ function ProspectCard({ prospect, onChanged, onConvert }) {
         <ul className="mt-3 space-y-1.5 border-t border-ink-100 pt-3">
           {prospect.notes.map((entry) => (
             <li key={entry.id} className="text-sm text-ink-600">
-              <span className="text-xs text-ink-400">
+              <span className="text-xs text-ink-500">
                 {new Date(entry.created_at).toLocaleDateString('fr-FR')} · {entry.author_email} —{' '}
               </span>
               {entry.body}

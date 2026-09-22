@@ -22,7 +22,7 @@ function ProfileSwitch() {
 
   return (
     <div
-      className="flex items-center gap-1 rounded-full border border-ink-200 bg-canvas p-0.5"
+      className="flex items-center rounded-sm border border-ink-300 bg-creuse p-0.5"
       role="group"
       aria-label="Profil d’affichage"
     >
@@ -37,10 +37,10 @@ function ProfileSwitch() {
               ? 'Vocabulaire courant, détails techniques repliés'
               : 'Champs bruts dépliés, explications resserrées'
           }
-          className={`transition-smooth rounded-full px-2.5 py-1 text-xs ${
+          className={`transition-smooth rounded-sm px-3 py-1 text-xs font-semibold ${
             profile === option.value
-              ? 'bg-brand-600 text-white'
-              : 'text-ink-500 hover:text-brand-600'
+              ? 'bg-surface text-ink-900 shadow-soft'
+              : 'text-ink-600 hover:text-ink-900'
           }`}
         >
           {option.label}
@@ -55,19 +55,27 @@ export default function Topbar({ onOpenMenu }) {
   const title = pageTitleFor(location.pathname)
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-ink-200 bg-surface/90 px-4 backdrop-blur-sm sm:px-6 lg:px-10">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-ink-200 bg-surface px-4 sm:px-6 lg:px-8">
       <button
         type="button"
         onClick={onOpenMenu}
         aria-label="Ouvrir le menu"
-        className="transition-smooth -ml-1 rounded-md p-1.5 text-ink-600 hover:bg-ink-100 focus-visible:outline-2 focus-visible:outline-brand-600 lg:hidden"
+        className="transition-smooth -ml-1 rounded-sm p-1.5 text-ink-600 hover:bg-creuse lg:hidden"
       >
         <Menu className="size-5" aria-hidden="true" />
       </button>
-      {/* Not an <h1>: every page already renders its own — this is a
-          persistent location label, not the document heading. Two <h1>s
-          with the same text is both bad a11y and ambiguous for tests. */}
-      <p className="text-sm font-semibold text-ink-800">{title}</p>
+      {/* PAS un <h1> : chaque page rend déjà le sien. C'est un repère de
+          position — « où suis-je » — pas le titre du document. Deux <h1> au
+          même texte est à la fois une faute d'accessibilité et une ambiguïté
+          pour les tests.
+
+          Le fil d'adresse est l'une des quatre disciplines empruntées aux
+          mondes adverses du tirage de direction : dans un magazine télétexte,
+          chaque page porte son numéro, visible en permanence. */}
+      <p className="flex min-w-0 items-baseline gap-2">
+        <span className="t-legende hidden sm:inline">Écran</span>
+        <span className="truncate text-sm font-semibold text-ink-900">{title}</span>
+      </p>
       <div className="ml-auto flex items-center gap-2">
         {/* Lot C, point 20 : la cloche, sur chaque écran de l'application. */}
         <NotificationBell />

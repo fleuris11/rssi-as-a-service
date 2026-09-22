@@ -62,7 +62,7 @@ function SynthesisBanner({ synthesis, onRefresh, refreshing, canRefresh }) {
     // des actifs ; trois lignes l'orientent.
     <section
       aria-label="Analyse de votre exposition"
-      className="rounded-lg border border-ink-200/70 border-l-[3px] border-l-brand-600 bg-brand-50/40 px-5 py-4"
+      className="panneau bg-creuse px-5 py-4"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -85,7 +85,7 @@ function SynthesisBanner({ synthesis, onRefresh, refreshing, canRefresh }) {
       {/* La priorité de la semaine, détachée. Le prompt serveur la place en
           dernière position ; on la remonte pour qu'elle se voie. */}
       {priorite && (
-        <p className="mt-3 flex gap-2 border-l-2 border-brand-300 pl-3">
+        <p className="mt-3 flex gap-2 border-t border-ink-200 pt-3">
           <span className="t-legende shrink-0 pt-1 text-brand-700">Priorité</span>
           <span className="t-body font-medium text-ink-900">{priorite}</span>
         </p>
@@ -149,7 +149,7 @@ function ScoreExplanation({ components }) {
               {component.points > 0 ? `+${component.points}` : '< 1'}
             </span>
             <span>
-              {component.label} <span className="text-ink-400">({component.detail})</span>
+              {component.label} <span className="text-ink-500">({component.detail})</span>
             </span>
           </li>
         ))}
@@ -226,7 +226,7 @@ function FindingRow({ finding, canReveal, onReveal, retentionDays }) {
       {finding.reuse_signals?.map((signal) => (
         <p
           key={signal.signal_type}
-          className="mt-2 rounded-md border-l-2 border-warning-strong bg-warning-subtle px-3 py-2 text-sm text-warning-strong"
+          className="mt-2 rounded-md border border-warning-border bg-warning-subtle px-3 py-2 text-sm text-warning-strong"
         >
           <span className="font-semibold">{signal.label} — </span>
           {signal.explanation}

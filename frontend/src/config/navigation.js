@@ -78,7 +78,7 @@ const SECONDARY_TITLES = {
   '/notifications': 'Notifications',
   '/preferences': 'Préférences',
   '/securite': 'Sécurité',
-  '/admin/breachsense': 'Administration — Renseignement sur la menace',
+  '/admin/renseignement': 'Administration — Renseignement sur la menace',
   '/admin/plateforme': 'Administration de la plateforme',
 }
 
@@ -87,7 +87,7 @@ const SECONDARY_TITLES = {
 // espace client mieux doté, c'est un espace séparé.
 export const STAFF_NAV_ITEMS = [
   { to: '/admin/plateforme', label: 'Plateforme', icon: Building2 },
-  { to: '/admin/breachsense', label: 'Licence CTI', icon: Radar },
+  { to: '/admin/renseignement', label: 'Licence CTI', icon: Radar },
 ]
 
 /**

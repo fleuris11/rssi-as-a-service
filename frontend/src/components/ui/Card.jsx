@@ -1,11 +1,14 @@
 /**
- * Le trait plutôt que l'ombre (refonte visuelle).
+ * LE PANNEAU D'INSTRUMENT.
  *
- * L'ombre au repos fabriquait un relief qui ne correspondait à aucune
- * profondeur réelle : six cartes par écran, toutes légèrement décollées du
- * fond, donc aucune plus importante qu'une autre. Le filet suffit à poser une
- * surface ; l'ombre est réservée à ce qui flotte vraiment — modale, menu,
- * infobulle — et reste disponible par `elevation`.
+ * Ce composant s'appelait « carte », et c'était le problème : six cartes de
+ * forme identique par écran, toutes légèrement décollées du fond, donc aucune
+ * plus importante qu'une autre. Un panneau de pupitre, lui, a une tête réglée
+ * qui le nomme et un corps qui porte la mesure.
+ *
+ * La profondeur vient d'un FILET d'1 px, jamais d'une ombre au repos. L'ombre
+ * est réservée à ce qui flotte vraiment — modale, menu, infobulle — et reste
+ * disponible par `elevation`.
  */
 export default function Card({
   as: Tag = 'div',
@@ -17,7 +20,7 @@ export default function Card({
 }) {
   return (
     <Tag
-      className={`rounded-lg border border-ink-200 bg-surface ${
+      className={`rounded-md border border-ink-200 bg-surface ${
         elevation ? 'shadow-elevated' : ''
       } ${padding} ${className}`}
       {...props}
@@ -39,8 +42,8 @@ export function CardHeader({ title, description, subtitle, action, className = '
   return (
     <div className={`mb-4 flex items-start justify-between gap-4 ${className}`}>
       <div>
-        <h2 className="font-display text-lg font-semibold text-ink-900">{title}</h2>
-        {sousTitre && <p className="mt-0.5 text-sm text-ink-500">{sousTitre}</p>}
+        <h2 className="t-title">{title}</h2>
+        {sousTitre && <p className="t-meta mt-0.5">{sousTitre}</p>}
       </div>
       {action}
     </div>

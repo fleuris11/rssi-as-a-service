@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest'
  */
 
 const RACINE = path.resolve(import.meta.dirname, '..')
+const LIGNE = String.fromCharCode(10)
 const JETONS = path.join(RACINE, 'src/tokens.css')
 
 function luminance(hex) {
@@ -65,6 +66,24 @@ describe('les jetons sont la source unique', () => {
       }
     }
     expect(fautes, `Couleurs en dur hors de tokens.css :\n${fautes.join('\n')}`).toEqual([])
+  })
+
+  it('n’emploie jamais ink-400 comme couleur de texte', () => {
+    // ink-400 est un ton de FILET et d'icône : 2,83:1 sur un panneau blanc.
+    // Trois usages en texte sur l'écran Exposition ont été relevés par
+    // axe-core. La garde empêche le prochain, qui ne se verrait pas davantage.
+    const fautes = []
+    for (const fichier of fichiersJsx(path.join(RACINE, 'src'))) {
+      const contenu = fs.readFileSync(fichier, 'utf8')
+      for (const ligne of contenu.split(LIGNE)) {
+        // `disabled:text-ink-400` reste autorisé : WCAG exempte explicitement
+        // les contrôles désactivés de l'exigence de contraste.
+        if (/(?<!disabled:)text-ink-400/.test(ligne)) {
+          fautes.push(`${path.relative(RACINE, fichier)} : ${ligne.trim().slice(0, 90)}`)
+        }
+      }
+    }
+    expect(fautes, `ink-400 employé comme texte :${LIGNE}${fautes.join(LIGNE)}`).toEqual([])
   })
 
   it('déclare les familles du monde retenu, et aucune autre', () => {

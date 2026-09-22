@@ -163,7 +163,7 @@ export default function OwnershipProofModal({ open, onClose, asset, onProven }) 
             <div key={m.id} className="rounded-md border border-ink-100 p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start gap-3">
-                  <m.icone className="mt-0.5 size-5 shrink-0 text-ink-400" aria-hidden="true" />
+                  <m.icone className="mt-0.5 size-5 shrink-0 text-ink-500" aria-hidden="true" />
                   <div>
                     <p className="text-sm font-medium text-ink-800">{m.libelle}</p>
                     <p className="text-xs text-ink-500">{m.resume}</p>

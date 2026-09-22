@@ -46,7 +46,7 @@ export default function Champ({
           type={type}
           aria-invalid={erreur ? 'true' : undefined}
           aria-describedby={[idAide, idErreur].filter(Boolean).join(' ') || undefined}
-          className={`transition-smooth mt-1.5 w-full rounded-md border bg-surface px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 disabled:bg-creuse disabled:text-ink-500 ${
+          className={`transition-smooth mt-1.5 w-full rounded-md border bg-surface px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 disabled:bg-creuse disabled:text-ink-500 ${
             erreur ? 'border-critical-strong' : 'border-ink-300 hover:border-ink-400'
           }`}
           {...reste}

@@ -170,6 +170,18 @@ export function lectureDuScore(score, scale = 'maturity') {
 }
 
 /**
+ * La meme lecture, mais en TETE de phrase.
+ *
+ * `lectureDuScore` rend une proposition en minuscule, faite pour etre accolee
+ * a un chiffre (« 92 sur 100 — votre niveau est solide »). Employee seule,
+ * elle ouvrait une phrase par une minuscule sur le tableau de bord.
+ */
+export function lectureEnTete(score, scale = 'maturity') {
+  const phrase = lectureDuScore(score, scale)
+  return phrase ? phrase.charAt(0).toUpperCase() + phrase.slice(1) : null
+}
+
+/**
  * Un score et son sens.
  *
  * Dirigeant : « 92 sur 100 — votre niveau est solide ». Technicien :

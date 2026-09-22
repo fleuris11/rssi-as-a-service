@@ -112,10 +112,13 @@
      risque. */
   --color-ok-strong: #0b6e3f;
   --color-ok-subtle: #e6f2eb;
+  --color-ok-border: #8fc4a9;
   --color-warning-strong: #8a5300;
   --color-warning-subtle: #fbf0dc;
+  --color-warning-border: #ddb673;
   --color-critical-strong: #9e1219;
   --color-critical-subtle: #fbe6e7;
+  --color-critical-border: #de8f93;
 
   /* --- Espacement : unité 4 px ------------------------------------ */
   --spacing-e1: 0.25rem;

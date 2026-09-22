@@ -4,7 +4,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import { EntitlementsProvider } from './context/EntitlementsContext'
 import PlatformAdminRoute from './components/PlatformAdminRoute'
 import ActionPlanPage from './pages/ActionPlanPage'
-import AdminBreachsensePage from './pages/AdminBreachsensePage'
+import AdminRenseignementPage from './pages/AdminRenseignementPage'
 import PlatformAdminPage from './pages/admin/PlatformAdminPage'
 import AssistantPage from './pages/AssistantPage'
 import CompromisesPage from './pages/CompromisesPage'
@@ -71,7 +71,7 @@ export default function AppRoutes() {
           raison d'etre membre d'une entreprise cliente. */}
       <Route element={<PlatformAdminRoute />}>
         <Route path="/admin/plateforme" element={<PlatformAdminPage />} />
-        <Route path="/admin/breachsense" element={<AdminBreachsensePage />} />
+        <Route path="/admin/renseignement" element={<AdminRenseignementPage />} />
       </Route>
 
       {/* Une URL inconnue renvoie vers la vitrine plutôt que vers le tableau

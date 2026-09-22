@@ -28,7 +28,7 @@ function Field({ label, name, children, error, required }) {
             formulaire. En gris : la convention est conservée, le rouge est
             rendu aux erreurs réelles, juste en dessous. */}
         {required && (
-          <span className="text-ink-400" aria-hidden="true">
+          <span className="text-ink-500" aria-hidden="true">
             {' *'}
           </span>
         )}
@@ -45,7 +45,7 @@ function Field({ label, name, children, error, required }) {
 }
 
 const inputClass =
-  'transition-smooth w-full rounded-md border border-ink-300 bg-surface px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 hover:border-ink-400'
+  'transition-smooth w-full rounded-md border border-ink-300 bg-surface px-3 py-2 text-sm text-ink-900 placeholder:text-ink-500 hover:border-ink-400'
 
 export default function DemoRequestPage() {
   useSeo({

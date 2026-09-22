@@ -75,7 +75,7 @@ export default function GlobalSearch({ onSelectTenant, onSelectProspect }) {
 
           {results.tenants.length > 0 && (
             <>
-              <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-ink-400">
+              <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-ink-500">
                 Entreprises
               </p>
               {results.tenants.map((tenant) => (
@@ -87,7 +87,7 @@ export default function GlobalSearch({ onSelectTenant, onSelectProspect }) {
                 >
                   {tenant.name}
                   {tenant.plan_name && <span className="text-ink-500"> — {tenant.plan_name}</span>}
-                  {tenant.archived && <span className="text-ink-400"> (archivée)</span>}
+                  {tenant.archived && <span className="text-ink-500"> (archivée)</span>}
                 </button>
               ))}
             </>
@@ -95,7 +95,7 @@ export default function GlobalSearch({ onSelectTenant, onSelectProspect }) {
 
           {results.users.length > 0 && (
             <>
-              <p className="mt-1 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-ink-400">
+              <p className="mt-1 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-ink-500">
                 Personnes
               </p>
               {results.users.map((user) => (
@@ -108,8 +108,8 @@ export default function GlobalSearch({ onSelectTenant, onSelectProspect }) {
                 >
                   {user.email}
                   {user.tenant_name && <span className="text-ink-500"> — {user.tenant_name}</span>}
-                  {user.is_staff && <span className="text-ink-400"> (administrateur)</span>}
-                  {!user.is_active && <span className="text-ink-400"> · inactif</span>}
+                  {user.is_staff && <span className="text-ink-500"> (administrateur)</span>}
+                  {!user.is_active && <span className="text-ink-500"> · inactif</span>}
                 </button>
               ))}
             </>
@@ -117,7 +117,7 @@ export default function GlobalSearch({ onSelectTenant, onSelectProspect }) {
 
           {results.prospects.length > 0 && (
             <>
-              <p className="mt-1 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-ink-400">
+              <p className="mt-1 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-ink-500">
                 Prospects
               </p>
               {results.prospects.map((prospect) => (

@@ -17,7 +17,7 @@ function StatTile({ label, value, hint }) {
   )
 }
 
-export default function AdminBreachsensePage() {
+export default function AdminRenseignementPage() {
   const { showToast } = useToast()
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState(null)
@@ -62,7 +62,7 @@ export default function AdminBreachsensePage() {
           Renseignement sur la menace — Administration
         </h1>
         <p className="mt-1 text-sm text-ink-500">
-          Licence Breachsense partagée par toute la plateforme (palier Essentials) — vue
+          Licence de renseignement partagée par toute la plateforme — vue
           réservée aux administrateurs plateforme.
         </p>
       </div>

@@ -211,7 +211,7 @@ function LigneCompte({ compte, onRemove, onScan, occupe }) {
           {compte.declared_by_email ? ` par ${compte.declared_by_email}` : ''}
         </p>
         <p className="mt-1 max-w-2xl text-xs italic text-ink-500">« {compte.purpose} »</p>
-        <p className="mt-1 text-xs text-ink-400">
+        <p className="mt-1 text-xs text-ink-500">
           Dernière analyse : {compte.last_scanned_at ? dateCourte(compte.last_scanned_at) : 'jamais'}
         </p>
       </div>

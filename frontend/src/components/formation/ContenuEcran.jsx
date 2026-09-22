@@ -31,7 +31,7 @@ const TONS = {
   },
   attention: {
     icone: TriangleAlert,
-    classes: 'border-warning-200 bg-warning-50 text-ink-900',
+    classes: 'border-warning-border bg-warning-subtle text-ink-900',
     libelle: 'Point de vigilance',
   },
   exemple: {
@@ -103,7 +103,7 @@ function Bloc({ bloc }) {
 
     case 'citation':
       return (
-        <figure className="border-l-4 border-ink-300 pl-4">
+        <figure className="border-l-2 border-ink-300 pl-4">
           <blockquote className="text-[1.05rem] italic leading-relaxed text-ink-700">
             <Texte>{bloc.texte}</Texte>
           </blockquote>

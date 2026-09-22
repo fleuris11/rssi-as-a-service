@@ -22,7 +22,7 @@ export default function Jauge({ score, niveau, libelle = 'Exposition', anime = f
       <p className="t-legende">{libelle}</p>
 
       <div className="mt-1 flex items-end gap-3">
-        <p className={`n-grand ${connu ? 'text-ink-900' : 'text-ink-400'}`}>
+        <p className={`n-grand ${connu ? 'text-ink-900' : 'text-ink-500'}`}>
           {connu ? (
             anime ? (
               <ChiffreAnime valeur={valeur} />

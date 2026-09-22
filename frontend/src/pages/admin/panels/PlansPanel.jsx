@@ -277,7 +277,7 @@ function PlanPreview({ code, onClose }) {
       {data && (
         <div className="space-y-4">
           {!data.is_visible_publicly && (
-            <p className="rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-ink-700">
+            <p className="rounded-md border border-warning-border bg-warning-subtle px-3 py-2 text-sm text-ink-700">
               Cette offre n’est pas publiée : elle n’apparaît pas sur le site public. L’aperçu
               montre ce que verraient les visiteurs une fois publiée.
             </p>
