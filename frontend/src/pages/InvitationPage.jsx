@@ -4,9 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { invitationApi } from '../api/endpoints'
 import AuthLayout from '../components/AuthLayout'
 import Button from '../components/ui/Button'
-
-const inputClass =
-  'transition-smooth mt-1 w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-brand-600'
+import Champ from '../components/ui/Champ'
 
 /**
  * Définition du mot de passe depuis un lien d'invitation.
@@ -126,36 +124,33 @@ export default function InvitationPage() {
       </p>
 
       <form onSubmit={submit} className="mt-6 space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-ink-700" htmlFor="password">
-            Mot de passe
-          </label>
-          <input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            required
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-ink-700" htmlFor="confirmation">
-            Confirmez le mot de passe
-          </label>
-          <input
-            id="confirmation"
-            type="password"
-            autoComplete="new-password"
-            value={confirmation}
-            onChange={(event) => setConfirmation(event.target.value)}
-            required
-            className={inputClass}
-          />
-        </div>
+        <Champ
+          label="Mot de passe"
+          type="password"
+          autoComplete="new-password"
+          aide="12 caractères minimum."
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          required
+        />
+        <Champ
+          label="Confirmez le mot de passe"
+          type="password"
+          autoComplete="new-password"
+          value={confirmation}
+          onChange={(event) => setConfirmation(event.target.value)}
+          required
+        />
 
-        {error && <p className="text-sm text-critical-strong">{error}</p>}
+        {error && (
+          <p
+            className="flex items-start gap-1.5 rounded-md bg-critical-subtle px-3 py-2 text-sm text-critical-strong"
+            role="alert"
+          >
+            <span aria-hidden="true">▲</span>
+            {error}
+          </p>
+        )}
 
         <Button type="submit" className="w-full" loading={submitting}>
           Valider

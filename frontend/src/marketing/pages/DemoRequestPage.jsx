@@ -35,7 +35,8 @@ function Field({ label, name, children, error, required }) {
       </label>
       <div className="mt-1.5">{children}</div>
       {error && (
-        <p id={`${name}-error`} className="mt-1.5 text-sm text-critical-strong">
+        <p id={`${name}-error`} className="mt-1.5 flex items-start gap-1.5 text-sm text-critical-strong">
+          <span aria-hidden="true">▲</span>
           {error}
         </p>
       )}
@@ -44,7 +45,7 @@ function Field({ label, name, children, error, required }) {
 }
 
 const inputClass =
-  'w-full rounded-md border border-ink-300 px-3 py-2.5 text-sm text-ink-900 outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand-600'
+  'transition-smooth w-full rounded-md border border-ink-300 bg-surface px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400 hover:border-ink-400'
 
 export default function DemoRequestPage() {
   useSeo({
@@ -113,21 +114,21 @@ export default function DemoRequestPage() {
   if (done) {
     return (
       <MarketingLayout>
-        <div className="mx-auto max-w-2xl px-5 py-24">
-          <div className="rounded-lg border border-ok-strong/30 bg-ok-subtle p-8">
+        <div className="mx-auto max-w-2xl px-4 py-20 sm:px-6">
+          <div className="panneau border-risk-calm-border bg-risk-calm-surface p-8">
             <span
               aria-hidden="true"
-              className="flex size-11 items-center justify-center rounded-full bg-ok-strong/15 text-ok-strong"
+              className="flex size-10 items-center justify-center rounded-md bg-surface text-risk-calm"
             >
               <Check className="size-6" />
             </span>
-            <h1 className="mt-5 font-display text-2xl font-semibold text-ink-900">
+            <h1 className="t-display mt-5">
               {DEMO_FORM.successTitle}
             </h1>
-            <p className="mt-3 text-base leading-relaxed text-ink-700">{DEMO_FORM.successBody}</p>
+            <p className="t-body mt-3 text-base">{DEMO_FORM.successBody}</p>
             <Link
               to="/"
-              className="transition-smooth mt-7 inline-block rounded-md border border-ink-300 bg-surface px-5 py-2.5 text-sm font-medium text-ink-800 hover:bg-ink-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+              className="transition-smooth mt-7 inline-block rounded-md border border-ink-300 bg-surface px-5 py-2.5 text-sm font-semibold text-ink-800 hover:bg-creuse"
             >
               Revenir à l’accueil
             </Link>
@@ -139,13 +140,13 @@ export default function DemoRequestPage() {
 
   return (
     <MarketingLayout>
-      <div className="mx-auto max-w-2xl px-5 py-16 sm:py-20">
-        <h1 className="font-display text-3xl font-semibold text-ink-900">{DEMO_FORM.title}</h1>
-        <p className="mt-3 text-base leading-relaxed text-ink-600">{DEMO_FORM.subtitle}</p>
+      <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 sm:py-20">
+        <h1 className="t-display">{DEMO_FORM.title}</h1>
+        <p className="t-lead mt-4">{DEMO_FORM.subtitle}</p>
 
         <form onSubmit={handleSubmit} noValidate className="mt-10 space-y-5">
           {errors.detail && (
-            <p role="alert" className="rounded-md bg-critical-subtle px-4 py-3 text-sm text-critical-strong">
+            <p role="alert" className="flex items-start gap-1.5 rounded-md bg-critical-subtle px-4 py-3 text-sm text-critical-strong">
               {errors.detail}
             </p>
           )}
@@ -272,7 +273,7 @@ export default function DemoRequestPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="transition-smooth rounded-md bg-brand-700 px-5 py-3 text-sm font-medium text-white hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-ink-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+              className="transition-smooth rounded-md bg-brand-600 px-5 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-ink-300"
             >
               {submitting ? DEMO_FORM.submitting : DEMO_FORM.submit}
             </button>

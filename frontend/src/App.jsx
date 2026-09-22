@@ -21,6 +21,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage'))
 const InvitationPage = lazy(() => import('./pages/InvitationPage'))
 const FormationPage = lazy(() => import('./pages/FormationPage'))
 const RegisterPage = lazy(() => import('./pages/RegisterPage'))
+const MotDePasseOubliePage = lazy(() => import('./pages/MotDePasseOubliePage'))
 
 function RouteFallback() {
   // Volontairement discret : un écran de chargement voyant sur une transition
@@ -52,6 +53,7 @@ function App() {
         {/* Authentification */}
         <Route path="/connexion" element={<LoginPage />} />
         <Route path="/inscription" element={<RegisterPage />} />
+        <Route path="/mot-de-passe-oublie" element={<MotDePasseOubliePage />} />
         {/* Lien d'invitation : public par construction, la personne invitée
             n'a pas encore de mot de passe. */}
         <Route path="/invitation/:token" element={<InvitationPage />} />

@@ -2,10 +2,8 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AuthLayout from '../components/AuthLayout'
 import Button from '../components/ui/Button'
+import Champ from '../components/ui/Champ'
 import { landingPathFor, useAuth } from '../context/AuthContext'
-
-const inputClass =
-  'transition-smooth mt-1 w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-brand-600'
 
 /**
  * Traduit un échec de connexion en message utile.
@@ -55,36 +53,28 @@ function CredentialsStep({ onSubmitted }) {
 
   return (
     <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-ink-700" htmlFor="email">
-          Email
-        </label>
-        <input
-          id="email"
-          type="email"
-          autoComplete="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className={inputClass}
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-ink-700" htmlFor="password">
-          Mot de passe
-        </label>
-        <input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className={inputClass}
-        />
-      </div>
+      <Champ
+        label="Email"
+        type="email"
+        autoComplete="email"
+        required
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+      <Champ
+        label="Mot de passe"
+        type="password"
+        autoComplete="current-password"
+        required
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+      />
       {error && (
-        <p className="text-sm text-critical-strong" role="alert">
+        <p
+          className="flex items-start gap-1.5 rounded-md bg-critical-subtle px-3 py-2 text-sm text-critical-strong"
+          role="alert"
+        >
+          <span aria-hidden="true">▲</span>
           {error}
         </p>
       )}
@@ -123,24 +113,28 @@ function TwoFactorStep({ challengeToken, onBack }) {
   return (
     <form onSubmit={handleSubmit} className="mt-6 space-y-4">
       <div>
-        <label className="block text-sm font-medium text-ink-700" htmlFor="totp-code">
-          {useRecoveryCode
-            ? 'Code de récupération'
-            : "Code à 6 chiffres de votre application d'authentification"}
-        </label>
-        <input
-          id="totp-code"
+        <Champ
+          label={useRecoveryCode ? 'Code de récupération' : 'Code à six chiffres'}
+          aide={
+            useRecoveryCode
+              ? 'L’un des codes notés lors de l’activation. Chacun ne sert qu’une fois.'
+              : 'Celui qu’affiche votre application d’authentification en ce moment.'
+          }
           autoComplete="one-time-code"
           autoFocus
           required
+          inputMode={useRecoveryCode ? 'text' : 'numeric'}
           value={code}
           onChange={(e) => setCode(e.target.value)}
           placeholder={useRecoveryCode ? 'XXXX-XXXX' : '123456'}
-          className={inputClass}
         />
       </div>
       {error && (
-        <p className="text-sm text-critical-strong" role="alert">
+        <p
+          className="flex items-start gap-1.5 rounded-md bg-critical-subtle px-3 py-2 text-sm text-critical-strong"
+          role="alert"
+        >
+          <span aria-hidden="true">▲</span>
           {error}
         </p>
       )}
@@ -183,21 +177,29 @@ export default function LoginPage() {
 
   return (
     <AuthLayout>
-      <h1 className="font-display text-2xl font-semibold text-ink-900">
-        {challenge ? 'Vérification en deux étapes' : 'Connexion'}
-      </h1>
+      <h1 className="t-display">{challenge ? 'Vérification en deux étapes' : 'Connexion'}</h1>
+      {!challenge && (
+        <p className="t-meta mt-2">Accès à votre espace de surveillance.</p>
+      )}
       {challenge ? (
         <TwoFactorStep challengeToken={challenge} onBack={() => setChallenge(null)} />
       ) : (
         <CredentialsStep onSubmitted={handleCredentialsSubmitted} />
       )}
       {!challenge && (
-        <p className="mt-4 text-center text-sm text-ink-500">
-          Pas encore de compte ?{' '}
-          <Link to="/inscription" className="font-medium text-brand-700 underline">
-            Créer un compte
-          </Link>
-        </p>
+        <div className="mt-6 space-y-2 border-t border-ink-200 pt-5 text-sm text-ink-600">
+          <p>
+            <Link to="/mot-de-passe-oublie" className="text-brand-600 underline underline-offset-4">
+              Mot de passe oublié ?
+            </Link>
+          </p>
+          <p>
+            Pas encore de compte ?{' '}
+            <Link to="/inscription" className="text-brand-600 underline underline-offset-4">
+              Créer un compte
+            </Link>
+          </p>
+        </div>
       )}
     </AuthLayout>
   )

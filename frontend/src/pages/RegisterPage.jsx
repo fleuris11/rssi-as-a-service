@@ -2,10 +2,8 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AuthLayout from '../components/AuthLayout'
 import Button from '../components/ui/Button'
+import Champ from '../components/ui/Champ'
 import { useAuth } from '../context/AuthContext'
-
-const inputClass =
-  'transition-smooth mt-1 w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-brand-600'
 
 const initialForm = {
   company_name: '',
@@ -47,78 +45,62 @@ export default function RegisterPage() {
 
   return (
     <AuthLayout>
-      <h1 className="font-display text-2xl font-semibold text-ink-900">
-        Créer votre espace entreprise
-      </h1>
+      <h1 className="t-display">Créer votre espace entreprise</h1>
+      <p className="t-meta mt-2">Vous en serez l’administrateur.</p>
+
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-ink-700" htmlFor="company_name">
-            Nom de l’entreprise
-          </label>
-          <input
-            id="company_name"
-            required
-            value={form.company_name}
-            onChange={updateField('company_name')}
-            className={inputClass}
-          />
-        </div>
+        <Champ
+          label="Nom de l’entreprise"
+          required
+          autoComplete="organization"
+          value={form.company_name}
+          onChange={updateField('company_name')}
+        />
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-medium text-ink-700" htmlFor="first_name">
-              Prénom
-            </label>
-            <input
-              id="first_name"
-              value={form.first_name}
-              onChange={updateField('first_name')}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-ink-700" htmlFor="last_name">
-              Nom
-            </label>
-            <input
-              id="last_name"
-              value={form.last_name}
-              onChange={updateField('last_name')}
-              className={inputClass}
-            />
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-ink-700" htmlFor="email">
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            required
-            value={form.email}
-            onChange={updateField('email')}
-            className={inputClass}
+          <Champ
+            label="Prénom"
+            autoComplete="given-name"
+            value={form.first_name}
+            onChange={updateField('first_name')}
+          />
+          <Champ
+            label="Nom"
+            autoComplete="family-name"
+            value={form.last_name}
+            onChange={updateField('last_name')}
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-ink-700" htmlFor="password">
-            Mot de passe
-          </label>
-          <input
-            id="password"
-            type="password"
-            required
-            minLength={12}
-            value={form.password}
-            onChange={updateField('password')}
-            className={inputClass}
-          />
-          <p className="mt-1 text-xs text-ink-500">12 caractères minimum.</p>
-        </div>
+        <Champ
+          label="Email"
+          type="email"
+          required
+          autoComplete="email"
+          value={form.email}
+          onChange={updateField('email')}
+        />
+        <Champ
+          label="Mot de passe"
+          type="password"
+          required
+          minLength={12}
+          autoComplete="new-password"
+          // L'aide est AU-DESSUS du champ : une contrainte lue après coup est
+          // une contrainte découverte trop tard, une fois le mot de passe
+          // déjà choisi et refusé.
+          aide="12 caractères minimum."
+          value={form.password}
+          onChange={updateField('password')}
+        />
         {errors.length > 0 && (
-          <ul className="space-y-1 text-sm text-critical-strong">
+          <ul
+            className="space-y-1 rounded-md bg-critical-subtle px-3 py-2 text-sm text-critical-strong"
+            role="alert"
+          >
             {errors.map((message) => (
-              <li key={message}>{message}</li>
+              <li key={message} className="flex items-start gap-1.5">
+                <span aria-hidden="true">▲</span>
+                {message}
+              </li>
             ))}
           </ul>
         )}
@@ -126,9 +108,9 @@ export default function RegisterPage() {
           Créer mon compte
         </Button>
       </form>
-      <p className="mt-4 text-center text-sm text-ink-500">
+      <p className="mt-6 border-t border-ink-200 pt-5 text-sm text-ink-600">
         Déjà un compte ?{' '}
-        <Link to="/connexion" className="font-medium text-brand-700 underline">
+        <Link to="/connexion" className="text-brand-600 underline underline-offset-4">
           Se connecter
         </Link>
       </p>
