@@ -5,18 +5,23 @@ import { auditAccessibility, resetDemoRequestThrottle, uniqueSuffix, waitForCont
 // découvre le produit et demande une démonstration, et le client existant qui
 // passe de la vitrine à son espace.
 
-// Ordre d'apparition dans la page, et source unique pour les deux largeurs.
-// « diagnostic » et « alertes » ont été ajoutées le 01/09/2026 : la vitrine
-// vendait la surveillance des fuites et taisait la moitié du produit.
-const SECTIONS = [
-  'probleme',
-  'produit',
-  'diagnostic',
-  'alertes',
-  'fonctionnement',
-  'securite',
-  'tarifs',
-  'questions',
+// LA VITRINE N'EST PLUS UNE PAGE, C'EST CINQ (refonte du 22/09/2026,
+// ADR-042). L'accueil accroche en six actes, les pages secondaires portent le
+// détail. Rien n'a été supprimé, tout a été déplacé : ces tests suivent donc
+// le contenu là où il est parti, au lieu d'être allégés.
+const ACTES_ACCUEIL = ['accroche', 'probleme', 'recevoir', 'commencer', 'faits', 'voir']
+
+// Ce qui a quitté l'accueil, et où le retrouver. C'est l'inventaire du
+// déplacement, exécutable : si une section disparaissait vraiment, ce tableau
+// le dirait.
+const CONTENU_DEPLACE = [
+  { chemin: '/fonctionnalites', ancre: 'produit', titre: /Quatre choses que nous faisons/ },
+  { chemin: '/fonctionnalites', ancre: 'alertes', titre: /Ce que vous recevez sans vous connecter/ },
+  { chemin: '/fonctionnalites', ancre: 'diagnostic', titre: /Savoir par où commencer/ },
+  { chemin: '/fonctionnalites', ancre: 'fonctionnement', titre: /Comment cela fonctionne/ },
+  { chemin: '/securite-du-produit', ancre: 'donnees', titre: /Vos données, et ce que nous en faisons/ },
+  { chemin: '/offres', ancre: 'tarifs', titre: /^Offres$/ },
+  { chemin: '/questions', ancre: 'questions', titre: /Questions fréquentes/, niveau: 2 },
 ]
 
 test('parcours visiteur : accueil, sections, demande de démonstration', async ({ page }) => {
@@ -30,37 +35,19 @@ test('parcours visiteur : accueil, sections, demande de démonstration', async (
     page.getByRole('heading', { level: 1, name: /identifiants ont fuité/ })
   ).toBeVisible()
 
-  // Défilement de toutes les sections : les apparitions au défilement doivent
+  // Les six actes, dans l'ordre. Les apparitions au défilement doivent
   // révéler le contenu, pas le laisser invisible.
-  for (const id of SECTIONS) {
+  for (const id of ACTES_ACCUEIL) {
     await page.locator(`#${id}`).scrollIntoViewIfNeeded()
     await expect(page.locator(`#${id}`)).toBeVisible()
   }
 
-  // Les deux sections ajoutées le 01/09/2026 : on vérifie leur CONTENU, pas
-  // seulement la présence du conteneur. Une section dont le titre est là mais
-  // dont les cartes restent à `opacity: 0` passerait le test ci-dessus.
-  await expect(
-    page.getByRole('heading', { name: 'Savoir par où commencer' })
-  ).toBeVisible()
+  // L'instrument du premier écran montre le produit EN MARCHE, sur le client
+  // de démonstration. Son caractère fictif est dit, sans quoi la capture
+  // finit par être lue comme un vrai client.
+  await expect(page.getByText('Données de démonstration')).toBeVisible()
+  await expect(page.getByText(/client de démonstration/).first()).toBeVisible()
   await expect(page.getByText(/42 mesures/)).toBeVisible()
-  await expect(page.getByText(/plan d’action priorisé/i).first()).toBeVisible()
-
-  await expect(
-    page.getByRole('heading', { name: 'Ce que vous recevez sans vous connecter' })
-  ).toBeVisible()
-  await expect(page.getByText('La météo cyber, chaque matin')).toBeVisible()
-
-  // Les quotas viennent des champs de l'offre : on vérifie qu'ils sont rendus
-  // et qu'aucun ne dépasse le pool partagé de la plateforme (ADR-013).
-  const tarifs = page.locator('#tarifs')
-  await expect(tarifs.getByText(/actifs? en surveillance continue/).first()).toBeVisible()
-  await expect(tarifs.getByText(/\b(1[6-9]|[2-9]\d+) actifs? en surveillance continue/)).toHaveCount(
-    0
-  )
-
-  await expect(page.getByText('Le plus demandé')).toBeVisible()
-  await expect(page.getByRole('button', { name: /Faut-il installer quelque chose/ })).toBeVisible()
 
   await auditAccessibility(page)
 
@@ -84,6 +71,46 @@ test('parcours visiteur : accueil, sections, demande de démonstration', async (
 
   await expect(page.getByText(/Votre demande est bien enregistrée/)).toBeVisible()
   await expect(page.getByText(/jour ouvré/)).toBeVisible()
+})
+
+test('rien n’a été supprimé de la vitrine : tout est retrouvable', async ({ page }) => {
+  // C'est le test qui tient la promesse de la refonte. L'accueil est passé de
+  // sept sections d'un seul tenant à six actes, et le reproche était juste :
+  // le visiteur s'y perdait. Mais raccourcir ne doit pas vouloir dire jeter.
+  for (const { chemin, ancre, titre, niveau } of CONTENU_DEPLACE) {
+    await page.goto(chemin)
+    await waitForContentLoaded(page)
+    await page.locator(`#${ancre}`).scrollIntoViewIfNeeded()
+    await expect(page.locator(`#${ancre}`)).toBeVisible()
+    // Le niveau est precise quand le titre de la PAGE et celui de la SECTION
+    // portent le meme texte — sur /questions, par exemple.
+    await expect(
+      page.getByRole('heading', niveau ? { name: titre, level: niveau } : { name: titre })
+    ).toBeVisible()
+  }
+
+  // Le contenu détaillé, vérifié là où il vit maintenant.
+  await page.goto('/fonctionnalites')
+  await waitForContentLoaded(page)
+  await expect(page.getByText('La météo cyber, chaque matin')).toBeVisible()
+  await expect(page.getByText(/plan d’action priorisé/i).first()).toBeVisible()
+
+  // Les quotas viennent des champs de l'offre : on vérifie qu'ils sont rendus
+  // et qu'aucun ne dépasse le pool partagé de la plateforme (ADR-013).
+  await page.goto('/offres')
+  await waitForContentLoaded(page)
+  const tarifs = page.locator('#tarifs')
+  await expect(tarifs.getByText(/actifs? en surveillance continue/).first()).toBeVisible()
+  await expect(
+    tarifs.getByText(/\b(1[6-9]|[2-9]\d+) actifs? en surveillance continue/)
+  ).toHaveCount(0)
+  await expect(page.getByText('Le plus demandé')).toBeVisible()
+
+  await page.goto('/questions')
+  await waitForContentLoaded(page)
+  await expect(
+    page.getByRole('button', { name: /Faut-il installer quelque chose/ })
+  ).toBeVisible()
 })
 
 test('parcours client : accueil vers connexion', async ({ page }) => {
@@ -112,14 +139,12 @@ test('la vitrine est lisible sur un écran de téléphone', async ({ page }) => 
   )
   expect(overflow).toBe(false)
 
-  // Toutes les sections se parcourent au doigt, contenu compris. Les deux
-  // nouvelles passent en une colonne sur téléphone : c'est exactement là
-  // qu'une grille mal bornée déborde ou se replie sur elle-même.
-  for (const id of SECTIONS) {
+  // Les six actes se parcourent au doigt, contenu compris : c'est là qu'une
+  // grille mal bornée déborde ou se replie sur elle-même.
+  for (const id of ACTES_ACCUEIL) {
     await page.locator(`#${id}`).scrollIntoViewIfNeeded()
     await expect(page.locator(`#${id}`)).toBeVisible()
   }
-  await expect(page.getByText('La météo cyber, chaque matin')).toBeVisible()
   await expect(page.getByText(/42 mesures/)).toBeVisible()
 
   // Le débordement se re-mesure APRÈS le parcours : une carte trop large ne
@@ -167,7 +192,9 @@ test('aucun contenu ne dépend d’une animation pour être visible', async ({ p
   //
   // Ce test ne défile PAS, à dessein : c'est la condition qui reproduit le
   // robot d'indexation, l'impression et la capture pleine hauteur.
-  await page.goto('/')
+  // La grille tarifaire vit maintenant sur /offres : c'est elle qui portait
+  // le defaut, c'est donc elle qu'on mesure, sans defiler.
+  await page.goto('/offres')
   await waitForContentLoaded(page)
   await page.getByRole('heading', { level: 1 }).waitFor()
   // Les apparitions AU-DESSUS de la ligne de flottaison se déclenchent, elles :

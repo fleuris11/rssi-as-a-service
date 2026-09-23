@@ -341,7 +341,8 @@ test.describe('client sur une offre limitée', () => {
 
 test.describe('vitrine publique', () => {
   test('affiche la grille tarifaire servie par l’API', async ({ page }) => {
-    await page.goto('/')
+    // La grille a quitte l'accueil pour /offres (refonte du 22/09/2026).
+    await page.goto('/offres')
     await waitForContentLoaded(page)
     await page.locator('#tarifs').scrollIntoViewIfNeeded()
     await expect(page.getByText('Souverain')).toBeVisible()
