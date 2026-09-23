@@ -20,6 +20,13 @@ import { useLayoutEffect, useRef, useState } from 'react'
  *
  * Employé une seule fois par surface : c'est le moment d'auteur, pas un
  * effet qu'on saupoudre.
+ *
+ * **ET UNIQUEMENT SUR LA VITRINE.** C'est une règle de mode, pas une
+ * préférence : la vitrine PERSUADE, l'application OPÈRE, et sur une surface
+ * d'opération l'expression n'a jamais le droit de masquer l'état. Une capture
+ * pleine hauteur du tableau de bord a montré 85 pendant que le bandeau
+ * annonçait 100 — le chiffre était encore en route. Un écran de travail qui
+ * affiche une valeur fausse pendant une seconde ment pendant une seconde.
  */
 
 const DUREE = 1100

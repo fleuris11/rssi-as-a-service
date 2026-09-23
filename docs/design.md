@@ -356,6 +356,13 @@ et `--ombre-flottante: 0 8px 28px -8px rgb(14 21 27 / .22)` (menus, modales).
 1. **Un moment d'auteur par surface, pas une entrée identique sur chaque
    section.** Vitrine : l'instrument s'anime une fois au premier écran.
    Espace client : le curseur « maintenant » avance une fois. Console : rien.
+   **Le chiffre animé n'existe QUE sur la vitrine**, et c'est une règle de
+   mode, pas une préférence : la vitrine persuade, l'application opère, et sur
+   une surface d'opération l'expression n'a jamais le droit de masquer l'état.
+   Vérifié en production : une capture pleine hauteur du tableau de bord
+   montrait 85 pendant que le bandeau annonçait 100 — le chiffre était encore
+   en route. Un écran de travail qui affiche une valeur fausse pendant une
+   seconde ment pendant une seconde.
 2. **Rien ne glisse : un changement d'état saute d'un cran entier.**
    `--pas: 260ms cubic-bezier(.16, 1, .3, 1)`. La discipline est portée par la
    discrétisation du déplacement — on bouge d'une ligne entière, jamais d'une

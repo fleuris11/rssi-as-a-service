@@ -378,7 +378,14 @@ function SignalDirigeant({ donnees, meteo, nombreActifs, alertes, actions }) {
         </div>
         <div className="panneau-corps grid gap-8 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
           <div>
-            <Jauge score={donnees.exposure.exposure_score} libelle="Score d’exposition" anime />
+            {/* PAS d'animation de chiffre ici, et c'est une regle de mode :
+                la vitrine PERSUADE — le compteur qui se pose y est le moment
+                d'auteur — l'application OPERE, et l'expression n'y a pas le
+                droit de masquer l'etat. Une capture pleine hauteur de cet
+                ecran montrait 85 pendant que le bandeau annoncait 100 : le
+                chiffre etait encore en route. Un tableau de bord qui affiche
+                une valeur fausse pendant une seconde ment une seconde. */}
+            <Jauge score={donnees.exposure.exposure_score} libelle="Score d’exposition" />
             <p className="t-body mt-4">
               {lectureEnTete(donnees.exposure.exposure_score, 'exposure')}. Plus le score est bas,
               mieux c’est.
