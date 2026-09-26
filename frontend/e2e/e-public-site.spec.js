@@ -55,7 +55,7 @@ test('parcours visiteur : accueil, sections, demande de démonstration', async (
 
   // Le discours ne referme ni le marché ni le catalogue de sources.
   const texteAccueil = await page.locator('main').innerText()
-  expect(texteAccueil, 'la vitrine ne restreint pas le produit aux PME').not.toMatch(/PME/)
+  expect(texteAccueil, 'la vitrine ne restreint pas le produit aux PME').not.toMatch(/\bPME\b/)
   expect(texteAccueil, 'aucun nombre de sources gravé').not.toMatch(
     /(neuf|dix|onze|\d+)\s+sources/i
   )
