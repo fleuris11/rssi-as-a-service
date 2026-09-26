@@ -17,7 +17,7 @@ import { Link } from 'react-router-dom'
  * c'est ce qui donne son rythme au défilement, un passage dense méritant un
  * passage calme.
  */
-export function Acte({ id, fond = 'face', children, className = '' }) {
+export function Acte({ id, fond = 'face', sansHaut = false, children, className = '' }) {
   const fonds = {
     face: 'bg-canvas',
     haute: 'bg-surface',
@@ -28,7 +28,13 @@ export function Acte({ id, fond = 'face', children, className = '' }) {
     <section
       id={id}
       className={`${fonds[fond]} ${className}`}
-      style={{ paddingBlock: 'var(--rythme-section)' }}
+      // `sansHaut` : deux actes de même fond qui se suivent cumulent leur
+      // rythme vertical, et le vide résultant se lit comme un oubli. Le
+      // second ne repose alors que sa marge basse.
+      style={{
+        paddingTop: sansHaut ? 0 : 'var(--rythme-section)',
+        paddingBottom: 'var(--rythme-section)',
+      }}
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6">{children}</div>
     </section>

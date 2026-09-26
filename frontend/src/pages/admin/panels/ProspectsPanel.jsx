@@ -8,6 +8,7 @@ import Card, { CardHeader } from '../../../components/ui/Card'
 import Modal from '../../../components/ui/Modal'
 import SearchInput from '../../../components/ui/SearchInput'
 import { filtrerParTexte } from '../../../utils/recherche'
+import EchecChargement from '../../../components/ui/EchecChargement'
 import { SkeletonCard } from '../../../components/ui/Skeleton'
 import { useToast } from '../../../components/ui/Toast'
 
@@ -281,12 +282,14 @@ export default function ProspectsPanel({ onConvertToClient }) {
   const { showToast } = useToast()
   const [prospects, setProspects] = useState(null)
   const [board, setBoard] = useState(null)
+  const [echec, setEchec] = useState(false)
   const [creating, setCreating] = useState(false)
   const [filter, setFilter] = useState('open')
   // Lot C, point 22 : le filtre « Tous » dépasse vite vingt prospects.
   const [recherche, setRecherche] = useState('')
 
   const load = useCallback(async () => {
+    setEchec(false)
     try {
       const params = filter === 'open' ? { open: '1' } : filter === 'all' ? {} : { status: filter }
       const [list, followUp] = await Promise.all([
@@ -296,6 +299,9 @@ export default function ProspectsPanel({ onConvertToClient }) {
       setProspects(list.data.prospects)
       setBoard(followUp.data)
     } catch {
+      // La notification s'efface ; l'ecran, lui, restait un squelette pour
+      // toujours. Un etat durable est indispensable.
+      setEchec(true)
       showToast({ type: 'error', message: 'Impossible de charger les prospects.' })
     }
   }, [filter, showToast])
@@ -304,6 +310,15 @@ export default function ProspectsPanel({ onConvertToClient }) {
     load()
   }, [load])
 
+  if (echec && !prospects) {
+    return (
+      <EchecChargement
+        message="La liste des prospects n’a pas pu être chargée."
+        precision="Le reste de la console reste utilisable."
+        onReessayer={load}
+      />
+    )
+  }
   if (!prospects) return <SkeletonCard />
 
   const affiches = filtrerParTexte(prospects, recherche, (p) => [

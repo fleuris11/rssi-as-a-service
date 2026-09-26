@@ -8,12 +8,13 @@ import Serie from '../../components/instrument/Serie'
 import { CRANS } from '../../components/instrument/crans'
 import BrowserFrame from '../components/BrowserFrame'
 import MarketingLayout from '../components/MarketingLayout'
-import { DEMONSTRATION, HERO, PREUVES, PROBLEM } from '../content'
+import { ASSISTANT, DEMONSTRATION, HERO, PREUVES, PROBLEM } from '../content'
 import { Acte, Action } from '../atomes'
 import { ORGANISATION_JSON_LD, useSeo } from '../useSeo'
+import { useApparition } from '../useApparition'
 
 /**
- * L'ACCUEIL — six actes, une idée par acte, une seule action répétée.
+ * L'ACCUEIL — sept actes, une idée par acte, une seule action répétée.
  *
  * La page tenait sept sections d'un seul tenant et le visiteur s'y perdait.
  * Rien n'a été supprimé : le détail est parti sur /fonctionnalites,
@@ -61,8 +62,8 @@ function Accroche() {
             DÉMONSTRATION — une entreprise fictive, jamais un client réel. */}
         <div className="panneau overflow-hidden">
           <div className="panneau-tete">
-            <span className="t-legende">{DEMONSTRATION.entreprise}</span>
-            <span className="t-legende">Données de démonstration</span>
+            <span className="t-legende">Ce que vous voyez en ouvrant le produit</span>
+            <span className="t-legende">{DEMONSTRATION.mention}</span>
           </div>
           <div className="panneau-corps">
             <div className="flex flex-wrap items-start justify-between gap-6">
@@ -158,8 +159,8 @@ function Recevoir() {
         </div>
         <BrowserFrame
           src="/screenshots/tableau-de-bord.webp"
-          alt="Le tableau de bord du produit sur le client de démonstration : score d’exposition, alertes ouvertes et actions à mener."
-          caption="Capture réelle, client de démonstration."
+          alt="Le tableau de bord du produit : score d’exposition, alertes ouvertes et actions à mener."
+          caption="Capture réelle. Valeurs d’exemple."
           url="rssiasservice.online/tableau-de-bord"
         />
       </div>
@@ -178,17 +179,18 @@ function Commencer() {
           className="lg:order-2"
           src="/screenshots/diagnostic.webp"
           alt="La restitution du diagnostic ANSSI : score global, score par domaine et mesures qui les composent."
-          caption="Capture réelle, client de démonstration."
+          caption="Capture réelle. Valeurs d’exemple."
           url="rssiasservice.online/resultats"
         />
         <div className="lg:order-1">
           <h2 className="t-display">
-            La question d’une PME n’est presque jamais « que se passe-t-il ? », c’est « par quoi je
+            La question n’est presque jamais « que se passe-t-il ? », c’est « par quoi je
             commence ? ».
           </h2>
           <p className="t-lead mt-5">
-            Les 42 mesures du guide d’hygiène informatique de l’ANSSI, un score et le détail de son
-            calcul, puis un plan d’action priorisé que vous suivez comme un tableau de tâches.
+            Le guide d’hygiène de l’ANSSI d’origine, un référentiel importé, ou le vôtre — celui
+            d’un assureur, d’un donneur d’ordre. Un score, le détail de son calcul, puis un plan
+            d’action priorisé que vous suivez comme un tableau de tâches.
           </p>
           <p className="t-meta mt-4">Le diagnostic vous aide à progresser ; il ne vous certifie pas.</p>
           <Approfondir vers="/fonctionnalites#diagnostic">
@@ -201,7 +203,64 @@ function Commencer() {
 }
 
 /* ------------------------------------------------------------------ *
- * ACTE 5 — Les faits, sur le bâti.
+ * ACTE 5 — L'assistant.
+ *
+ * L'IA n'apparaissait nulle part avant la troisième page, alors que quatre
+ * usages existent dans le produit. Ce qui est montré ici n'est pas
+ * « nous faisons de l'IA » — tout le monde le dit — mais les trois garde-fous
+ * qu'un concurrent ne peut pas recopier en une phrase : elle ne voit pas
+ * votre nom, elle sait s'arrêter, elle ne décide rien.
+ * ------------------------------------------------------------------ */
+function Assistant() {
+  return (
+    <Acte id="assistant" fond="haute">
+      <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+        <div>
+          <h2 className="t-display">{ASSISTANT.title}</h2>
+          <p className="t-lead mt-5">{ASSISTANT.subtitle}</p>
+
+          {/* Trois questions réelles, telles qu'on les pose. Elles disent
+              mieux ce que fait l'assistant que n'importe quelle description. */}
+          <ul className="mt-7 flex flex-wrap gap-2">
+            {ASSISTANT.exemples.map((exemple) => (
+              <li
+                key={exemple}
+                className="rounded-sm border border-ink-300 bg-creuse px-3 py-1.5 text-sm text-ink-800"
+              >
+                « {exemple} »
+              </li>
+            ))}
+          </ul>
+
+          <Approfondir vers="/fonctionnalites#assistant">
+            Ce que l’IA fait, et ce qu’elle ne fait pas
+          </Approfondir>
+        </div>
+
+        <BrowserFrame
+          src="/screenshots/assistant.webp"
+          alt="L’assistant : une question posée en français, une réponse appuyée sur les données du client, et l’action à mener."
+          caption="Capture réelle. Valeurs d’exemple."
+          url="rssiasservice.online/assistant"
+        />
+      </div>
+
+      {/* Les trois garanties, en filets plutôt qu'en cartes : ce sont trois
+          affirmations d'une même promesse, pas trois fonctionnalités. */}
+      <div className="mt-12 grid gap-x-12 sm:grid-cols-3">
+        {ASSISTANT.garanties.map((garantie) => (
+          <div key={garantie.title} className="border-t border-ink-300 pt-4">
+            <h3 className="text-base font-semibold text-ink-900">{garantie.title}</h3>
+            <p className="t-body mt-2">{garantie.body}</p>
+          </div>
+        ))}
+      </div>
+    </Acte>
+  )
+}
+
+/* ------------------------------------------------------------------ *
+ * ACTE 6 — Les faits, sur le bâti.
  *
  * Trois chiffres vérifiables dans le code, aucun chiffre commercial : le
  * produit n'a qu'un client, et tout nombre de clients, de fuites détectées ou
@@ -215,8 +274,10 @@ function Faits() {
         Vous nous confiez des informations sur vos vulnérabilités.
       </h2>
       <dl className="mt-10 grid gap-8 sm:grid-cols-3 sm:gap-10">
-        {PREUVES.map((preuve) => (
-          <div key={preuve.valeur} className="border-t border-bati-500 pt-4">
+        {PREUVES.map((preuve, rang) => (
+          // Les trois faits arrivent l'un apres l'autre plutot qu'ensemble :
+          // c'est ce qui distingue une arrivee d'un clignotement.
+          <div key={preuve.valeur} data-apparition={rang} className="border-t border-bati-500 pt-4">
             <dt
               className={
                 preuve.mesure
@@ -243,7 +304,7 @@ function Faits() {
 }
 
 /* ------------------------------------------------------------------ *
- * ACTE 6 — L'action finale.
+ * ACTE 7 — L'action finale.
  * ------------------------------------------------------------------ */
 function Fin() {
   return (
@@ -270,12 +331,15 @@ function Fin() {
 
 export default function LandingPage() {
   useSeo({
-    title: 'Surveillance des fuites de données pour les PME',
+    title: 'Surveillance des fuites de données et pilotage de la conformité',
     description:
-      "Nous surveillons neuf sources de renseignement sur les fuites de données et vous alertons en langage clair, avec l'action à mener. Sans installation.",
+      "Nous surveillons les sources de renseignement sur les fuites de données et vous alertons en langage clair, avec l'action à mener. Sans installation.",
     path: '/',
     jsonLd: ORGANISATION_JSON_LD,
   })
+  // Les cadres de capture arrivent quand on les regarde. Rien n'est
+  // masque en attendant : voir useApparition.
+  useApparition()
 
   return (
     <MarketingLayout
@@ -283,7 +347,7 @@ export default function LandingPage() {
         <BandeauEtat
           score={DEMONSTRATION.score}
           niveau={DEMONSTRATION.niveau}
-          phrase={`Client de démonstration — ${DEMONSTRATION.phrase}`}
+          phrase={`${DEMONSTRATION.mention} — ${DEMONSTRATION.phrase}`}
           action={{ vers: '/fonctionnalites', libelle: 'Ce que le produit surveille' }}
         />
       }
@@ -292,6 +356,7 @@ export default function LandingPage() {
       <Probleme />
       <Recevoir />
       <Commencer />
+      <Assistant />
       <Faits />
       <Fin />
     </MarketingLayout>

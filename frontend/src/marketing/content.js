@@ -35,7 +35,7 @@
 
 export const SITE = {
   name: 'RSSI as a Service',
-  tagline: 'Surveillance des fuites de données et de la conformité pour les PME',
+  tagline: 'Surveillance des fuites de données et pilotage de la conformité',
   contactEmail: 'contact@rssiasservice.online',
 }
 
@@ -68,13 +68,19 @@ export const NAV = [
  * pire qu'un instrument absent.
  */
 export const DEMONSTRATION = {
-  entreprise: 'Cabinet Comptable Durand',
+  // PAS de nom d'entreprise : l'accueil donnait l'impression que le produit
+  // était fait pour un client en particulier. Ce panneau montre ce que
+  // N'IMPORTE QUELLE organisation y voit, pas l'espace de quelqu'un.
+  entreprise: 'Exemple',
   score: 38,
   niveau: 'watch',
   // Courte volontairement : au téléphone, le bandeau tenait cinq lignes et
   // repoussait l'accroche sous la ligne de flottaison. Un signal public tient
   // en une phrase, sinon ce n'est plus un signal.
   phrase: 'Deux points méritent un œil cette semaine.',
+  // Les valeurs affichées sont fictives. Elles doivent le DIRE, sans quoi un
+  // visiteur finit par les lire comme les chiffres d'un vrai client.
+  mention: 'Exemple — valeurs fictives',
   // 90 jours, un point tous les cinq jours : assez pour voir une tendance,
   // assez peu pour rester lisible sur un téléphone.
   serie: [
@@ -105,7 +111,7 @@ export const DEMONSTRATION = {
     {
       cle: 'certificat',
       cran: 'calme',
-      titre: 'Le certificat de www.cabinet-durand-demo.fr expire dans 21 jours',
+      titre: 'Le certificat de votre site expire dans 21 jours',
       corps: 'Renouvellement automatique non détecté.',
       traduction: 'Passé cette date, les visiteurs verront un avertissement de sécurité.',
     },
@@ -113,7 +119,7 @@ export const DEMONSTRATION = {
       cle: 'domaine',
       cran: 'surveille',
       titre: 'Un nom de domaine ressemblant au vôtre a été déposé',
-      corps: 'cabinet-durand-cornptable.fr — déposé il y a 3 jours.',
+      corps: 'votre-societe-cornptable.fr — déposé il y a 3 jours.',
       traduction: 'C’est le préparatif habituel d’un faux email demandant un virement.',
     },
   ],
@@ -122,7 +128,7 @@ export const DEMONSTRATION = {
 export const HERO = {
   title: 'Vous saurez que vos identifiants ont fuité avant vos clients.',
   subtitle:
-    "Nous surveillons en continu neuf sources de renseignement sur les fuites de données, et nous vous prévenons en langage clair, avec l'action à mener.",
+    "Nous surveillons en continu les sources de renseignement sur les fuites de données, et nous vous prévenons en langage clair, avec l'action à mener.",
   primaryCta: 'Demander une démonstration',
   secondaryCta: 'Se connecter',
   note: 'Aucune installation. Aucun agent à déployer sur vos postes.',
@@ -133,18 +139,33 @@ export const HERO = {
  *
  * **Uniquement des faits vérifiables dans le code ou la documentation.**
  * Aucun chiffre commercial — nombre de clients, de fuites détectées, taux de
- * satisfaction : le produit n'a qu'un client, et tout chiffre de ce genre
- * serait faux. Un prospect qui vérifie une seule affirmation fausse cesse de
- * croire les autres.
+ * satisfaction : tout chiffre de ce genre serait faux aujourd'hui. Un
+ * prospect qui vérifie une seule affirmation fausse cesse de croire les
+ * autres.
  *
- * Sources : 42 mesures = le référentiel ANSSI embarqué (backend/data) ;
- * 90 jours = BREACH_SECRET_RETENTION_DAYS ; hébergement = mentions légales.
+ * Trois formulations ont été corrigées le 23/09/2026, et chacune disait
+ * quelque chose de faux :
+ *
+ *  1. « 42 mesures » laissait croire à un référentiel unique. Le produit en
+ *     porte plusieurs, attribués par client (ADR-029), importables
+ *     (`import_referential`), et un référentiel PROPRE à l'entreprise peut
+ *     être créé — le client de démonstration en a déjà un, « Exigences de
+ *     notre assureur cyber ». Annoncer 42 mesures, c'est vendre un dixième
+ *     de ce qui existe.
+ *  2. « France » décrivait l'hébergement mais se lisait comme un marché. Le
+ *     serveur est bien en France (OVHcloud, Strasbourg — voir legalConfig) ;
+ *     le produit, lui, s'utilise depuis n'importe quel pays.
+ *  3. Le discours restreignait tout aux PME, ce qu'aucune ligne du code ne
+ *     fait.
+ *
+ * Source du seul chiffre restant : 90 jours = BREACH_SECRET_RETENTION_DAYS.
  */
 export const PREUVES = [
   {
-    valeur: '42',
-    mesure: true,
-    libelle: 'mesures du guide d’hygiène de l’ANSSI, reprises une à une',
+    valeur: 'Votre référentiel',
+    mesure: false,
+    libelle:
+      'le guide d’hygiène de l’ANSSI fourni d’origine, d’autres référentiels importables, ou le vôtre — celui d’un assureur, d’un donneur d’ordre',
   },
   {
     valeur: '90 jours',
@@ -152,12 +173,10 @@ export const PREUVES = [
     libelle: 'puis les mots de passe retrouvés sont effacés automatiquement',
   },
   {
-    // `mesure: false` : « France » est un lieu, pas une quantité. Le composer
-    // en chasse fixe avec les deux autres le ferait passer pour un chiffre, et
-    // la mono n'a pas à servir de costume.
-    valeur: 'France',
+    valeur: 'Union européenne',
     mesure: false,
-    libelle: 'hébergement et traitement des données, sans sortie de l’Union européenne',
+    libelle:
+      'hébergement et traitement des données, quel que soit le pays depuis lequel vous vous connectez',
   },
 ]
 
@@ -186,6 +205,74 @@ export const AUSSI_LIVRE = {
   ],
 }
 
+/**
+ * L'ASSISTANT, et les quatre endroits où l'IA travaille dans le produit.
+ *
+ * Chaque affirmation ci-dessous est vérifiable dans le code, et deux d'entre
+ * elles sont des garde-fous qu'un concurrent ne peut pas recopier en une
+ * phrase de page d'accueil :
+ *
+ *  - la PSEUDONYMISATION est un passage obligé (ADR-005) : noms, adresses,
+ *    domaines et IP sont remplacés par des identifiants neutres avant envoi,
+ *    rétablis à la réception. Ce n'est pas une option de configuration ;
+ *  - l'assistant RENVOIE vers un professionnel qualifié dès qu'une question
+ *    sort de son périmètre — c'est écrit dans le prompt, pas dans une charte ;
+ *  - il ne modifie jamais un fait : il reformule le ton, pas le contenu.
+ *
+ * Et la nuance qui compte, parce qu'elle est à contre-courant : **la plupart
+ * des documents ne sont PAS rédigés par l'IA, ils sont composés** à partir des
+ * données (ADR-032). Un document rempli avec les vrais chiffres du client est
+ * reproductible ; une rédaction qui change à chaque génération ne l'est pas.
+ * La charte informatique est la seule exception, et pour une raison : c'est le
+ * seul document dont le texte doit vraiment s'adapter à l'entreprise.
+ */
+export const ASSISTANT = {
+  title: 'Et quand vous ne savez pas quoi faire, vous demandez.',
+  subtitle:
+    'L’assistant répond à partir de VOS données — votre score, vos écarts, vos alertes ouvertes, les fuites qui vous concernent. Pas de la sécurité en général : de votre situation, en français courant, avec ce qu’il y a à faire.',
+  exemples: [
+    'Que dois-je faire en premier ?',
+    'Ce compte est-il vraiment un risque ?',
+    'Comment j’explique ça à mon prestataire ?',
+  ],
+  garanties: [
+    {
+      title: 'Il ne voit jamais votre nom',
+      body: 'Avant chaque envoi, les noms, adresses email, domaines et adresses IP sont remplacés par des identifiants neutres, puis rétablis à la réception. Le service d’intelligence artificielle ne voit jamais le nom de votre entreprise, et aucun mot de passe ne lui est transmis, sous aucune forme.',
+    },
+    {
+      title: 'Il sait s’arrêter',
+      body: 'Dès qu’une question sort de son périmètre — le droit, un contentieux, un incident en cours — il vous renvoie vers un professionnel qualifié au lieu d’improviser une réponse.',
+    },
+    {
+      title: 'Il ne décide rien à votre place',
+      body: 'Il explique et il propose. Il ne modifie aucun de vos chiffres, ne valide aucune mesure, ne ferme aucune alerte. Ce qui est enregistré, c’est vous qui le décidez.',
+    },
+  ],
+  ailleurs: {
+    title: 'Là où l’IA travaille aussi',
+    items: [
+      {
+        title: 'La météo du matin, en langage clair',
+        body: 'L’état de vos actifs et ce qui a bougé depuis la veille, mis en phrases lisibles plutôt qu’en liste de contrôles techniques.',
+      },
+      {
+        title: 'La synthèse d’exposition',
+        body: 'Ce qui circule à votre sujet, résumé en quelques lignes : ce qui compte, et ce qui peut attendre.',
+      },
+      {
+        title: 'Votre charte informatique',
+        body: 'Rédigée à partir de ce que vous avez déclaré, à relire et valider avant diffusion. C’est le seul document que l’IA rédige.',
+      },
+    ],
+    note: 'Les autres documents ne sont pas rédigés, ils sont COMPOSÉS à partir de vos données : un modèle écrit une fois correctement et rempli avec vos véritables actifs, votre véritable score et vos véritables échéances. Ce que la plateforme ne sait pas est écrit « à compléter », jamais deviné.',
+  },
+  // Un plafond mensuel de jetons par client (AiTokenQuota) : ce n'est pas une
+  // promesse commerciale, c'est une garde qui existe.
+  sobriete:
+    'Aucun appel d’IA ne part pendant que vous attendez une page : tout se fait en tâche de fond. Le modèle court est utilisé par défaut, le plus coûteux seulement pour la rédaction documentaire, et chaque espace a un plafond mensuel de jetons.',
+}
+
 export const PROBLEM = {
   title: 'Ce qui se passe pendant que vous travaillez',
   items: [
@@ -195,7 +282,7 @@ export const PROBLEM = {
     },
     {
       title: 'Personne ne surveille cela chez vous',
-      body: "Votre prestataire informatique maintient votre parc. Surveiller ce qui se dit et se vend à l'extérieur de l'entreprise est un autre métier, et un travail quotidien.",
+      body: "Votre prestataire informatique maintient votre parc. Surveiller ce qui se dit et se vend à l'extérieur de l'organisation est un autre métier, et un travail quotidien.",
     },
     {
       title: "On l'apprend le plus souvent par l'incident",
@@ -314,11 +401,11 @@ export const NOTIFICATIONS = {
 export const DIAGNOSTIC = {
   title: 'Savoir par où commencer',
   subtitle:
-    "La question d'une PME n'est presque jamais « que se passe-t-il ? », c'est « par quoi je commence ? ». Le diagnostic répond à celle-là.",
+    "La question n'est presque jamais « que se passe-t-il ? », c'est « par quoi je commence ? ». Le diagnostic répond à celle-là.",
   steps: [
     {
       title: 'Un questionnaire sur un référentiel public',
-      body: "Les 42 mesures du guide d'hygiène informatique de l'ANSSI, réparties en 10 domaines. Un référentiel public et reconnu, que vous pouvez consulter par vous-même — nous n'inventons pas notre propre grille de notation.",
+      body: "Le guide d'hygiène informatique de l'ANSSI est fourni d'origine : 42 mesures réparties en 10 domaines, un référentiel public que vous pouvez consulter par vous-même. Nous n'inventons pas notre propre grille de notation.",
     },
     {
       title: 'Un score, et le détail de son calcul',
@@ -326,7 +413,7 @@ export const DIAGNOSTIC = {
     },
     {
       title: 'Un plan d’action priorisé',
-      body: "Le diagnostic produit directement les actions à mener, classées par priorité, que vous suivez dans un tableau : à faire, en cours, fait. Le but est qu'une PME sans équipe sécurité sache quoi faire lundi matin.",
+      body: "Le diagnostic produit directement les actions à mener, classées par priorité, que vous suivez dans un tableau : à faire, en cours, fait. Le but est qu'une organisation sans équipe sécurité sache quoi faire lundi matin.",
     },
     {
       title: 'Les documents qui vont avec',
@@ -347,8 +434,8 @@ export const HOW_IT_WORKS = {
     },
     {
       number: 2,
-      title: 'Nous interrogeons neuf sources',
-      body: "Logs de logiciels voleurs d'identifiants, listes de couples adresse/mot de passe, identifiants exposés, sessions compromises, clés techniques, mentions sur des espaces malveillants, documents fuités, surface d'exposition publique, veille.",
+      title: 'Nous interrogeons les sources du renseignement sur les fuites',
+      body: "Logs de logiciels voleurs d'identifiants, listes de couples adresse/mot de passe, identifiants exposés, sessions compromises, clés techniques, mentions sur des espaces malveillants, documents fuités, surface d'exposition publique, veille. Cette liste s'allonge à mesure que de nouvelles sources deviennent exploitables — c'est notre travail, pas le vôtre.",
     },
     {
       number: 3,
@@ -565,7 +652,7 @@ export const FAQ = {
     {
       question: 'Est-ce que cela nous met en conformité ?',
       answer:
-        "Cela vous y aide, cela ne vous en garantit pas. Le diagnostic s'appuie sur un référentiel reconnu de 42 mesures et produit un plan d'action priorisé ; la surveillance et la traçabilité des accès constituent des éléments de preuve utiles. La conformité reste une démarche d'entreprise, qui dépend de ce que vous mettez réellement en œuvre.",
+        "Cela vous y aide, cela ne vous en garantit pas. Le diagnostic s'appuie sur un référentiel reconnu et produit un plan d'action priorisé ; la surveillance et la traçabilité des accès constituent des éléments de preuve utiles. La conformité reste une démarche d'entreprise, qui dépend de ce que vous mettez réellement en œuvre.",
     },
     {
       question: 'Bloquez-vous les attaques ?',
@@ -619,7 +706,7 @@ export const SLOTS = [
 
 export const FOOTER = {
   description:
-    "Surveillance des fuites de données et accompagnement à la conformité pour les PME.",
+    "Surveillance des fuites de données et accompagnement à la conformité, pour les organisations qui n'ont pas d'équipe sécurité.",
   columns: [
     {
       title: 'Produit',

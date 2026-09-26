@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 /**
  * SÉRIE TEMPORELLE AVEC CURSEUR « MAINTENANT » — l'interaction signature du
@@ -33,6 +33,31 @@ export default function Serie({
 }) {
   const identifiant = useId()
   const [indice, setIndice] = useState(null)
+  // Le trace se redessine UNE FOIS, a l'entree dans le champ. Il est present
+  // des le premier rendu : l'animation ne conditionne rien, elle rejoue.
+  const cadre = useRef(null)
+  const [trace, setTrace] = useState(false)
+
+  useEffect(() => {
+    if (
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      return undefined
+    }
+    if (typeof IntersectionObserver !== 'function' || !cadre.current) return undefined
+    const observateur = new IntersectionObserver(
+      (entrees) => {
+        if (entrees.some((e) => e.isIntersecting)) {
+          setTrace(true)
+          observateur.disconnect()
+        }
+      },
+      { threshold: 0.3 }
+    )
+    observateur.observe(cadre.current)
+    return () => observateur.disconnect()
+  }, [])
 
   const { chemin, aire, min, max, coordonnees } = useMemo(() => {
     if (points.length < 2) return { chemin: '', aire: '', min: 0, max: 0, coordonnees: [] }
@@ -49,10 +74,12 @@ export default function Serie({
       point,
     }))
 
-    const trace = coords.map((c, rang) => `${rang === 0 ? 'M' : 'L'}${c.x.toFixed(1)} ${c.y.toFixed(1)}`).join(' ')
+    const parcours = coords
+      .map((c, rang) => `${rang === 0 ? 'M' : 'L'}${c.x.toFixed(1)} ${c.y.toFixed(1)}`)
+      .join(' ')
     return {
-      chemin: trace,
-      aire: `${trace} L${LARGEUR} ${HAUTEUR} L0 ${HAUTEUR} Z`,
+      chemin: parcours,
+      aire: `${parcours} L${LARGEUR} ${HAUTEUR} L0 ${HAUTEUR} Z`,
       min: bas,
       max: haut,
       coordonnees: coords,
@@ -96,7 +123,7 @@ export default function Serie({
   const valeurLue = `${Number(courant.point.valeur).toLocaleString('fr-FR')}${unite}`
 
   return (
-    <figure className={className}>
+    <figure className={className} ref={cadre}>
       <figcaption className="flex items-baseline justify-between gap-3">
         <span className="t-legende">{legende}</span>
         <span className="n text-sm text-ink-900">
@@ -146,6 +173,7 @@ export default function Serie({
           strokeLinejoin="round"
           strokeLinecap="round"
           vectorEffect="non-scaling-stroke"
+          className={trace ? 'trace-serie' : undefined}
         />
 
         {/* Le curseur « maintenant ». Seul élément qui porte la couleur

@@ -112,3 +112,18 @@ deux surfaces du produit, pas deux fois la meme.
 Format : 1456 x 880 px, converties en WebP qualite 82 (269 ko au total
 contre 583 ko en PNG). Le cadre de navigateur les affiche au plus a 728 px,
 d'ou le facteur deux pour les ecrans a forte densite.
+
+## Reajustements du 23/09/2026
+
+Onze captures au lieu de quatre : les pages /fonctionnalites, /offres et
+/securite-du-produit n'etaient que du texte, et une page qui parle d'alertes
+sans en montrer une demande au visiteur de la croire sur parole.
+
+Le client de demonstration a ete renomme **Societe Exemple** avant la prise
+de vue. La regle ne change pas — ce sont toujours les donnees du tenant de
+demonstration, jamais celles d'un client reel — mais le nom precedent
+(« Demo — Cabinet Comptable Durand ») apparaissait dans le rail de navigation
+sur chaque capture, et la vitrine donnait l'impression d'etre l'espace d'un
+client en particulier.
+
+Total : 679 ko de WebP pour onze ecrans, toutes en chargement differe.

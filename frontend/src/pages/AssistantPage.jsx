@@ -1,4 +1,4 @@
-import { ArrowRight, Bot, ChevronDown, ChevronUp, Send, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowRight, Bot, ChevronDown, ChevronUp, Send, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { aiApi } from '../api/endpoints'
@@ -95,7 +95,7 @@ function RappelPseudonymisation() {
 
 function AssistantAvatar() {
   return (
-    <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-700 text-white">
+    <div className="flex size-7 shrink-0 items-center justify-center rounded-sm bg-brand-700 text-white">
       <Bot className="size-4" aria-hidden="true" />
     </div>
   )
@@ -121,7 +121,7 @@ function MessageBubble({ message }) {
               <Link
                 key={lien.to}
                 to={lien.to}
-                className="transition-smooth inline-flex items-center gap-1 rounded-full border border-brand-200 bg-surface px-2.5 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50"
+                className="transition-smooth inline-flex items-center gap-1 rounded-sm border border-ink-300 bg-surface px-2.5 py-1 text-xs font-medium text-brand-700 hover:border-brand-400"
               >
                 {lien.label}
                 <ArrowRight className="size-3" aria-hidden="true" />
@@ -138,12 +138,16 @@ function TypingIndicator() {
   return (
     <div className="flex items-end gap-2">
       <AssistantAvatar />
-      <div className="flex items-center gap-1 rounded-lg bg-ink-100 px-4 py-3">
+      {/* Trois points qui RESPIRENT, pas qui rebondissent : l'animation de
+          rebond de Tailwind est une elasticite, et une elasticite sur un
+          indicateur d'attente se lit comme un jouet. Un fondu decale dit la
+          meme chose sans le costume. */}
+      <div className="flex items-center gap-1.5 rounded-md bg-ink-100 px-4 py-3">
         {[0, 1, 2].map((i) => (
           <span
             key={i}
-            className="size-1.5 animate-bounce rounded-full bg-ink-400"
-            style={{ animationDelay: `${i * 150}ms` }}
+            className="respire size-1.5 rounded-full bg-ink-500"
+            style={{ animationDelay: `${i * 180}ms` }}
           />
         ))}
       </div>
@@ -266,9 +270,9 @@ export default function AssistantPage() {
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
           {messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
-              <div className="flex size-11 items-center justify-center rounded-full bg-brand-100 text-brand-700">
-                <Sparkles className="size-5" aria-hidden="true" />
-              </div>
+              {/* Pas d'etincelle : une icone decorative devant un titre est
+                  le tell le plus sur du web genere, et c'est precisement cet
+                  ecran qui illustre l'IA sur la vitrine. */}
               <p className="mt-3 text-sm text-ink-700">
                 {suggestions.length > 0
                   ? 'Voici ce que la plateforme voit chez vous. Par quoi voulez-vous commencer ?'
@@ -282,7 +286,7 @@ export default function AssistantPage() {
                         type="button"
                         onClick={() => sendText(suggestion.question)}
                         title={suggestion.reason}
-                        className="transition-smooth rounded-full border border-ink-200 px-3 py-1.5 text-sm font-medium text-ink-700 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                        className="transition-smooth rounded-sm border border-ink-300 bg-surface px-3 py-1.5 text-sm font-medium text-ink-800 hover:border-brand-400 hover:text-brand-700"
                       >
                         {suggestion.question}
                       </button>

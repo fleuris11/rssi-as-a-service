@@ -19,8 +19,13 @@ const CONTENU_DEPLACE = [
   { chemin: '/fonctionnalites', ancre: 'alertes', titre: /Ce que vous recevez sans vous connecter/ },
   { chemin: '/fonctionnalites', ancre: 'diagnostic', titre: /Savoir par où commencer/ },
   { chemin: '/fonctionnalites', ancre: 'fonctionnement', titre: /Comment cela fonctionne/ },
-  { chemin: '/securite-du-produit', ancre: 'donnees', titre: /Vos données, et ce que nous en faisons/ },
-  { chemin: '/offres', ancre: 'tarifs', titre: /^Offres$/ },
+  {
+    chemin: '/securite-du-produit',
+    ancre: 'donnees',
+    titre: /Vous nous confiez des informations sur vos vulnérabilités/,
+    niveau: 1,
+  },
+  { chemin: '/offres', ancre: 'tarifs', titre: /Trois offres, comparées colonne par colonne/, niveau: 1 },
   { chemin: '/questions', ancre: 'questions', titre: /Questions fréquentes/, niveau: 2 },
 ]
 
@@ -42,12 +47,18 @@ test('parcours visiteur : accueil, sections, demande de démonstration', async (
     await expect(page.locator(`#${id}`)).toBeVisible()
   }
 
-  // L'instrument du premier écran montre le produit EN MARCHE, sur le client
-  // de démonstration. Son caractère fictif est dit, sans quoi la capture
-  // finit par être lue comme un vrai client.
-  await expect(page.getByText('Données de démonstration')).toBeVisible()
-  await expect(page.getByText(/client de démonstration/).first()).toBeVisible()
-  await expect(page.getByText(/42 mesures/)).toBeVisible()
+  // L'instrument du premier écran montre le produit EN MARCHE, sans nommer
+  // personne : la vitrine donnait l'impression d'être l'espace d'un client.
+  // Son caractère fictif est dit deux fois — le bandeau, puis le panneau.
+  await expect(page.getByText('Ce que vous voyez en ouvrant le produit')).toBeVisible()
+  await expect(page.getByText(/valeurs fictives/).first()).toBeVisible()
+
+  // Le discours ne referme ni le marché ni le catalogue de sources.
+  const texteAccueil = await page.locator('main').innerText()
+  expect(texteAccueil, 'la vitrine ne restreint pas le produit aux PME').not.toMatch(/PME/)
+  expect(texteAccueil, 'aucun nombre de sources gravé').not.toMatch(
+    /(neuf|dix|onze|\d+)\s+sources/i
+  )
 
   await auditAccessibility(page)
 
@@ -94,6 +105,9 @@ test('rien n’a été supprimé de la vitrine : tout est retrouvable', async ({
   await waitForContentLoaded(page)
   await expect(page.getByText('La météo cyber, chaque matin')).toBeVisible()
   await expect(page.getByText(/plan d’action priorisé/i).first()).toBeVisible()
+  // Le référentiel ANSSI est FOURNI, il n'est pas le seul : la vitrine ne
+  // doit pas laisser croire à un catalogue d'un seul référentiel.
+  await expect(page.getByText(/42 mesures/)).toBeVisible()
 
   // Les quotas viennent des champs de l'offre : on vérifie qu'ils sont rendus
   // et qu'aucun ne dépasse le pool partagé de la plateforme (ADR-013).
@@ -145,7 +159,10 @@ test('la vitrine est lisible sur un écran de téléphone', async ({ page }) => 
     await page.locator(`#${id}`).scrollIntoViewIfNeeded()
     await expect(page.locator(`#${id}`)).toBeVisible()
   }
-  await expect(page.getByText(/42 mesures/)).toBeVisible()
+  // Le bandeau de faits : au téléphone il passe en une colonne, et c'est
+  // exactement là qu'une grille mal bornée déborde.
+  await expect(page.getByText('Votre référentiel')).toBeVisible()
+  await expect(page.getByText(/Union européenne/).first()).toBeVisible()
 
   // Le débordement se re-mesure APRÈS le parcours : une carte trop large ne
   // se révèle qu'une fois la section montée et son contenu rendu.

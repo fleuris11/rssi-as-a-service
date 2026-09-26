@@ -67,7 +67,7 @@ export const ORGANISATION_JSON_LD = {
   name: 'RSSI as a Service',
   url: SITE_URL,
   description:
-    "Surveillance des fuites de données et accompagnement à la conformité pour les PME.",
+    "Surveillance des fuites de données et accompagnement à la conformité, pour les organisations qui n'ont pas d'équipe sécurité.",
   contactPoint: {
     '@type': 'ContactPoint',
     contactType: 'sales',

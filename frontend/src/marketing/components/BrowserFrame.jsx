@@ -20,12 +20,16 @@ export default function BrowserFrame({
   alt,
   caption,
   url = 'rssiasservice.online',
+  rang = 0,
   children,
   className = '',
 }) {
   return (
-    <figure className={`overflow-hidden ${className}`}>
-      <div className="overflow-hidden rounded-lg border border-bati-700 bg-surface shadow-elevated">
+    // `data-apparition` : le cadre arrive quand on le regarde (useApparition).
+    // L'element reste VISIBLE tant que rien ne se declenche — la classe n'est
+    // ajoutee qu'au moment de l'entree, jamais avant.
+    <figure className={`overflow-hidden ${className}`} data-apparition={rang}>
+      <div className="transition-smooth overflow-hidden rounded-lg border border-bati-700 bg-surface shadow-elevated duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_44px_-14px_rgb(14_21_27/0.3)]">
         <div className="flex items-center gap-2 bg-bati-800 px-3 py-2">
           <span className="flex gap-1.5" aria-hidden="true">
             <span className="size-2 rounded-full bg-bati-500" />

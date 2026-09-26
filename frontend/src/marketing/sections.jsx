@@ -8,6 +8,7 @@ import BrowserFrame from './components/BrowserFrame'
 import FlowDiagram from './components/FlowDiagram'
 import Defilement from '../components/ui/Defilement'
 import {
+  ASSISTANT,
   AUSSI_LIVRE,
   DIAGNOSTIC,
   DIFFERENTIATORS,
@@ -78,6 +79,19 @@ export function Differences() {
 
 /** Compositions originales — pas de photo, pas d'icône générique. */
 function VisuelDifference({ id }) {
+  // L'item « assistant » n'avait pas de visuel propre et retombait sur la
+  // maquette « Réutilisation possible » : un écran de mot de passe fuité pour
+  // illustrer l'assistant. Il a maintenant sa capture.
+  if (id === 'assistant') {
+    return (
+      <BrowserFrame
+        src="/screenshots/assistant.webp"
+        alt="L’assistant : une question posée en français, une réponse appuyée sur les données du client, et l’action à mener."
+        caption="Capture réelle. Valeurs d’exemple."
+        url="rssiasservice.online/assistant"
+      />
+    )
+  }
   if (id === 'signaux') {
     return (
       <div className="panneau p-6">
@@ -137,6 +151,57 @@ function VisuelDifference({ id }) {
 }
 
 /* ================================================================== *
+ * L'INTELLIGENCE ARTIFICIELLE, ET SES LIMITES
+ *
+ * La page disait ce que fait l'assistant et taisait les trois autres usages,
+ * les garde-fous, et la nuance qui compte le plus : la plupart des documents
+ * ne sont PAS rédigés par l'IA.
+ * ================================================================== */
+export function IntelligenceArtificielle() {
+  return (
+    <Acte id="assistant" fond="haute">
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-16">
+        <div>
+          <h2 className="t-display">Ce que l’IA fait, et ce qu’elle ne fait pas</h2>
+          <p className="t-body mt-4">{ASSISTANT.subtitle}</p>
+          <BrowserFrame
+            className="mt-8"
+            src="/screenshots/assistant.webp"
+            alt="L’assistant : une question posée en français, une réponse appuyée sur les données du client, et l’action à mener."
+            caption="Capture réelle. Valeurs d’exemple."
+            url="rssiasservice.online/assistant"
+          />
+        </div>
+
+        <div>
+          {ASSISTANT.garanties.map((garantie) => (
+            <div key={garantie.title} className="ligne-liste py-5 first:pt-0">
+              <h3 className="text-base font-semibold text-ink-900">{garantie.title}</h3>
+              <p className="t-body mt-1.5">{garantie.body}</p>
+            </div>
+          ))}
+
+          <h3 className="t-title mt-10">{ASSISTANT.ailleurs.title}</h3>
+          {ASSISTANT.ailleurs.items.map((item) => (
+            <div key={item.title} className="ligne-liste py-5">
+              <h4 className="text-base font-semibold text-ink-900">{item.title}</h4>
+              <p className="t-body mt-1.5">{item.body}</p>
+            </div>
+          ))}
+
+          {/* La nuance à contre-courant, et c'est un argument : un document
+              reproductible vaut mieux qu'un document réinventé à chaque fois. */}
+          <p className="t-body mt-6 border-t border-ink-200 pt-5 text-ink-600">
+            {ASSISTANT.ailleurs.note}
+          </p>
+          <p className="t-meta mt-4">{ASSISTANT.sobriete}</p>
+        </div>
+      </div>
+    </Acte>
+  )
+}
+
+/* ================================================================== *
  * LES ENVOIS
  * ================================================================== */
 export function Alertes() {
@@ -146,6 +211,13 @@ export function Alertes() {
         <div>
           <h2 className="t-display">{NOTIFICATIONS.title}</h2>
           <p className="t-body mt-4">{NOTIFICATIONS.subtitle}</p>
+          <BrowserFrame
+            className="mt-8"
+            src="/screenshots/notifications.webp"
+            alt="Le centre de notifications : chaque événement porte ce qu’il signifie et l’écran vers lequel il mène."
+            caption="Capture réelle. Valeurs d’exemple."
+            url="rssiasservice.online/notifications"
+          />
         </div>
         <div>
           {NOTIFICATIONS.items.map((item) => (
@@ -186,7 +258,7 @@ export function Diagnostic() {
         className="mt-12"
         src="/screenshots/diagnostic.webp"
         alt="La restitution du diagnostic : score global, score par domaine, et les mesures qui les composent."
-        caption="Capture réelle, client de démonstration."
+        caption="Capture réelle. Valeurs d’exemple."
         url="rssiasservice.online/resultats"
       />
     </Acte>
@@ -229,22 +301,58 @@ export function Fonctionnement() {
 /* ================================================================== *
  * CE QUI EST LIVRÉ AUSSI
  * ================================================================== */
+/** Chaque volet montre son écran : trois affirmations, trois preuves. */
+const ECRANS_AUSSI_LIVRE = {
+  'Comptes désignés': {
+    src: '/screenshots/comptes-surveilles.webp',
+    alt: 'Les comptes désignés : chaque compte surveillé porte la finalité déclarée et la date de déclaration.',
+    url: 'rssiasservice.online/comptes-surveilles',
+  },
+  'Veille réglementaire': {
+    src: '/screenshots/veille.webp',
+    alt: 'La veille réglementaire : chaque publication est rattachée à une obligation, et propose sans jamais modifier.',
+    url: 'rssiasservice.online/veille',
+  },
+  'Formation des salariés': {
+    src: '/screenshots/formation.webp',
+    alt: 'La formation : les salariés inscrits, leur avancement, et le lien personnel de chacun.',
+    url: 'rssiasservice.online/formation',
+  },
+}
+
 export function EgalementLivre() {
   return (
     <Acte id="egalement" fond="creuse">
-      <div className="grid gap-10 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-16">
-        <div>
-          <h2 className="t-display">{AUSSI_LIVRE.title}</h2>
-          <p className="t-body mt-4">{AUSSI_LIVRE.subtitle}</p>
-        </div>
-        <div>
-          {AUSSI_LIVRE.items.map((item) => (
-            <div key={item.title} className="ligne-liste py-5 first:pt-0">
-              <h3 className="text-base font-semibold text-ink-900">{item.title}</h3>
-              <p className="t-body mt-1.5">{item.body}</p>
-            </div>
-          ))}
-        </div>
+      <h2 className="t-display max-w-3xl">{AUSSI_LIVRE.title}</h2>
+      <p className="t-lead mt-4">{AUSSI_LIVRE.subtitle}</p>
+
+      <div className="mt-12 space-y-14">
+        {AUSSI_LIVRE.items.map((item, rang) => {
+          const ecran = ECRANS_AUSSI_LIVRE[item.title]
+          return (
+            <article
+              key={item.title}
+              className={`grid items-center gap-8 lg:grid-cols-2 lg:gap-14 ${
+                rang % 2 === 1 ? 'lg:[&>*:first-child]:order-2' : ''
+              }`}
+            >
+              <div>
+                <h3 className="t-title text-xl">{item.title}</h3>
+                <p className="t-body mt-3 text-base">{item.body}</p>
+              </div>
+              {ecran ? (
+                <BrowserFrame
+                  src={ecran.src}
+                  alt={ecran.alt}
+                  caption="Capture réelle. Valeurs d’exemple."
+                  url={ecran.url}
+                />
+              ) : (
+                <div />
+              )}
+            </article>
+          )
+        })}
       </div>
     </Acte>
   )
@@ -253,19 +361,42 @@ export function EgalementLivre() {
 /* ================================================================== *
  * LES DONNÉES
  * ================================================================== */
-export function Donnees() {
+export function Donnees({ entete = true }) {
+  // Sans le titre de section, les six engagements se retrouvent en h3
+  // directement sous le h1 de la page : un niveau saute. Le niveau suit donc
+  // la presence de l'en-tete, au lieu d'etre ecrit en dur.
+  const Titre = entete ? 'h3' : 'h2'
   return (
-    <Acte id="donnees" fond="haute">
-      <h2 className="t-display max-w-3xl">{TRUST.title}</h2>
-      <p className="t-lead mt-5">{TRUST.subtitle}</p>
-      <div className="mt-10 grid gap-x-14 sm:grid-cols-2">
+    <Acte id="donnees" fond="haute" sansHaut={!entete}>
+      {/* Sur /securite-du-produit la page porte deja ce titre et ce chapeau,
+          mot pour mot. Les repeter laissait un vide entre deux phrases
+          identiques, et c'est le vide qu'on remarquait. */}
+      {entete && (
+        <>
+          <h2 className="t-display max-w-3xl">{TRUST.title}</h2>
+          <p className="t-lead mt-5">{TRUST.subtitle}</p>
+        </>
+      )}
+      <div className={`grid gap-x-14 sm:grid-cols-2 ${entete ? 'mt-10' : ''}`}>
         {TRUST.items.map((item) => (
           <div key={item.title} className="ligne-liste py-5 sm:first:pt-0 sm:[&:nth-child(2)]:sm:pt-0">
-            <h3 className="text-base font-semibold text-ink-900">{item.title}</h3>
+            <Titre className="text-base font-semibold text-ink-900">{item.title}</Titre>
             <p className="t-body mt-1.5">{item.body}</p>
           </div>
         ))}
       </div>
+
+      {/* Ce que produisent ces engagements, à l'écran : un mot de passe
+          retrouvé reste masqué, et sa consultation demande une nouvelle
+          preuve d'identité. Le dire est une promesse, le montrer est une
+          démonstration. */}
+      <BrowserFrame
+        className="mt-12"
+        src="/screenshots/compromissions.webp"
+        alt="L’écran des compromissions : chaque élément retrouvé est expliqué, le mot de passe reste masqué, et sa consultation est tracée."
+        caption="Capture réelle. Valeurs d’exemple."
+        url="rssiasservice.online/compromissions"
+      />
     </Acte>
   )
 }
@@ -289,7 +420,7 @@ export function fonctionnalitesComparees(plans) {
   return vues
 }
 
-export function Offres() {
+export function Offres({ entete = true }) {
   // Les offres viennent de l'API : les modifier depuis l'administration doit
   // se refléter sur la vitrine sans redéploiement (ADR-019). Le contenu
   // statique sert de REPLI — une grille tarifaire vide serait pire qu'une
@@ -318,9 +449,16 @@ export function Offres() {
   const affichees = plans ?? PRICING.plans
 
   return (
-    <Acte id="tarifs" fond="haute">
-      <h2 className="t-display">{PRICING.title}</h2>
-      <p className="t-lead mt-5">{PRICING.subtitle}</p>
+    <Acte id="tarifs" fond="haute" sansHaut={!entete}>
+      {/* `entete` : sur /offres la page porte deja son titre, et deux titres
+          qui disent la meme chose separes par un vide, c'est le vide qu'on
+          remarque. */}
+      {entete && (
+        <>
+          <h2 className="t-display">{PRICING.title}</h2>
+          <p className="t-lead mt-5">{PRICING.subtitle}</p>
+        </>
+      )}
 
       {/* Un TABLEAU comparatif, et non trois cartes flottantes : un dirigeant
           compare des colonnes, il ne lit pas trois fiches l'une après l'autre.
@@ -328,7 +466,10 @@ export function Offres() {
           Défilement horizontal sur petit écran plutôt qu'un second rendu en
           blocs : deux rendus du même contenu doubleraient chaque libellé dans
           la page, donc pour un lecteur d'écran aussi. */}
-      <Defilement className="mt-10" libelle="Comparaison des offres, défilement horizontal">
+      <Defilement
+        className={entete ? 'mt-10' : ''}
+        libelle="Comparaison des offres, défilement horizontal"
+      >
         {/* `aria-label` plutôt qu'un `<caption>` masqué : un caption en
             position absolue s'échappe de son conteneur à défilement et élargit
             la PAGE de 123 px au téléphone. Mesuré, pas supposé. */}
@@ -449,6 +590,30 @@ export function Offres() {
         </table>
       </Defilement>
       <p className="t-meta mt-8 max-w-2xl">{PRICING.disclaimer}</p>
+
+      {/* La page n'était qu'un tableau et deux phrases. Ce qui est commun à
+          toutes les offres se montre, au lieu de se déduire des colonnes. */}
+      <div className="mt-14 grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+        <div>
+          <h2 className="t-title text-xl sm:text-2xl">Quelle que soit l’offre</h2>
+          <p className="t-body mt-3 text-base">
+            Le diagnostic, le plan d’action priorisé et la météo quotidienne sont dans toutes les
+            offres. Ce qui change d’une colonne à l’autre, ce sont les volumes engagés et les
+            fonctions d’analyse — jamais le fait d’être prévenu.
+          </p>
+          <p className="t-meta mt-4">
+            Aucune offre ne promet plus d’emplacements de surveillance que la plateforme ne peut en
+            honorer : une activation qui dépasserait le plafond partagé est refusée avant
+            enregistrement, pas après.
+          </p>
+        </div>
+        <BrowserFrame
+          src="/screenshots/plan-action.webp"
+          alt="Le plan d’action : les actions classées par rapport impact/effort, en trois colonnes — à faire, en cours, fait."
+          caption="Capture réelle. Valeurs d’exemple."
+          url="rssiasservice.online/plan-action"
+        />
+      </div>
     </Acte>
   )
 }
@@ -480,22 +645,47 @@ function Question({ item, ouvert, basculer, identifiant }) {
   )
 }
 
-export function Questions({ items = FAQ.items, titre = FAQ.title, fond = 'haute' }) {
+export function Questions({
+  items = FAQ.items,
+  titre = FAQ.title,
+  chapeau = null,
+  fond = 'haute',
+  pleinePage = false,
+}) {
   const [ouvert, setOuvert] = useState(null)
+
+  const liste = items.map((item, rang) => (
+    <Question
+      key={item.question}
+      item={item}
+      identifiant={`question-${rang}`}
+      ouvert={ouvert === rang}
+      basculer={() => setOuvert(ouvert === rang ? null : rang)}
+    />
+  ))
+
+  // En PLEINE PAGE, les questions gardent leur colonne de lecture : un texte
+  // de réponse à 1 400 px de large ne se lit pas. En bloc SECONDAIRE, elles
+  // passent en deux colonnes — titre à gauche, questions à droite — comme le
+  // reste de la grammaire, au lieu de laisser la moitié droite vide.
+  if (pleinePage) {
+    return (
+      <Acte id="questions" fond={fond}>
+        <h2 className="t-display">{titre}</h2>
+        {chapeau && <p className="t-lead mt-5">{chapeau}</p>}
+        <div className="mt-8 max-w-4xl">{liste}</div>
+      </Acte>
+    )
+  }
 
   return (
     <Acte id="questions" fond={fond}>
-      <h2 className="t-display">{titre}</h2>
-      <div className="mt-8 max-w-4xl">
-        {items.map((item, rang) => (
-          <Question
-            key={item.question}
-            item={item}
-            identifiant={`question-${rang}`}
-            ouvert={ouvert === rang}
-            basculer={() => setOuvert(ouvert === rang ? null : rang)}
-          />
-        ))}
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16">
+        <div>
+          <h2 className="t-display">{titre}</h2>
+          {chapeau && <p className="t-body mt-4">{chapeau}</p>}
+        </div>
+        <div>{liste}</div>
       </div>
     </Acte>
   )

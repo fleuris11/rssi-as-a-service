@@ -7,8 +7,10 @@ import {
   EgalementLivre,
   Fin,
   Fonctionnement,
+  IntelligenceArtificielle,
 } from '../sections'
 import { useSeo } from '../useSeo'
+import { useApparition } from '../useApparition'
 
 /**
  * Le détail de ce que fait le produit.
@@ -25,6 +27,9 @@ export default function FonctionnalitesPage() {
       'Signaux avant-coureurs, traduction en langage de direction, diagnostic ANSSI, météo quotidienne, formation des salariés : le détail de chaque fonctionnalité.',
     path: '/fonctionnalites',
   })
+  // Les cadres de capture arrivent quand on les regarde. Rien n'est
+  // masque en attendant : voir useApparition.
+  useApparition()
 
   return (
     <MarketingLayout>
@@ -33,6 +38,7 @@ export default function FonctionnalitesPage() {
         chapeau="Chaque affirmation de cette page correspond à une fonctionnalité qui existe dans le produit. Ce qui n’existe pas n’y est pas écrit."
       />
       <Differences />
+      <IntelligenceArtificielle />
       <Alertes />
       <Diagnostic />
       <Fonctionnement />

@@ -3,6 +3,7 @@ import { TeteDePage } from '../atomes'
 import { FAQ } from '../content'
 import { Fin, Offres, Questions } from '../sections'
 import { useSeo } from '../useSeo'
+import { useApparition } from '../useApparition'
 
 /**
  * Les offres.
@@ -22,6 +23,9 @@ export default function OffresPage() {
       'Veille, Pilotage, Souverain : ce que contient chaque offre, ce qui est compté, et les montants indicatifs.',
     path: '/offres',
   })
+  // Les cadres de capture arrivent quand on les regarde. Rien n'est
+  // masque en attendant : voir useApparition.
+  useApparition()
 
   return (
     <MarketingLayout>
@@ -29,8 +33,13 @@ export default function OffresPage() {
         titre="Trois offres, comparées colonne par colonne"
         chapeau="Les montants sont indicatifs et servent à situer un ordre de grandeur. La tarification définitive est établie au moment du devis."
       />
-      <Offres />
-      <Questions items={QUESTIONS_OFFRE} titre="Avant de comparer" fond="creuse" />
+      <Offres entete={false} />
+      <Questions
+        items={QUESTIONS_OFFRE}
+        titre="Avant de comparer"
+        chapeau="Les quatre questions qu’on nous pose le plus souvent au moment de choisir."
+        fond="creuse"
+      />
       <Fin />
     </MarketingLayout>
   )

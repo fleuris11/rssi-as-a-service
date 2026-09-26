@@ -3,6 +3,7 @@ import MarketingLayout from '../components/MarketingLayout'
 import { TeteDePage } from '../atomes'
 import { FAQ } from '../content'
 import { useSeo } from '../useSeo'
+import { useApparition } from '../useApparition'
 
 /**
  * Vos données et ce que nous en faisons.
@@ -23,6 +24,9 @@ export default function SecuriteProduitPage() {
       'Cloisonnement entre clients, chiffrement des mots de passe retrouvés, consultation tracée, effacement à 90 jours, pseudonymisation avant analyse externe.',
     path: '/securite-du-produit',
   })
+  // Les cadres de capture arrivent quand on les regarde. Rien n'est
+  // masque en attendant : voir useApparition.
+  useApparition()
 
   return (
     <MarketingLayout>
@@ -30,8 +34,13 @@ export default function SecuriteProduitPage() {
         titre="Vous nous confiez des informations sur vos vulnérabilités"
         chapeau="Voici précisément comment elles sont traitées, et ce que nous nous interdisons."
       />
-      <Donnees />
-      <Questions items={QUESTIONS_DONNEES} titre="Les questions qu’on nous pose là-dessus" fond="creuse" />
+      <Donnees entete={false} />
+      <Questions
+        items={QUESTIONS_DONNEES}
+        titre="Les questions qu’on nous pose là-dessus"
+        chapeau="Hébergement, transmission à des tiers, durée de conservation : les trois mêmes, toujours."
+        fond="creuse"
+      />
       <Fin />
     </MarketingLayout>
   )

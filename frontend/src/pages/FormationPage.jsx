@@ -450,12 +450,24 @@ function Resultat({ resultat, onRevoir, onRecommencer, onTelecharger }) {
         {resultat.questions.map((question, rang) => (
           <li
             key={question.id}
-            className={`rounded-lg border-l-4 bg-white p-4 ${
-              question.correct ? 'border-ok-strong' : 'border-critical-strong'
+            // Le filet lateral epais est le tell le plus reconnaissable du
+            // web genere. Juste/faux passe par un GLYPHE et un mot — ce que
+            // le lecteur d'ecran entendait deja, et que l'oeil voit
+            // maintenant sans dependre d'une couleur.
+            className={`panneau p-4 ${
+              question.correct
+                ? 'border-ok-border bg-ok-subtle'
+                : 'border-critical-border bg-critical-subtle'
             }`}
           >
-            <p className="font-medium text-ink-900">
-              <span className="sr-only">{question.correct ? 'Juste. ' : 'Faux. '}</span>
+            <p className="flex items-baseline gap-2 font-medium text-ink-900">
+              <span
+                aria-hidden="true"
+                className={question.correct ? 'text-ok-strong' : 'text-critical-strong'}
+              >
+                {question.correct ? '●' : '■'}
+              </span>
+              <span className="lecture-seule">{question.correct ? 'Juste. ' : 'Faux. '}</span>
               {rang + 1}. {question.text}
             </p>
             {/* L'explication est donnée dans les deux cas : celui qui a bien

@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEMONSTRATION, NAV } from '../content'
+import { ASSISTANT, DEMONSTRATION, NAV } from '../content'
 import LandingPage from './LandingPage'
 
 /**
@@ -37,16 +37,16 @@ describe('L’accueil', () => {
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     })
 
-    it('tient en six actes, pas un de plus', () => {
+    it('tient en sept actes, pas un de plus', () => {
       // C'est LE point de la refonte : la page était trop dense et le visiteur
-      // s'y perdait. Si un septième acte apparaît, c'est que le détail est
+      // s'y perdait. Si un huitième acte apparaît, c'est que le détail est
       // remonté ici au lieu de rester sur sa page.
       const { container } = afficher()
       const actes = container.querySelectorAll('main > section')
-      expect(actes).toHaveLength(6)
+      expect(actes).toHaveLength(7)
     })
 
-    it('porte les six actes attendus, dans l’ordre', () => {
+    it('porte les sept actes attendus, dans l’ordre', () => {
       const { container } = afficher()
       const identifiants = [...container.querySelectorAll('main > section')].map((s) => s.id)
       expect(identifiants).toEqual([
@@ -54,6 +54,7 @@ describe('L’accueil', () => {
         'probleme',
         'recevoir',
         'commencer',
+        'assistant',
         'faits',
         'voir',
       ])
@@ -108,18 +109,21 @@ describe('L’accueil', () => {
   })
 
   describe('l’instrument du premier écran', () => {
-    it('montre le produit en marche, sur le client de démonstration', () => {
+    it('montre le produit en marche, sans nommer personne', () => {
+      // L'accueil donnait l'impression que le produit était fait pour un
+      // client en particulier : le panneau portait son nom en tête. Il montre
+      // désormais ce que N'IMPORTE QUELLE organisation y voit.
       afficher()
-      expect(screen.getAllByText(DEMONSTRATION.entreprise).length).toBeGreaterThan(0)
-      expect(screen.getAllByText('Données de démonstration').length).toBe(1)
+      expect(screen.getByText('Ce que vous voyez en ouvrant le produit')).toBeInTheDocument()
+      expect(screen.getAllByText(DEMONSTRATION.mention).length).toBeGreaterThan(0)
     })
 
-    it('dit que ce sont des données de démonstration, deux fois plutôt qu’une', () => {
-      // Une capture de produit sans mention visible de son caractère fictif
-      // finit par être lue comme un vrai client. Le bandeau le dit, le
+    it('dit que les valeurs sont fictives, deux fois plutôt qu’une', () => {
+      // Un instrument sans mention visible de son caractère fictif finit par
+      // être lu comme les chiffres d'un vrai client. Le bandeau le dit, le
       // panneau le redit.
       afficher()
-      expect(screen.getAllByText(/client de démonstration/).length).toBeGreaterThan(0)
+      expect(screen.getAllByText(/valeurs fictives/).length).toBeGreaterThanOrEqual(2)
     })
 
     it('affiche un score cohérent avec la dernière mesure de la courbe', () => {
@@ -144,6 +148,28 @@ describe('L’accueil', () => {
     })
   })
 
+  describe('l’intelligence artificielle', () => {
+    it('dit que le produit en contient une, et où elle sert', () => {
+      // Elle n'apparaissait nulle part sur l'accueil alors que quatre usages
+      // existent dans le produit.
+      afficher()
+      expect(screen.getByText(ASSISTANT.title)).toBeInTheDocument()
+      for (const exemple of ASSISTANT.exemples) {
+        expect(screen.getByText(`« ${exemple} »`)).toBeInTheDocument()
+      }
+    })
+
+    it('annonce les trois garde-fous en même temps que la promesse', () => {
+      // « Nous faisons de l'IA » ne distingue personne. Ce qui distingue,
+      // c'est ce qu'elle s'interdit — et ça doit être sur la même page que
+      // l'argument, pas trois clics plus loin.
+      afficher()
+      for (const garantie of ASSISTANT.garanties) {
+        expect(screen.getByText(garantie.title)).toBeInTheDocument()
+      }
+    })
+  })
+
   describe('le discours', () => {
     it('n’annonce ni blocage ni certification', () => {
       const { container } = afficher()
@@ -156,7 +182,21 @@ describe('L’accueil', () => {
       expect(texte).toMatch(/ne vous certifie pas/i)
     })
 
-    it('ne cite aucun chiffre commercial : le produit n’a qu’un client', () => {
+    it('ne restreint pas le produit aux PME', () => {
+      // Le produit s'adresse à toute organisation sans équipe sécurité, pas
+      // aux seules PME : la vitrine ne doit pas refermer le marché.
+      const { container } = afficher()
+      expect(container.textContent).not.toMatch(/\bPME\b/)
+    })
+
+    it('ne grave aucun nombre de sources de renseignement', () => {
+      // Il peut augmenter. Une vitrine qui annonce « neuf sources » devient
+      // fausse le jour où il y en a dix, et personne ne pense à la corriger.
+      const { container } = afficher()
+      expect(container.textContent).not.toMatch(/(neuf|dix|onze|\d+)\s+sources/i)
+    })
+
+    it('ne cite aucun chiffre commercial', () => {
       const { container } = afficher()
       const texte = container.textContent
       expect(texte).not.toMatch(/\d+\s*(clients|entreprises)\s*(nous font confiance|accompagnées)/i)
