@@ -7148,3 +7148,84 @@ hésitation. Corrigé en sortie exponentielle.
   C'est le motif jsdom/Windows déjà consigné, pas une régression.
 - Le studio de formation et quelques écrans secondaires n'ont reçu que la
   mise à niveau des primitives partagées, pas une reprise de composition.
+
+---
+
+## 26/09/2026 — Réajustements de la vitrine, l'IA visible, et le logo
+
+### Ce qui a été fait
+
+Un tour de relecture du commanditaire sur la vitrine livrée le 23, puis deux
+ajouts.
+
+**Quatre corrections de discours**, et chacune corrigeait quelque chose de
+faux : le produit était présenté comme réservé aux PME (rien dans le code ne
+le restreint), le nombre de sources de renseignement était gravé à « neuf »
+(il peut augmenter), le référentiel ANSSI était présenté comme le seul (le
+produit en porte plusieurs, attribués par client, importables, et un
+référentiel propre à l'entreprise peut être créé — le client de démonstration
+en a déjà un), et « France » décrivait l'hébergement mais se lisait comme un
+marché. L'accueil donnait aussi l'impression d'être l'espace d'un client en
+particulier : le panneau du premier écran portait son nom.
+
+**L'IA n'apparaissait nulle part sur l'accueil** alors que quatre usages
+existent dans le produit. Un acte entier lui est consacré, et une section
+détaillée sur `/fonctionnalites`. L'argument retenu n'est pas « nous faisons
+de l'IA » mais ce qu'elle s'interdit — trois garde-fous vérifiés dans le code
+avant d'être écrits — et la nuance à contre-courant : la plupart des documents
+sont *composés* à partir des données, pas rédigés.
+
+**Onze captures réelles** remplacent le texte seul des pages secondaires, et
+**trois moments de mouvement** ont été ajoutés (apparition des cadres, tracé
+de la courbe, arrivée des faits).
+
+**Le logo de la marque reprend sa place.** J'avais lu « le net monogramme »
+comme « un monogramme portant le mot NET » et dessiné un bloc NET ; il fallait
+lire « un monogramme net », c'est-à-dire lisible.
+
+### Décisions prises
+
+- Les visuels de marque sont redécoupés dans `og-image.webp` (968 px de large)
+  et servis en trois densités. Ce n'était pas le logo qui était flou, c'étaient
+  les fichiers : 64 px de côté pour un affichage à 32.
+- **Le fond sombre du logo est conservé** et posé sur une plaque graphite
+  bordée d'un filet. Un détourage par luminance rendrait l'intérieur du
+  bouclier translucide, et sur une page claire le bouclier deviendrait blanc.
+- Le **bloc complet** sert là où il y a la place (connexion, pied de page) ;
+  ailleurs c'est l'emblème plus le nom en Archivo, parce qu'à 48 px de haut le
+  bloc complet rend le nom illisible. Essayé, mesuré, rejeté.
+- Le client de démonstration est renommé **Société Exemple**, en local comme en
+  production : l'ancien nom apparaissait dans le rail sur chaque capture.
+
+### Difficultés rencontrées, et ce qu'elles ont révélé
+
+- **Un test vert qui ne testait rien.** La garde « la vitrine ne dit pas PME »
+  contenait un `` écrit depuis un heredoc, devenu un vrai caractère de
+  retour arrière : la regex cherchait un backspace et ne matchait jamais. Le
+  test passait sans rien vérifier. Trouvé en le vérifiant par mutation — ce
+  qui aurait dû être fait dès la première écriture.
+- **Un `git checkout` de vérification a effacé un fichier de travail.** Pour
+  tester la garde par mutation, j'avais modifié `content.js` puis restauré
+  depuis HEAD : toutes les corrections de discours non encore commitées sont
+  parties avec. Elles ont dû être rejouées. La leçon est de sauvegarder le
+  fichier avant, pas de restaurer depuis l'index.
+- Deux intrus revenaient dans le cadrage carré de l'emblème (le filet sous
+  « as Service », le début du bandeau « SÉCURITÉ »). Effacés en recopiant une
+  ligne propre voisine, pas par un aplat : le fond local est un halo bleu, et
+  un aplat noir s'y voyait comme une tache.
+- Le **favicon était un éclair violet** hérité d'un gabarit, et le titre de la
+  page — donc l'aperçu au partage — disait encore « pour les PME ».
+- Trois tells relevés par le détecteur : l'étincelle et les pastilles rondes
+  de l'écran Assistant, les points d'attente qui rebondissaient, et un filet
+  latéral coloré sur le résultat de quiz.
+- Le panneau des prospects de la console restait un **squelette pour
+  toujours** quand son appel échouait. Même famille que les trois trous blancs
+  du 22.
+
+### Ce qui reste à faire
+
+- La console n'est toujours pas vérifiée en production, faute de compte
+  administrateur plateforme.
+- La réinitialisation de mot de passe n'a toujours pas de route serveur.
+- Sous forte charge locale, deux tests dépassent leur délai et passent au
+  calme. Motif jsdom/Windows déjà consigné.

@@ -451,3 +451,105 @@ Cette refonte n'est pas finie tant que, pour chaque surface : la passe
 sont verts, axe-core ne remonte rien en `critical`/`serious`/`moderate`, il n'y
 a aucun débordement horizontal à 390 px, aucune erreur console, et les captures
 avant/après existent en bureau et en téléphone.
+
+---
+
+## 11. Réajustements du 23/09/2026
+
+Quatre corrections de fond sur le discours de la vitrine, et deux sur sa
+composition. Elles viennent d'une relecture du commanditaire, et chacune
+corrigeait quelque chose de **faux**, pas une question de goût.
+
+### Le discours
+
+| Ce qui était écrit | Pourquoi c'était faux | Ce qui est écrit |
+|---|---|---|
+| « pour les PME », sept fois | Aucune ligne du code ne restreint le produit à une taille d'organisation. La vitrine refermait le marché toute seule. | « pour les organisations qui n'ont pas d'équipe sécurité » |
+| « neuf sources de renseignement » | Le nombre peut augmenter. Une vitrine qui annonce neuf devient fausse le jour où il y en a dix, et personne ne pense à la corriger. | « les sources de renseignement », et la liste précise que d'autres s'ajoutent |
+| « 42 mesures du guide ANSSI » comme LE fait | Le produit porte **plusieurs** référentiels, attribués par client (ADR-029), importables, et un référentiel propre à l'entreprise peut être créé — le client de démonstration en a déjà un. Annoncer 42 mesures, c'était vendre un dixième de ce qui existe. | « Votre référentiel » : l'ANSSI d'origine, un importé, ou le vôtre |
+| « France » | Décrivait l'hébergement, mais se lisait comme un marché. | « Union européenne », suivi de « quel que soit le pays depuis lequel vous vous connectez » |
+| Le panneau du premier écran portait le nom du client de démonstration | Le visiteur avait l'impression que le produit était fait pour une entreprise en particulier. | « Ce que vous voyez en ouvrant le produit » / « Exemple — valeurs fictives » |
+
+Trois gardes de test tiennent ces règles : la page d'accueil ne doit contenir
+ni `PME`, ni un nombre suivi de « sources », ni de chiffre commercial.
+La première a été vérifiée par mutation — réintroduire « PME » la fait bien
+échouer, ce qui n'était pas le cas de sa première écriture.
+
+### La composition
+
+- **Les pages secondaires n'étaient que du texte.** Onze captures réelles
+  remplacent le vide : le centre de notifications sur la page des envois, les
+  trois volets « également livré » avec chacun son écran, l'écran des
+  compromissions sur la page des données, le plan d'action sur la page des
+  offres. Ce ne sont pas des images d'illustration — une page qui parle
+  d'alertes sans en montrer demande au visiteur de la croire sur parole.
+- **Deux titres qui disaient la même chose**, séparés par un vide de deux
+  rythmes de section, en tête de `/offres`. La section ne remet plus son titre
+  quand la page porte déjà le sien (`entete={false}`), et un acte qui en suit
+  un autre de même fond ne repose plus sa marge haute (`sansHaut`).
+- **La FAQ en bloc secondaire** n'occupait que la colonne de gauche. Elle
+  passe en deux colonnes — titre à gauche, questions à droite — comme le reste
+  de la grammaire. En pleine page, elle garde sa colonne de lecture : un texte
+  de réponse à 1 400 px de large ne se lit pas.
+
+### Le mouvement
+
+Trois moments, pas un effet saupoudré :
+
+1. **Les cadres de capture arrivent quand on les regarde**, décalés de 90 ms
+   les uns des autres (`useApparition`). Rien n'est masqué en attendant : la
+   classe n'est ajoutée qu'à l'entrée dans le champ, jamais avant, donc un
+   robot d'indexation et une capture pleine hauteur voient tout.
+2. **La courbe se redessine une fois** en entrant dans le champ
+   (`.trace-serie`). Le tracé existe dès le premier rendu ; l'animation le
+   rejoue, elle ne le conditionne pas.
+3. **Les trois faits du bandeau arrivent l'un après l'autre** plutôt
+   qu'ensemble : c'est ce qui distingue une arrivée d'un clignotement.
+
+Le survol d'un cadre de capture le soulève d'un demi-pixel et renforce son
+ombre. `prefers-reduced-motion` coupe les trois, avant même d'observer quoi
+que ce soit.
+
+---
+
+## 12. Le logo (26/09/2026)
+
+**Une erreur à reconnaître d'abord.** La consigne disait « le net monogramme au
+lieu du logo pixelisé ». J'ai lu « un monogramme portant le mot *net* » et j'ai
+dessiné un bloc « NET ». Il fallait lire « un monogramme *net* », c'est-à-dire
+lisible. Le logo de la marque reprend sa place partout.
+
+**Pourquoi il paraissait flou.** Pas à cause du logo : à cause des fichiers.
+`logo-embleme.webp` mesurait 64 px de côté pour un affichage à 32, sans marge
+sur un écran à forte densité, alors que le dessin du bouclier est détaillé. Les
+nouveaux fichiers sont découpés dans `og-image.webp`, où le logo fait 968 px de
+large, et servis en trois densités (128 / 256 / 384).
+
+**Deux intrus ont dû être effacés** de la tuile carrée de l'emblème, parce que
+le découpage y ramenait des morceaux du bloc voisin : le filet qui souligne
+« as Service » (y 406-410) et le début du bandeau « SÉCURITÉ » (y 420-448, à
+partir de x 515). Effacés en recopiant une ligne propre voisine, et non par un
+aplat : le fond local est un halo bleu, et un aplat noir s'y voyait comme une
+tache. Mesuré au pixel, vérifié après coup.
+
+**Pourquoi il garde son fond sombre.** Ce fond fait partie du dessin : le halo,
+le reflet du socle et le contour chromé n'existent que sur un fond sombre. Un
+détourage par luminance rendrait l'intérieur du bouclier translucide — sur une
+page claire, le bouclier deviendrait blanc. Le logo est donc posé sur une
+**plaque graphite assumée**, bordée d'un filet comme tout le reste du produit.
+Sur le bâti, la plaque se confond presque avec le fond ; le filet est ce qui la
+rend délibérée plutôt qu'accidentelle.
+
+**Où quelle version.**
+
+| Surface | Ce qui s'affiche | Pourquoi |
+|---|---|---|
+| Barre de la vitrine | Emblème 36 px + « RSSI as a Service » en Archivo | Le bloc complet a un rapport de 2,5:1 : dans une barre de 56 px, le nom devient illisible et la signature une bouillie grise. Le nom reste du **texte** — net à toute taille, sélectionnable, lu par un lecteur d'écran. |
+| Panneau de connexion, pied de page | Bloc complet, 224 px de large | Il y a la place, et à cette taille « SÉCURITÉ • CONFORMITÉ • PERFORMANCE » se lit vraiment. |
+| Rail de l'application, console | Emblème 32 px | La largeur est comptée. |
+
+**Deux défauts trouvés en chemin** : le favicon était un **éclair violet**
+hérité d'un gabarit, sans rapport avec la marque — il est refait depuis
+l'emblème, comme l'icône iOS ; et le titre de la page portait encore
+« pour les PME », y compris dans les métadonnées Open Graph.
+
