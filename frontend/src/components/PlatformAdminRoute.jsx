@@ -2,7 +2,7 @@ import { Loader2 } from 'lucide-react'
 import { LogOut } from 'lucide-react'
 import { Link, Navigate, NavLink, Outlet } from 'react-router-dom'
 import { STAFF_NAV_ITEMS } from '../config/navigation'
-import { Monogramme } from './AuthLayout'
+import { Embleme } from './Logo'
 import { useAuth } from '../context/AuthContext'
 
 /**
@@ -37,11 +37,10 @@ export default function PlatformAdminRoute() {
       <header className="sur-bati border-b border-bati-600">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-2.5 sm:px-6">
           <span className="flex items-center gap-2.5">
-            {/* Le monogramme dessiné remplace l'image du logo : à 132 px de
-                large réduite à 32, elle se voyait matricée sur les écrans à
-                forte densité, et c'était la première chose visible de la
-                console. */}
-            <Monogramme sombre />
+            {/* L'embleme, servi en trois densites depuis un decoupage a
+                haute definition : c'est le flou de l'ancien fichier de 64 px
+                qui faisait « logo pixelise », pas le logo. */}
+            <Embleme taille="size-8" />
             <span
               className="font-display text-sm font-semibold text-craie"
               style={{ fontVariationSettings: "'wdth' 92" }}

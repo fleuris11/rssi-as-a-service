@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { CRANS } from './instrument/crans'
+import Logo, { LogoComplet } from './Logo'
 
 /**
  * L'ENVELOPPE D'AUTHENTIFICATION — le pupitre éteint, qu'on vient allumer.
@@ -17,24 +18,6 @@ import { CRANS } from './instrument/crans'
 
 const CRANS_AFFICHES = ['calme', 'surveille', 'preoccupant', 'critique']
 
-export function Monogramme({ sombre = false }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`grid size-8 shrink-0 place-items-center rounded-sm ${
-        sombre ? 'bg-craie text-bati-900' : 'bg-brand-600 text-white'
-      }`}
-    >
-      <span
-        className="text-[0.6875rem] font-semibold uppercase leading-none"
-        style={{ fontVariationSettings: "'wdth' 70" }}
-      >
-        net
-      </span>
-    </span>
-  )
-}
-
 export default function AuthLayout({ children, title }) {
   return (
     <div className="flex min-h-screen">
@@ -42,14 +25,10 @@ export default function AuthLayout({ children, title }) {
         aria-label="Présentation du produit"
         className="sur-bati hidden w-[40%] max-w-md flex-col justify-between p-10 lg:flex"
       >
-        <Link to="/" className="flex items-center gap-2.5 rounded-sm">
-          <Monogramme sombre />
-          <span
-            className="font-display text-base font-semibold text-craie"
-            style={{ fontVariationSettings: "'wdth' 92" }}
-          >
-            RSSI as a Service
-          </span>
+        {/* Le panneau est deja sombre et large : le bloc complet y est chez
+            lui, et a 224 px le nom se lit vraiment. */}
+        <Link to="/" className="rounded-sm">
+          <LogoComplet className="w-56" hauteur="h-auto" />
         </Link>
 
         <div>
@@ -89,14 +68,8 @@ export default function AuthLayout({ children, title }) {
       </aside>
 
       <main className="flex flex-1 flex-col items-center justify-center bg-canvas px-6 py-12">
-        <Link to="/" className="mb-8 flex items-center gap-2.5 rounded-sm lg:hidden">
-          <Monogramme />
-          <span
-            className="font-display text-base font-semibold text-ink-900"
-            style={{ fontVariationSettings: "'wdth' 92" }}
-          >
-            RSSI as a Service
-          </span>
+        <Link to="/" className="mb-8 rounded-sm lg:hidden">
+          <Logo />
         </Link>
         <div className="w-full max-w-sm">
           {/* `title` était déjà passé par la page d'invitation, et l'ancienne

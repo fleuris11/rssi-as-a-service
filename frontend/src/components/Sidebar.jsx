@@ -1,5 +1,6 @@
 import { LogOut, ShieldCheck, ShieldEllipsis, SlidersHorizontal } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
+import { Embleme } from './Logo'
 import { fonctionnalitesRetirees, navigationPourProfil, STAFF_NAV_ITEMS } from '../config/navigation'
 import { useAuth } from '../context/AuthContext'
 import { useOptionalEntitlements } from '../context/EntitlementsContext'
@@ -46,17 +47,7 @@ export default function Sidebar({ collapsed = false, onNavigate }) {
           collapsed ? 'justify-center px-0' : ''
         }`}
       >
-        <span
-          aria-hidden="true"
-          className="grid size-8 shrink-0 place-items-center rounded-sm bg-craie text-bati-900"
-        >
-          <span
-            className="text-[0.6875rem] font-semibold uppercase leading-none"
-            style={{ fontVariationSettings: "'wdth' 70" }}
-          >
-            net
-          </span>
-        </span>
+        <Embleme taille="size-8" />
         {!collapsed && (
           <span
             className="font-display text-sm font-semibold text-craie"

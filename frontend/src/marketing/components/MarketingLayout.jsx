@@ -2,51 +2,8 @@ import { Menu, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { tokenStorage } from '../../api/client'
+import Logo, { LogoComplet } from '../../components/Logo'
 import { FOOTER, NAV, SITE } from '../content'
-
-/**
- * Le monogramme. Un carré plein, deux lettres, la couleur d'action.
- *
- * Remplace l'emblème matriciel : un fichier image de 32 px se voyait pixelisé
- * sur les écrans à forte densité et sur les exports, et il ajoutait une
- * requête pour dessiner deux lettres. Un carré de texte est net partout, se
- * redimensionne sans perte, et suit la palette sans qu'on réexporte une image.
- */
-export function Monogramme({ taille = 'size-8', sombre = false }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`${taille} grid shrink-0 place-items-center rounded-sm ${
-        sombre ? 'bg-craie text-bati-900' : 'bg-brand-600 text-white'
-      }`}
-    >
-      {/* Les réglages typographiques sont posés ici plutôt que par `t-legende` :
-          cette classe fixe une COULEUR, qui l'emportait sur la couleur héritée
-          du parent — le monogramme sortait en encre secondaire sur fond bleu,
-          à 1,3:1. Relevé par axe-core, invisible à la relecture. */}
-      <span
-        className="text-[0.6875rem] font-semibold uppercase leading-none"
-        style={{ fontVariationSettings: "'wdth' 70" }}
-      >
-        net
-      </span>
-    </span>
-  )
-}
-
-function Marque({ sombre = false }) {
-  return (
-    <span className="flex items-center gap-2.5">
-      <Monogramme sombre={sombre} />
-      <span
-        className={`font-display text-base font-semibold ${sombre ? 'text-craie' : 'text-ink-900'}`}
-        style={{ fontVariationSettings: "'wdth' 92" }}
-      >
-        {SITE.name}
-      </span>
-    </span>
-  )
-}
 
 function Entete() {
   const [ouvert, setOuvert] = useState(false)
@@ -67,8 +24,14 @@ function Entete() {
   return (
     <header className="sticky top-0 z-40 border-b border-ink-200 bg-surface">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-4 py-3 sm:px-6">
-        <Link to="/" className="rounded-sm">
-          <Marque />
+        {/* Dans une barre de 56 px, le bloc complet rendrait le nom
+            illisible : son rapport est de 2,5:1, et la signature sous le nom
+            devient une bouillie grise. L'embleme porte donc l'identite, et le
+            nom est du TEXTE — net a toute taille, selectionnable, lu par un
+            lecteur d'ecran. Le bloc complet, lui, sert la ou il y a de la
+            place : le panneau de connexion et le pied de page. */}
+        <Link to="/" className="shrink-0 rounded-sm">
+          <Logo taille="size-9" />
         </Link>
 
         <nav aria-label="Sections du site" className="hidden items-center gap-6 lg:flex">
@@ -159,7 +122,7 @@ function PiedDePage() {
     <footer className="sur-bati">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 sm:grid-cols-2 lg:grid-cols-4">
         <div className="lg:col-span-2">
-          <Marque sombre />
+          <LogoComplet className="w-56" hauteur="h-auto" />
           <p className="mt-4 max-w-sm text-sm leading-relaxed text-craie-douce">
             {FOOTER.description}
           </p>
