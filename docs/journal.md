@@ -7229,3 +7229,151 @@ lire « un monogramme net », c'est-à-dire lisible.
 - La réinitialisation de mot de passe n'a toujours pas de route serveur.
 - Sous forte charge locale, deux tests dépassent leur délai et passent au
   calme. Motif jsdom/Windows déjà consigné.
+
+## 27/09/2026 — Remplir la plateforme : la bibliothèque de cours, et un client prêt
+
+### Ce qui a été demandé
+
+Rendre la plateforme administrable tout de suite : rattacher le compte
+d'exploitation à l'entreprise du premier client réel, remplir le catalogue de
+formation, produire les documents, faire remonter la veille. Une consigne
+explicite : **ne rien toucher de ce qui relève de l'analyse d'exposition ni du
+scan** — ces gestes seront faits à la main.
+
+### Ce qui a été fait
+
+**Un relevé de production avant d'écrire une ligne.** Il a corrigé trois idées
+fausses que j'avais en tête :
+
+- l'espace du client n'était pas vide. Il portait déjà **deux diagnostics**
+  (un terminé le 05/09, un en cours), **cinq actions** et **trois documents** ;
+- la veille **fonctionne** : cinq sources, quatre passages en succès le 21/09,
+  vingt-deux publications détectées. La source EUR-Lex est la seule inactive ;
+- le catalogue de formation, en revanche, ne contenait **qu'un seul cours** —
+  celui de démonstration de F1.
+
+Ce qui manquait réellement était donc : l'adhésion du compte, le catalogue, et
+les documents composés absents.
+
+**Une bibliothèque de six cours.** `apps/training/catalogue.py` — mots de passe
+et double authentification, rançongiciel et sauvegardes, fraude au virement,
+travail à distance, données personnelles, appareils et mises à jour. Cinq ou six
+écrans et six questions chacun, avec le cours d'hameçonnage de F1 cela fait sept
+cours publiés. Trente-cinq minutes de contenu, trente-six écrans, trente-six
+questions.
+
+Le contenu est **une donnée**, séparée du mécanisme de chargement : il se teste
+sans base, et la commande reste assez courte pour qu'on la relise.
+
+**Le contenu est testé comme du code**, et c'est le choix qui compte. Un cours
+mal écrit ne casse rien : il se charge, se publie, et enseigne quelque chose de
+faux à un salarié. Aucun test d'intégration ne l'attrape. `test_catalogue.py`
+automatise donc une relecture — question sans bonne réponse, renvoi vers un
+écran inexistant, choix unique à deux bonnes réponses, choix multiple à une
+seule (qui se comporte comme un unique et déroute), deux choix identiques,
+explication trop courte pour former, quiz trop court pour que son seuil veuille
+dire quelque chose.
+
+**Trois commandes, et un ADR** (ADR-043) qui dit pourquoi ce n'est pas tapé à la
+main en production :
+
+- `seed_catalogue_formation` — charge la bibliothèque. Idempotente ; `--reset`
+  vide le *contenu* de la version, jamais la version, parce qu'une inscription
+  pointe dessus ; la publication passe par `studio.publier`, donc la commande ne
+  peut pas publier ce que le studio refuserait ;
+- `preparer_client` — adhésion administrateur, attribution de la bibliothèque,
+  inscription du compte, documents composés manquants. **Générique** : aucun nom
+  de client dans le dépôt, tout arrive par `--tenant` et `--admin` ;
+- `resumer_la_veille` — les résumés par IA des publications qui n'en ont pas,
+  déclenchés à la main et bornés par `--limite`.
+
+**Ce que `preparer_client` refuse de faire**, et chaque refus a une raison :
+
+- aucun scan, aucune analyse d'exposition — consigne, et ces gestes engagent une
+  licence et désignent des personnes ;
+- aucun courriel — les inscriptions n'émettent pas de lien nominatif, c'est
+  l'exploitant qui les enverra ;
+- **aucun diagnostic répondu à la place du client** : des réponses inventées
+  donneraient un score faux, donc un plan faux, donc des documents faux — que le
+  client découvrirait devant son assureur ;
+- aucun apprenant inventé : les salariés d'un client réel sont des personnes
+  réelles. Seul le compte passé en option est inscrit ;
+- aucun document rédigé par l'IA : la charte est la seule (ADR-032), elle coûte
+  et passe par un quota ;
+- aucune garde contournée : le quota d'utilisateurs de l'offre est vérifié comme
+  pour n'importe quelle invitation ;
+- aucun document validé : valider, c'est dire qu'un responsable l'a lu. Personne
+  ne l'a lu. Ils restent en brouillon.
+
+Chaque exécution laisse une entrée `tenant.prepare` dans le journal d'audit de
+la plateforme — sans quoi l'apparition de données dans l'espace d'un client
+serait inexplicable six mois plus tard.
+
+### Difficultés et solutions
+
+- **Le manager cloisonné, encore.** `attribuer_cours` écrit dans
+  `CourseAssignment`, un modèle cloisonné dont le manager par défaut ne voit
+  rien hors contexte — et une commande n'en reçoit pas du middleware. Les deux
+  nouvelles commandes posent le contexte par `contexte_du_client`. La leçon de
+  F3 s'est répétée à l'identique.
+- **Vérifié par mutation.** Remplacer ce `with` par un `if True:` fait bien
+  échouer cinq tests, dont celui du cloisonnement. Sans cette vérification, je
+  n'aurais pas su si les tests regardaient quelque chose.
+- **Un heredoc a refusé un fichier de mille lignes** sans message utile — le
+  délimiteur n'était plus reconnu. Le fichier a été écrit par l'outil d'écriture
+  direct. Rien à en tirer, sinon de ne pas insister.
+- **`Tenant` n'est pas un modèle cloisonné** : il n'a pas de `all_objects`. Une
+  évidence, découverte par une `AttributeError`.
+- **`ruff` n'est ni installé localement ni dans l'image** ; il est appelé par
+  `python -m ruff` dans le conteneur. À retenir : la CI lint `.` en entier, et
+  un `ruff check` partiel laisse passer ce qu'elle refusera.
+
+### Ce qui a été relevé en production sans y toucher
+
+- **Quatre publications de veille sont qualifiées à tort.** Un « Ordre du jour
+  de la séance plénière » est marqué « nouvelle exigence » — et les publications
+  *retenues* sont exactement celles que le client voit. Ce n'est pas corrigé par
+  script : qualifier une publication est un geste humain avec un relecteur
+  nommé (V2-7), et le faire depuis une commande mettrait mon jugement éditorial
+  dans un flux client. Deux clics dans la console.
+- **La source ENISA produit du bruit** : deux entrées au titre identique
+  (« Mise à jour de la page Rapports et lignes directrices ») avec 4 000
+  caractères d'extrait chacune. L'identifiant stable d'une source sans flux est
+  une empreinte titre + lien : sur une page qui change sans changer de titre, il
+  ne stabilise rien.
+- **La source EUR-Lex est inactive** et n'a jamais réussi un passage.
+
+### Reste à faire
+
+- Qualifier les quatre publications mal classées depuis la console.
+- L'identifiant stable des sources de type « page » (bruit ENISA).
+- Brancher le flux EUR-Lex.
+- Faire tourner la charte informatique pour le client : c'est le seul document
+  rédigé par l'IA, il se déclenche depuis l'interface.
+- La réinitialisation de mot de passe n'a toujours pas de route serveur.
+
+### Un écran qui manquait, trouvé en chemin
+
+En écrivant `preparer_client`, un relevé a montré que `attribuer_cours`
+n'était appelé **que par des commandes et des tests** : aucune route HTTP ne
+permettait de proposer un cours à un client. Le studio savait en écrire (F2),
+la mesure savait en suivre l'effet (F3), l'attribution n'avait aucun chemin
+dans l'interface.
+
+Un onglet **Formations** a donc été ajouté à la console, construit comme le
+pendant exact de l'onglet Référentiels. Trois choses y sont délibérées :
+
+- un cours écrit **par** un client n'y apparaît pas, et c'est la route qui le
+  vérifie, pas l'écran ;
+- le nombre de salariés encore inscrits est affiché sur chaque cours proposé :
+  c'est le chiffre qui fait hésiter avant un retrait ;
+- le retrait le dit à chaque fois — les salariés déjà inscrits terminent leur
+  parcours. Une inscription pointe vers une version, pas vers une attribution.
+  Sans cette phrase, personne n'oserait cliquer.
+
+Vérifié au navigateur (`i-console-formations.spec.js`) : proposer, retirer,
+audit d'accessibilité, zéro erreur de console. Deux faux départs dans ce test,
+et aucun n'était un défaut du produit : le serveur de développement n'avait pas
+rechargé le nouveau membre d'énumération d'audit, et l'attente par défaut de
+5 s de Playwright se déclenche avant la fin du hachage du mot de passe sur une
+machine chargée.
