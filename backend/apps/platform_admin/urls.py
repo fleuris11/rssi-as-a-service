@@ -3,6 +3,7 @@ from django.urls import path
 from .console_views import (
     ClientActionView,
     ClientArchiveView,
+    ClientCourseView,
     ClientCreateView,
     ClientDetailView,
     ClientFeatureCompositionView,
@@ -111,6 +112,11 @@ urlpatterns = [
         "clients/<uuid:tenant_id>/referentials/",
         ClientReferentialView.as_view(),
         name="platform-client-referentials",
+    ),
+    path(
+        "clients/<uuid:tenant_id>/courses/",
+        ClientCourseView.as_view(),
+        name="platform-client-courses",
     ),
     path(
         "clients/<uuid:tenant_id>/overrides/",

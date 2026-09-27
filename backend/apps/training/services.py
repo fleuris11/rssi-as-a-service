@@ -41,6 +41,7 @@ from .models import (
     Attempt,
     AttemptAnswer,
     Certificate,
+    Course,
     CourseAssignment,
     Enrollment,
     Learner,
@@ -205,6 +206,46 @@ def cours_attribues(tenant):
         )
         if attribution.course.is_active and attribution.course.published_version is not None
     ]
+
+
+def bibliotheque():
+    """Les cours de la bibliothèque, publiés : ce que l'exploitant peut proposer.
+
+    Un cours écrit PAR un client n'y figure pas, et c'est tout l'objet de la
+    séparation catalogue/attribution : le proposer à un autre client
+    reviendrait à lui montrer le travail du premier.
+    """
+    return [
+        cours
+        for cours in Course.objects.filter(owner_tenant__isnull=True, is_active=True)
+        if cours.published_version is not None
+    ]
+
+
+def cours_attribuables(tenant):
+    """Ce qui reste à proposer à ce client : la bibliothèque moins l'attribué."""
+    deja = set(CourseAssignment.objects.values_list("course_id", flat=True))
+    return [cours for cours in bibliotheque() if cours.id not in deja]
+
+
+def retirer_cours(*, tenant, course) -> bool:
+    """Retire un cours du catalogue d'un client. Rend vrai s'il y avait quelque
+    chose à retirer.
+
+    **Ne touche à aucune inscription.** Une inscription pointe vers une
+    VERSION, pas vers une attribution : un salarié en cours de parcours le
+    termine, et son attestation reste. Ce qui cesse, c'est la possibilité d'en
+    inscrire de nouveaux. C'est la réponse à la question que se pose celui qui
+    clique — « est-ce que je viens d'effacer ce que mes salariés ont suivi ? ».
+    """
+    supprimees, _ = CourseAssignment.objects.filter(course=course).delete()
+    return bool(supprimees)
+
+
+def inscriptions_en_cours(tenant, course) -> int:
+    """Les inscriptions non révoquées sur ce cours. Sert à prévenir avant un
+    retrait : le chiffre change ce que l'exploitant décide."""
+    return Enrollment.objects.filter(version__course=course, revoked_at__isnull=True).count()
 
 
 @transaction.atomic

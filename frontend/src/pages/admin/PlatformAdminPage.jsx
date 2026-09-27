@@ -5,6 +5,7 @@ import {
   Inbox,
   ClipboardList,
   Gauge,
+  GraduationCap,
   Newspaper,
   Settings,
   ShieldCheck,
@@ -30,6 +31,7 @@ import OwnershipReviewPanel from './panels/OwnershipReviewPanel'
 import PlansPanel from './panels/PlansPanel'
 import { AdminsPanel, SettingsPanel, TrashPanel } from './panels/PlatformPanel'
 import ProspectsPanel from './panels/ProspectsPanel'
+import FormationsPanel from './panels/FormationsPanel'
 import ReferentialsPanel from './panels/ReferentialsPanel'
 import RequestsPanel from './panels/RequestsPanel'
 import WatchPanel from './panels/WatchPanel'
@@ -41,6 +43,7 @@ const TABS = [
   { id: 'prospects', label: 'Prospects', icon: Users },
   { id: 'plans', label: 'Offres', icon: Tags },
   { id: 'referentials', label: 'Référentiels', icon: BookOpen },
+  { id: 'formations', label: 'Formations', icon: GraduationCap },
   { id: 'requests', label: 'Demandes', icon: Inbox },
   { id: 'watch', label: 'Veille', icon: Newspaper },
   { id: 'ownership', label: 'Possession', icon: ShieldQuestion },
@@ -514,6 +517,7 @@ export default function PlatformAdminPage() {
         <PlansPanel plans={plans} featureCatalog={config?.features || []} onRefresh={loadCore} />
       )}
       {!loading && activeTab === 'referentials' && <ReferentialsPanel clients={tenants} />}
+      {!loading && activeTab === 'formations' && <FormationsPanel clients={tenants} />}
       {!loading && activeTab === 'requests' && <RequestsPanel />}
       {!loading && activeTab === 'watch' && <WatchPanel referentiels={referentials} />}
           {!loading && activeTab === 'ownership' && <OwnershipReviewPanel />}

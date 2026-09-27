@@ -1799,3 +1799,115 @@ class ClientReferentialView(ConsoleView):
                 "kept_readable": True,
             }
         )
+
+
+class ClientCourseView(ConsoleView):
+    """Proposer un ou plusieurs cours de la bibliothèque à un client, et les
+    retirer.
+
+    Le pendant exact de ``ClientReferentialView``, et pour la même raison : un
+    client ne voit que ce qui lui est attribué. Sans cet écran, la bibliothèque
+    ne pouvait être proposée que par une commande Django — un produit invisible
+    pour qui l'exploite.
+
+    Le retrait est **définitif sur l'attribution, et sans effet sur les
+    parcours** : une inscription pointe vers une version, pas vers une
+    attribution. C'est la question que se pose celui qui clique, et la réponse
+    est dans la réponse HTTP (``ongoing`` avant, ``kept_enrollments`` après).
+    """
+
+    def _etat(self, tenant):
+        from apps.training import services as training_services
+
+        with training_services.contexte_du_client(tenant):
+            attribues = training_services.cours_attribues(tenant)
+            return Response(
+                {
+                    "assigned": [
+                        {
+                            "id": cours.id,
+                            "slug": cours.slug,
+                            "title": cours.title,
+                            "summary": cours.summary,
+                            "minutes": cours.published_version.estimated_minutes,
+                            "pass_threshold": cours.published_version.pass_threshold,
+                            # Le nombre de salariés encore inscrits : c'est ce
+                            # chiffre qui fait hésiter avant un retrait.
+                            "ongoing": training_services.inscriptions_en_cours(tenant, cours),
+                        }
+                        for cours in attribues
+                    ],
+                    "available": [
+                        {
+                            "id": cours.id,
+                            "slug": cours.slug,
+                            "title": cours.title,
+                            "summary": cours.summary,
+                            "minutes": cours.published_version.estimated_minutes,
+                            "pass_threshold": cours.published_version.pass_threshold,
+                            "screens": cours.published_version.screens.count(),
+                            "questions": cours.published_version.questions.count(),
+                        }
+                        for cours in training_services.cours_attribuables(tenant)
+                    ],
+                }
+            )
+
+    def _cours(self, slug):
+        from apps.training.models import Course
+
+        # Bibliothèque seulement : un cours écrit PAR un client ne se propose
+        # pas à un autre, et le vérifier ici plutôt que dans le service évite
+        # qu'une route future oublie la règle.
+        return Course.objects.filter(
+            slug=(slug or "").strip(), owner_tenant__isnull=True, is_active=True
+        ).first()
+
+    def get(self, request, tenant_id):
+        return self._etat(get_object_or_404(Tenant, id=tenant_id))
+
+    def post(self, request, tenant_id):
+        from apps.training import services as training_services
+
+        tenant = get_object_or_404(Tenant, id=tenant_id)
+        cours = self._cours(request.data.get("course"))
+        if cours is None:
+            return Response({"detail": "Cours introuvable."}, status=status.HTTP_404_NOT_FOUND)
+        if cours.published_version is None:
+            return self.refused(
+                "Ce cours n'a pas de version publiée : il n'y a rien à proposer.",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        with training_services.contexte_du_client(tenant):
+            training_services.attribuer_cours(tenant=tenant, course=cours, actor=request.user)
+        self.audit(
+            request,
+            AdminAuditLog.Action.COURSE_ASSIGNED,
+            tenant=tenant,
+            target=cours.title,
+            detail=f"Cours « {cours.title} » proposé à {tenant.name}.",
+        )
+        return self._etat(tenant)
+
+    def delete(self, request, tenant_id):
+        from apps.training import services as training_services
+
+        tenant = get_object_or_404(Tenant, id=tenant_id)
+        cours = self._cours(request.data.get("course"))
+        if cours is None:
+            return Response({"detail": "Cours introuvable."}, status=status.HTTP_404_NOT_FOUND)
+
+        with training_services.contexte_du_client(tenant):
+            training_services.retirer_cours(tenant=tenant, course=cours)
+        self.audit(
+            request,
+            AdminAuditLog.Action.COURSE_REVOKED,
+            tenant=tenant,
+            target=cours.title,
+            detail=(
+                f"Cours « {cours.title} » retiré à {tenant.name}. Les salariés déjà "
+                "inscrits terminent leur parcours."
+            ),
+        )
+        return Response({**self._etat(tenant).data, "kept_enrollments": True})

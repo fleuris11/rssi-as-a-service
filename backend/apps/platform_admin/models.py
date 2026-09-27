@@ -57,6 +57,10 @@ class AdminAuditLog(models.Model):
         REFERENTIAL_ASSIGNED = "referential_assigned", "Référentiel attribué"
         REFERENTIAL_REVOKED = "referential_revoked", "Référentiel retiré"
         ACCESS_REQUEST_HANDLED = "access_request_handled", "Demande d'accès traitée"
+        # Formation (27/09/2026) : la bibliotheque ne pouvait etre proposee
+        # que par une commande Django.
+        COURSE_ASSIGNED = "course_assigned", "Cours proposé à un client"
+        COURSE_REVOKED = "course_revoked", "Cours retiré à un client"
         # Prospects
         DEMO_REQUEST_UPDATED = "demo_request_updated", "Demande de démonstration traitée"
         PROSPECT_CREATED = "prospect_created", "Prospect créé"

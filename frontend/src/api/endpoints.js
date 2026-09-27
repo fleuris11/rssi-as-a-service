@@ -82,6 +82,14 @@ export const platformApi = {
   // --- Referentiels et demandes (V2-4) ------------------------------------
   listReferentials: () => apiClient.get('/api/v1/platform/referentials/'),
   clientReferentials: (id) => apiClient.get(`/api/v1/platform/clients/${id}/referentials/`),
+  // Formation : proposer la bibliotheque a un client, et la retirer.
+  clientCourses: (id) => apiClient.get(`/api/v1/platform/clients/${id}/courses/`),
+  assignCourse: (id, slug) =>
+    apiClient.post(`/api/v1/platform/clients/${id}/courses/`, { course: slug }),
+  revokeCourse: (id, slug) =>
+    apiClient.delete(`/api/v1/platform/clients/${id}/courses/`, {
+      data: { course: slug },
+    }),
   assignReferential: (id, slug, note = '') =>
     apiClient.post(`/api/v1/platform/clients/${id}/referentials/`, { referential: slug, note }),
   revokeReferential: (id, slug) =>
